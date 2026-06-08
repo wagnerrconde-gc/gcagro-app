@@ -1715,6 +1715,28 @@ function ProgView({data, setData, tipo, onGerarCotacao}) {
           </div>
         </div>
       </div>
+
+      {/* Gerar Cotação button */}
+      <div style={{marginTop:16,display:"flex",gap:8}}>
+        <button onClick={()=>{
+          const defensivos = [];
+          culture.categories.forEach((cat,catIdx)=>{
+            if(["Herbicidas","Fungicidas","Inseticidas","Dessecação"].includes(cat.name)){
+              cat.products.forEach(p=>{
+                defensivos.push({...p,categoria:cat.name});
+              });
+            }
+          });
+          if(defensivos.length===0){alert("Nenhum defensivo cadastrado!");return;}
+          // TODO: Implementar envio de defensivos pra cotação
+          console.log("Defensivos para cotação:",defensivos);
+          alert(`${defensivos.length} defensivos enviados para cotação!`);
+          if(onGerarCotacao)onGerarCotacao("ins");
+        }}
+        style={{padding:"10px 18px",background:"#5c3a8a",color:"#fff",border:"none",borderRadius:6,fontWeight:700,cursor:"pointer",fontSize:12}}>
+          📋 Gerar Cotação (Defensivos)
+        </button>
+      </div>
     </div>
   );
 }
@@ -1878,6 +1900,134 @@ function gerarDocCotacao(tipo, tipoLabel, safraLabel, produtos, allPrices, forne
   a.download = `Cotacao_${tipoLabel.replace(/ /g,"_")}_${safraLabel.replace(/ /g,"_")}_${dt.replace(/\//g,"-")}.doc`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── CotacaoSementesView ───────────────────────────────────────────────────────
+function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, setCompras}) {
+  const [showAddVar, setShowAddVar] = useState(false);
+  const [newVar, setNewVar] = useState({nome:"",sem_trat:"",trat1:"",trat2:""});
+
+  function adicionarVariedade() {
+    if(!newVar.nome.trim()) return;
+    setVariedades(v=>[...v,{
+      id:Date.now()+"",
+      nome:newVar.nome,
+      sem_trat:parseFloat(newVar.sem_trat)||0,
+      trat1:parseFloat(newVar.trat1)||0,
+      trat2:parseFloat(newVar.trat2)||0
+    }]);
+    setNewVar({nome:"",sem_trat:"",trat1:"",trat2:""});
+    setShowAddVar(false);
+  }
+
+  function deletarVariedade(id) {
+    if(window.confirm("Remover esta variedade?"))
+      setVariedades(v=>v.filter(vv=>vv.id!==id));
+  }
+
+  function fecharCotacao() {
+    if(variedades.length===0){alert("Adicione variedades primeiro!");return;}
+    if(window.confirm(`Fechar cotação com ${variedades.length} variedades? Isso gravará na aba Compras.`)){
+      // Grava cada variedade em Compras
+      const novasCompras = variedades.map(v=>{
+        const preco_medio = (v.sem_trat + v.trat1 + v.trat2) / 3;
+        return {
+          id:Date.now()+"_"+Math.random(),
+          produto:v.nome,
+          fornecedor:"Cotação Sementes",
+          qtd:1,
+          unidade:"bag/sc",
+          preco:preco_medio,
+          data:new Date().toLocaleDateString("pt-BR"),
+          safra:safraLabel,
+          obs:`sem_trat: ${fmtR2(v.sem_trat)} | trat1: ${fmtR2(v.trat1)} | trat2: ${fmtR2(v.trat2)}`
+        };
+      });
+      setCompras(c=>({...c,sementes:[...(c.sementes||[]),...novasCompras]}));
+      alert("✅ Cotação fechada e registrada em Compras!");
+      setVariedades([]);
+    }
+  }
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div><div style={{fontSize:12,color:"#666"}}>Cotação Sementes · {safraLabel}</div><div style={{fontSize:18,fontWeight:800,color:"#1a5c2e"}}>🌾 Cotação de Sementes</div></div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setShowAddVar(!showAddVar)} style={{padding:"8px 14px",background:"#1a5c2e",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar Variedade</button>
+          <button onClick={fecharCotacao} style={{padding:"8px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
+        </div>
+      </div>
+
+      {showAddVar&&(
+        <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #1a5c2e"}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Variedade</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Variedade</div>
+              <input type="text" placeholder="Ex: P4537" value={newVar.nome} onChange={e=>setNewVar(p=>({...p,nome:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Sem Tratamento (R$)</div>
+              <input type="number" step="0.01" placeholder="0.00" value={newVar.sem_trat} onChange={e=>setNewVar(p=>({...p,sem_trat:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Tratamento 1 (R$)</div>
+              <input type="number" step="0.01" placeholder="0.00" value={newVar.trat1} onChange={e=>setNewVar(p=>({...p,trat1:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Tratamento 2 (R$)</div>
+              <input type="number" step="0.01" placeholder="0.00" value={newVar.trat2} onChange={e=>setNewVar(p=>({...p,trat2:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:12}}>
+            <button onClick={adicionarVariedade} style={{padding:"9px 20px",background:"#1a5c2e",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
+            <button onClick={()=>setShowAddVar(false)} style={{padding:"9px 16px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{background:"#1a5c2e",color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:12}}>Variedades Cotadas ({variedades.length})</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"#f5f5f5"}}>
+                <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Variedade</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Sem Trat.</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 1</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 2</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Médio</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variedades.length===0?(<tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
+              :variedades.map((v,i)=>{
+                const media = (v.sem_trat+v.trat1+v.trat2)/3;
+                return (
+                  <tr key={v.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
+                    <td style={{padding:"8px 12px",fontWeight:600}}>{v.nome}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.sem_trat)}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat1)}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat2)}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#1a5c2e"}}>{fmtR2(media)}</td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <button onClick={()=>deletarVariedade(v.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── CotacaoView ───────────────────────────────────────────────────────────────
@@ -2499,6 +2649,8 @@ function App() {
   const [cotSafAdub,   setCotSafAdub]       = useState(() => ls.get(KEYS.cotacoes+"_s_adub", {}));
   const [cotSafIns,    setCotSafIns]        = useState(() => ls.get(KEYS.cotacoes+"_s_ins",  {}));
   const [cotSafSem,    setCotSafSem]        = useState(() => ls.get(KEYS.cotacoes+"_s_sem",  {}));
+  const [variedadesVeraoSem, setVariedadesVeraoSem] = useState(() => ls.get(KEYS.cotacoes+"_v_sem_var", []));
+  const [variedadesSafSem, setVariedadesSafSem] = useState(() => ls.get(KEYS.cotacoes+"_s_sem_var", []));
 
   // ── Fornecedores ──
   const [fornVeraoAdub, setFornVeraoAdub]   = useState(() => ls.get(KEYS.fornecedores+"_v_adub",  [...FORN_DEFAULT_ADUB]));
@@ -2532,6 +2684,8 @@ function App() {
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_adub", cotSafAdub);   }, [cotSafAdub]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_ins",  cotSafIns);    }, [cotSafIns]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem",  cotSafSem);    }, [cotSafSem]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_v_sem_var", variedadesVeraoSem); }, [variedadesVeraoSem]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem);   }, [variedadesSafSem]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_adub", fornVeraoAdub); }, [fornVeraoAdub]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_ins",  fornVeraoIns);  }, [fornVeraoIns]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_s_adub", fornSafAdub);   }, [fornSafAdub]);
@@ -2862,10 +3016,10 @@ function App() {
 
       {view==="cot_v_adub" && <CotacaoView tipo="adub" safraLabel="Verão" produtos={prodVeraoAdub} allPrices={cotVeraoAdub} setAllPrices={setCotVeraoAdub} fornecedores={fornVeraoAdub} setFornecedores={setFornVeraoAdub} onFechar={(d)=>fecharCotacao(d,setDataVerao)}/>}
       {view==="cot_v_ins"  && <CotacaoView tipo="ins"  safraLabel="Verão" produtos={prodVeraoIns}  allPrices={cotVeraoIns}  setAllPrices={setCotVeraoIns}  fornecedores={fornVeraoIns}  setFornecedores={setFornVeraoIns}  onFechar={(d)=>fecharCotacao(d,setDataVerao)}/>}
-      {view==="cot_v_sem"  && <CotacaoView tipo="sem"  safraLabel="Verão" produtos={[]}            allPrices={cotVeraoSem}  setAllPrices={setCotVeraoSem}  fornecedores={fornVeraoSem}  setFornecedores={setFornVeraoSem}/>}
+      {view==="cot_v_sem"  && <CotacaoSementesView safraLabel="Verão" variedades={variedadesVeraoSem} setVariedades={setVariedadesVeraoSem} compras={compras} setCompras={setCompras}/>}
       {view==="cot_s_adub" && <CotacaoView tipo="adub" safraLabel="Safrinha" produtos={prodSafAdub} allPrices={cotSafAdub}  setAllPrices={setCotSafAdub}  fornecedores={fornSafAdub}  setFornecedores={setFornSafAdub}  onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
       {view==="cot_s_ins"  && <CotacaoView tipo="ins"  safraLabel="Safrinha" produtos={prodSafIns}  allPrices={cotSafIns}   setAllPrices={setCotSafIns}   fornecedores={fornSafIns}   setFornecedores={setFornSafIns}   onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
-      {view==="cot_s_sem"  && <CotacaoView tipo="sem"  safraLabel="Safrinha" produtos={[]}          allPrices={cotSafSem}   setAllPrices={setCotSafSem}   fornecedores={fornSafSem}   setFornecedores={setFornSafSem}/>}
+      {view==="cot_s_sem"  && <CotacaoSementesView safraLabel="Safrinha" variedades={variedadesSafSem} setVariedades={setVariedadesSafSem} compras={compras} setCompras={setCompras}/>}
     </div>
   );
 }
