@@ -1902,21 +1902,160 @@ function gerarDocCotacao(tipo, tipoLabel, safraLabel, produtos, allPrices, forne
   URL.revokeObjectURL(url);
 }
 
+// ── CotacaoAdubacaoView ───────────────────────────────────────────────────────
+function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras}) {
+  const [showAddAdubo, setShowAddAdubo] = useState(false);
+  const [newAdubo, setNewAdubo] = useState({nome:"",preco:"",toneladas:"",vencimento:""});
+
+  function adicionarAdubo() {
+    if(!newAdubo.nome.trim()) return;
+    setAdubos(a=>[...a,{
+      id:Date.now()+"",
+      nome:newAdubo.nome,
+      preco:parseFloat(newAdubo.preco)||0,
+      toneladas:parseFloat(newAdubo.toneladas)||0,
+      vencimento:newAdubo.vencimento||""
+    }]);
+    setNewAdubo({nome:"",preco:"",toneladas:"",vencimento:""});
+    setShowAddAdubo(false);
+  }
+
+  function deletarAdubo(id) {
+    if(window.confirm("Remover este adubo?"))
+      setAdubos(a=>a.filter(aa=>aa.id!==id));
+  }
+
+  function fecharCotacao() {
+    if(adubos.length===0){alert("Adicione adubos primeiro!");return;}
+    if(window.confirm(`Fechar cotação com ${adubos.length} adubos? Isso gravará na aba Compras.`)){
+      const novasCompras = adubos.map(a=>{
+        return {
+          id:Date.now()+"_"+Math.random(),
+          produto:a.nome,
+          fornecedor:"Cotação Adubação",
+          qtd:a.toneladas||1,
+          unidade:"ton",
+          preco:a.preco,
+          data:new Date().toLocaleDateString("pt-BR"),
+          safra:safraLabel,
+          vencimento:a.vencimento,
+          obs:""
+        };
+      });
+      setCompras(c=>({...c,adubos:[...(c.adubos||[]),...novasCompras]}));
+      alert("✅ Cotação de Adubação fechada e registrada em Compras!");
+      setAdubos([]);
+    }
+  }
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div><div style={{fontSize:12,color:"#666"}}>Cotação Adubação · {safraLabel}</div><div style={{fontSize:18,fontWeight:800,color:"#8b4513"}}>🌾 Cotação de Adubação</div></div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setShowAddAdubo(!showAddAdubo)} style={{padding:"8px 14px",background:"#8b4513",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar Adubo</button>
+          <button onClick={fecharCotacao} style={{padding:"8px 14px",background:"#a0522d",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
+        </div>
+      </div>
+
+      {showAddAdubo&&(
+        <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #8b4513"}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Adubo</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Produto</div>
+              <input type="text" placeholder="Ex: Adubo NPK" value={newAdubo.nome} onChange={e=>setNewAdubo(p=>({...p,nome:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Preço (R$/ton)</div>
+              <input type="number" step="0.01" placeholder="0.00" value={newAdubo.preco} onChange={e=>setNewAdubo(p=>({...p,preco:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Toneladas</div>
+              <input type="number" step="0.01" placeholder="0" value={newAdubo.toneladas} onChange={e=>setNewAdubo(p=>({...p,toneladas:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Vencimento</div>
+              <input type="date" value={newAdubo.vencimento} onChange={e=>setNewAdubo(p=>({...p,vencimento:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:12}}>
+            <button onClick={adicionarAdubo} style={{padding:"9px 20px",background:"#8b4513",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
+            <button onClick={()=>setShowAddAdubo(false)} style={{padding:"9px 16px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{background:"#8b4513",color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:12}}>Adubos Cotados ({adubos.length})</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"#f5f5f5"}}>
+                <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Produto</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Preço (R$/ton)</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Toneladas</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adubos.length===0?(<tr><td colSpan={5} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum adubo adicionado.</td></tr>)
+              :adubos.map((a,i)=>{
+                return (
+                  <tr key={a.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
+                    <td style={{padding:"8px 12px",fontWeight:600}}>{a.nome}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={a.preco} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,preco:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={a.toneladas} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,toneladas:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <input type="date" value={a.vencimento} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,vencimento:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <button onClick={()=>deletarAdubo(a.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CotacaoSementesView ───────────────────────────────────────────────────────
 function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, setCompras}) {
   const [showAddVar, setShowAddVar] = useState(false);
-  const [newVar, setNewVar] = useState({nome:"",sem_trat:"",trat1:"",trat2:""});
+  const [showRelatorio, setShowRelatorio] = useState(false);
+  const [newVar, setNewVar] = useState({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat"});
 
   function adicionarVariedade() {
     if(!newVar.nome.trim()) return;
     setVariedades(v=>[...v,{
       id:Date.now()+"",
       nome:newVar.nome,
+      cultura:newVar.cultura||"Soja",
       sem_trat:parseFloat(newVar.sem_trat)||0,
       trat1:parseFloat(newVar.trat1)||0,
-      trat2:parseFloat(newVar.trat2)||0
+      trat2:parseFloat(newVar.trat2)||0,
+      quantidade:parseFloat(newVar.quantidade)||0,
+      populacao:parseFloat(newVar.populacao)||0,
+      vencimento:newVar.vencimento||"",
+      tratamento_escolhido:newVar.tratamento_escolhido||"sem_trat"
     }]);
-    setNewVar({nome:"",sem_trat:"",trat1:"",trat2:""});
+    setNewVar({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat"});
     setShowAddVar(false);
   }
 
@@ -1928,23 +2067,47 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
   function fecharCotacao() {
     if(variedades.length===0){alert("Adicione variedades primeiro!");return;}
     if(window.confirm(`Fechar cotação com ${variedades.length} variedades? Isso gravará na aba Compras.`)){
-      // Grava cada variedade em Compras
-      const novasCompras = variedades.map(v=>{
-        const preco_medio = (v.sem_trat + v.trat1 + v.trat2) / 3;
+      // Agrupa por cultura e calcula preço médio
+      const porCultura = {};
+      variedades.forEach(v=>{
+        const cult = v.cultura||"Soja";
+        if(!porCultura[cult]) porCultura[cult] = [];
+        porCultura[cult].push(v);
+      });
+
+      // Cria registros em Compras (um por cultura)
+      const novasCompras = Object.entries(porCultura).map(([cult, vars])=>{
+        // Calcula preço médio da cultura (usa tratamento escolhido de cada variedade)
+        let precoTotal = 0;
+        vars.forEach(v=>{
+          let preco_selecionado = v.sem_trat;
+          if(v.tratamento_escolhido==="trat1") preco_selecionado = v.trat1;
+          else if(v.tratamento_escolhido==="trat2") preco_selecionado = v.trat2;
+          precoTotal += preco_selecionado;
+        });
+        const precoMedio = precoTotal / vars.length;
+
+        // Calcula total (preço médio × quantidade total de sacos)
+        const qtdTotal = vars.reduce((sum, v) => sum + (v.quantidade||0), 0);
+        const valorTotal = precoMedio * qtdTotal;
+
         return {
           id:Date.now()+"_"+Math.random(),
-          produto:v.nome,
+          produto:`Sementes ${cult}`,
           fornecedor:"Cotação Sementes",
-          qtd:1,
-          unidade:"bag/sc",
-          preco:preco_medio,
+          qtd:precoMedio, // Preço médio como qtd (vai mostrar o preço)
+          unidade:"R$/sc",
+          preco:precoMedio,
           data:new Date().toLocaleDateString("pt-BR"),
           safra:safraLabel,
-          obs:`sem_trat: ${fmtR2(v.sem_trat)} | trat1: ${fmtR2(v.trat1)} | trat2: ${fmtR2(v.trat2)}`
+          obs:`Preço Médio: ${fmtR2(precoMedio)} | Total Sacos: ${qtdTotal} | Valor Total: ${fmtR2(valorTotal)}`,
+          valor_total: valorTotal,
+          preco_medio: precoMedio
         };
       });
+      
       setCompras(c=>({...c,sementes:[...(c.sementes||[]),...novasCompras]}));
-      alert("✅ Cotação fechada e registrada em Compras!");
+      alert("✅ Cotação fechada! Preços médios calculados e registrados em Compras!");
       setVariedades([]);
     }
   }
@@ -1963,6 +2126,18 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
         <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #1a5c2e"}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Variedade</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Cultura</div>
+              <select value={newVar.cultura} onChange={e=>setNewVar(p=>({...p,cultura:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="Soja">Soja</option>
+                <option value="Milho">Milho</option>
+                <option value="Feijão">Feijão</option>
+                <option value="Trigo">Trigo</option>
+                <option value="Sorgo">Sorgo</option>
+                <option value="Arroz">Arroz</option>
+              </select>
+            </div>
             <div>
               <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Variedade</div>
               <input type="text" placeholder="Ex: P4537" value={newVar.nome} onChange={e=>setNewVar(p=>({...p,nome:e.target.value}))}
@@ -1983,6 +2158,30 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
               <input type="number" step="0.01" placeholder="0.00" value={newVar.trat2} onChange={e=>setNewVar(p=>({...p,trat2:e.target.value}))}
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade (Sacos)</div>
+              <input type="number" step="0.01" placeholder="0" value={newVar.quantidade} onChange={e=>setNewVar(p=>({...p,quantidade:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>População</div>
+              <input type="number" step="0.01" placeholder="0" value={newVar.populacao} onChange={e=>setNewVar(p=>({...p,populacao:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Vencimento</div>
+              <input type="date" value={newVar.vencimento} onChange={e=>setNewVar(p=>({...p,vencimento:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Tratamento Escolhido</div>
+              <select value={newVar.tratamento_escolhido} onChange={e=>setNewVar(p=>({...p,tratamento_escolhido:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="sem_trat">Sem Tratamento</option>
+                <option value="trat1">Tratamento 1</option>
+                <option value="trat2">Tratamento 2</option>
+              </select>
+            </div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:12}}>
             <button onClick={adicionarVariedade} style={{padding:"9px 20px",background:"#1a5c2e",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
@@ -1998,24 +2197,47 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
             <thead>
               <tr style={{background:"#f5f5f5"}}>
                 <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Variedade</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Cultura</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Sem Trat.</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 1</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 2</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Médio</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Tratamento</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Sacos</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>População</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {variedades.length===0?(<tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
+              {variedades.length===0?(<tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
               :variedades.map((v,i)=>{
-                const media = (v.sem_trat+v.trat1+v.trat2)/3;
                 return (
                   <tr key={v.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
                     <td style={{padding:"8px 12px",fontWeight:600}}>{v.nome}</td>
+                    <td style={{padding:"8px 12px",textAlign:"center",fontSize:11,color:"#666"}}>{v.cultura||"Soja"}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.sem_trat)}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat1)}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat2)}</td>
-                    <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#1a5c2e"}}>{fmtR2(media)}</td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <select value={v.tratamento_escolhido} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,tratamento_escolhido:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="sem_trat">Sem Trat.</option>
+                        <option value="trat1">Trat. 1</option>
+                        <option value="trat2">Trat. 2</option>
+                      </select>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={v.quantidade} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,quantidade:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"70px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={v.populacao} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,populacao:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"70px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <input type="date" value={v.vencimento} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,vencimento:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
                     <td style={{padding:"8px 12px",textAlign:"center"}}>
                       <button onClick={()=>deletarVariedade(v.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
                     </td>
@@ -2651,6 +2873,8 @@ function App() {
   const [cotSafSem,    setCotSafSem]        = useState(() => ls.get(KEYS.cotacoes+"_s_sem",  {}));
   const [variedadesVeraoSem, setVariedadesVeraoSem] = useState(() => ls.get(KEYS.cotacoes+"_v_sem_var", []));
   const [variedadesSafSem, setVariedadesSafSem] = useState(() => ls.get(KEYS.cotacoes+"_s_sem_var", []));
+  const [adubosVerao, setAdubosVerao] = useState(() => ls.get(KEYS.cotacoes+"_v_adub", []));
+  const [adubosSafrinha, setAdubosSafrinha] = useState(() => ls.get(KEYS.cotacoes+"_s_adub", []));
 
   // ── Fornecedores ──
   const [fornVeraoAdub, setFornVeraoAdub]   = useState(() => ls.get(KEYS.fornecedores+"_v_adub",  [...FORN_DEFAULT_ADUB]));
@@ -2685,6 +2909,9 @@ function App() {
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_ins",  cotSafIns);    }, [cotSafIns]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem",  cotSafSem);    }, [cotSafSem]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_v_sem_var", variedadesVeraoSem); }, [variedadesVeraoSem]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem); }, [variedadesSafSem]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_v_adub", adubosVerao); }, [adubosVerao]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_s_adub", adubosSafrinha); }, [adubosSafrinha]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem);   }, [variedadesSafSem]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_adub", fornVeraoAdub); }, [fornVeraoAdub]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_ins",  fornVeraoIns);  }, [fornVeraoIns]);
@@ -3020,6 +3247,8 @@ function App() {
       {view==="cot_s_adub" && <CotacaoView tipo="adub" safraLabel="Safrinha" produtos={prodSafAdub} allPrices={cotSafAdub}  setAllPrices={setCotSafAdub}  fornecedores={fornSafAdub}  setFornecedores={setFornSafAdub}  onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
       {view==="cot_s_ins"  && <CotacaoView tipo="ins"  safraLabel="Safrinha" produtos={prodSafIns}  allPrices={cotSafIns}   setAllPrices={setCotSafIns}   fornecedores={fornSafIns}   setFornecedores={setFornSafIns}   onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
       {view==="cot_s_sem"  && <CotacaoSementesView safraLabel="Safrinha" variedades={variedadesSafSem} setVariedades={setVariedadesSafSem} compras={compras} setCompras={setCompras}/>}
+      {view==="cot_v_adub_simple" && <CotacaoAdubacaoView safraLabel="Verão" adubos={adubosVerao} setAdubos={setAdubosVerao} compras={compras} setCompras={setCompras}/>}
+      {view==="cot_s_adub_simple" && <CotacaoAdubacaoView safraLabel="Safrinha" adubos={adubosSafrinha} setAdubos={setAdubosSafrinha} compras={compras} setCompras={setCompras}/>}
     </div>
   );
 }
