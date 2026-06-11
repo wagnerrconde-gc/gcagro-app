@@ -1902,6 +1902,149 @@ function gerarDocCotacao(tipo, tipoLabel, safraLabel, produtos, allPrices, forne
   URL.revokeObjectURL(url);
 }
 
+// ── CotacaoInsumosView ────────────────────────────────────────────────────────
+function CotacaoInsumosView({safraLabel, insumos, setInsumos, compras, setCompras}) {
+  const [showAddInsumo, setShowAddInsumo] = useState(false);
+  const [newInsumo, setNewInsumo] = useState({nome:"",preco:"",quantidade:"",unidade:"L"});
+
+  function adicionarInsumo() {
+    if(!newInsumo.nome.trim()) return;
+    setInsumos(i=>[...i,{
+      id:Date.now()+"",
+      nome:newInsumo.nome,
+      preco:parseFloat(newInsumo.preco)||0,
+      quantidade:parseFloat(newInsumo.quantidade)||0,
+      unidade:newInsumo.unidade||"L"
+    }]);
+    setNewInsumo({nome:"",preco:"",quantidade:"",unidade:"L"});
+    setShowAddInsumo(false);
+  }
+
+  function deletarInsumo(id) {
+    if(window.confirm("Remover este insumo?"))
+      setInsumos(i=>i.filter(ii=>ii.id!==id));
+  }
+
+  function fecharCotacao() {
+    if(insumos.length===0){alert("Adicione insumos primeiro!");return;}
+    if(window.confirm(`Fechar cotação com ${insumos.length} insumos? Isso gravará na aba Compras.`)){
+      const novasCompras = insumos.map(i=>{
+        return {
+          id:Date.now()+"_"+Math.random(),
+          produto:i.nome,
+          fornecedor:"Cotação Insumos",
+          qtd:i.quantidade||1,
+          unidade:i.unidade||"L",
+          preco:i.preco,
+          data:new Date().toLocaleDateString("pt-BR"),
+          safra:safraLabel,
+          obs:""
+        };
+      });
+      setCompras(c=>({...c,insumos:[...(c.insumos||[]),...novasCompras]}));
+      alert("✅ Cotação de Insumos fechada e registrada em Compras!");
+      setInsumos([]);
+    }
+  }
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div><div style={{fontSize:12,color:"#666"}}>Cotação Insumos · {safraLabel}</div><div style={{fontSize:18,fontWeight:800,color:"#5c3a8a"}}>💊 Cotação de Insumos</div></div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setShowAddInsumo(!showAddInsumo)} style={{padding:"8px 14px",background:"#5c3a8a",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar Insumo</button>
+          <button onClick={fecharCotacao} style={{padding:"8px 14px",background:"#7c5aa6",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
+        </div>
+      </div>
+
+      {showAddInsumo&&(
+        <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #5c3a8a"}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Insumo</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Produto</div>
+              <input type="text" placeholder="Ex: Herbicida XYZ" value={newInsumo.nome} onChange={e=>setNewInsumo(p=>({...p,nome:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Preço</div>
+              <input type="number" step="0.01" placeholder="0.00" value={newInsumo.preco} onChange={e=>setNewInsumo(p=>({...p,preco:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade</div>
+              <input type="number" step="0.01" placeholder="0" value={newInsumo.quantidade} onChange={e=>setNewInsumo(p=>({...p,quantidade:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
+              <select value={newInsumo.unidade} onChange={e=>setNewInsumo(p=>({...p,unidade:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="L">Litros (L)</option>
+                <option value="kg">Quilos (kg)</option>
+                <option value="un">Unidades</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:12}}>
+            <button onClick={adicionarInsumo} style={{padding:"9px 20px",background:"#5c3a8a",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
+            <button onClick={()=>setShowAddInsumo(false)} style={{padding:"9px 16px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{background:"#5c3a8a",color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:12}}>Insumos Cotados ({insumos.length})</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"#f5f5f5"}}>
+                <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Produto</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Preço</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Quantidade</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {insumos.length===0?(<tr><td colSpan={5} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum insumo adicionado.</td></tr>)
+              :insumos.map((i,idx)=>{
+                return (
+                  <tr key={i.id} style={{background:idx%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
+                    <td style={{padding:"8px 12px"}}>
+                      <input type="text" value={i.nome} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,nome:e.target.value}:x))}
+                        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3,boxSizing:"border-box"}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={i.preco} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,preco:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right"}}>
+                      <input type="number" step="0.01" value={i.quantidade} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,quantidade:parseFloat(e.target.value)||0}:x))}
+                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <select value={i.unidade} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,unidade:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="L">Litros (L)</option>
+                        <option value="kg">Quilos (kg)</option>
+                        <option value="un">Unidades</option>
+                      </select>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <button onClick={()=>deletarInsumo(i.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CotacaoAdubacaoView ───────────────────────────────────────────────────────
 function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras}) {
   const [showAddAdubo, setShowAddAdubo] = useState(false);
@@ -2008,7 +2151,10 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
               :adubos.map((a,i)=>{
                 return (
                   <tr key={a.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
-                    <td style={{padding:"8px 12px",fontWeight:600}}>{a.nome}</td>
+                    <td style={{padding:"8px 12px"}}>
+                      <input type="text" value={a.nome} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,nome:e.target.value}:x))}
+                        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3,boxSizing:"border-box"}}/>
+                    </td>
                     <td style={{padding:"8px 12px",textAlign:"right"}}>
                       <input type="number" step="0.01" value={a.preco} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,preco:parseFloat(e.target.value)||0}:x))}
                         style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
@@ -2096,7 +2242,7 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
           produto:`Sementes ${cult}`,
           fornecedor:"Cotação Sementes",
           qtd:precoMedio, // Preço médio como qtd (vai mostrar o preço)
-          unidade:"R$/sc",
+          unidade:"R$/bag",
           preco:precoMedio,
           data:new Date().toLocaleDateString("pt-BR"),
           safra:safraLabel,
@@ -2159,7 +2305,7 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
             <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade (Sacos)</div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade (Bags)</div>
               <input type="number" step="0.01" placeholder="0" value={newVar.quantidade} onChange={e=>setNewVar(p=>({...p,quantidade:e.target.value}))}
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
@@ -2202,7 +2348,7 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 1</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 2</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Tratamento</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Sacos</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Bags</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>População</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
@@ -2875,6 +3021,8 @@ function App() {
   const [variedadesSafSem, setVariedadesSafSem] = useState(() => ls.get(KEYS.cotacoes+"_s_sem_var", []));
   const [adubosVerao, setAdubosVerao] = useState(() => ls.get(KEYS.cotacoes+"_v_adub", []));
   const [adubosSafrinha, setAdubosSafrinha] = useState(() => ls.get(KEYS.cotacoes+"_s_adub", []));
+  const [insumosVerao, setInsumosVerao] = useState(() => ls.get(KEYS.cotacoes+"_v_ins", []));
+  const [insumosSafrinha, setInsumosSafrinha] = useState(() => ls.get(KEYS.cotacoes+"_s_ins", []));
 
   // ── Fornecedores ──
   const [fornVeraoAdub, setFornVeraoAdub]   = useState(() => ls.get(KEYS.fornecedores+"_v_adub",  [...FORN_DEFAULT_ADUB]));
@@ -2912,6 +3060,8 @@ function App() {
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem); }, [variedadesSafSem]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_v_adub", adubosVerao); }, [adubosVerao]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_adub", adubosSafrinha); }, [adubosSafrinha]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_v_ins", insumosVerao); }, [insumosVerao]);
+  useEffect(() => { ls.set(KEYS.cotacoes+"_s_ins", insumosSafrinha); }, [insumosSafrinha]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem);   }, [variedadesSafSem]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_adub", fornVeraoAdub); }, [fornVeraoAdub]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_ins",  fornVeraoIns);  }, [fornVeraoIns]);
@@ -3249,6 +3399,8 @@ function App() {
       {view==="cot_s_sem"  && <CotacaoSementesView safraLabel="Safrinha" variedades={variedadesSafSem} setVariedades={setVariedadesSafSem} compras={compras} setCompras={setCompras}/>}
       {view==="cot_v_adub_simple" && <CotacaoAdubacaoView safraLabel="Verão" adubos={adubosVerao} setAdubos={setAdubosVerao} compras={compras} setCompras={setCompras}/>}
       {view==="cot_s_adub_simple" && <CotacaoAdubacaoView safraLabel="Safrinha" adubos={adubosSafrinha} setAdubos={setAdubosSafrinha} compras={compras} setCompras={setCompras}/>}
+      {view==="cot_v_ins_simple" && <CotacaoInsumosView safraLabel="Verão" insumos={insumosVerao} setInsumos={setInsumosVerao} compras={compras} setCompras={setCompras}/>}
+      {view==="cot_s_ins_simple" && <CotacaoInsumosView safraLabel="Safrinha" insumos={insumosSafrinha} setInsumos={setInsumosSafrinha} compras={compras} setCompras={setCompras}/>}
     </div>
   );
 }
