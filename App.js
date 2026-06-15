@@ -2048,7 +2048,7 @@ function CotacaoInsumosView({safraLabel, insumos, setInsumos, compras, setCompra
 // ── CotacaoAdubacaoView ───────────────────────────────────────────────────────
 function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras}) {
   const [showAddAdubo, setShowAddAdubo] = useState(false);
-  const [newAdubo, setNewAdubo] = useState({nome:"",preco:"",toneladas:"",vencimento:""});
+  const [newAdubo, setNewAdubo] = useState({nome:"",preco:"",toneladas:"",vencimento:"",unidade:"ton"});
 
   function adicionarAdubo() {
     if(!newAdubo.nome.trim()) return;
@@ -2057,9 +2057,10 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
       nome:newAdubo.nome,
       preco:parseFloat(newAdubo.preco)||0,
       toneladas:parseFloat(newAdubo.toneladas)||0,
-      vencimento:newAdubo.vencimento||""
+      vencimento:newAdubo.vencimento||"",
+      unidade:newAdubo.unidade||"ton"
     }]);
-    setNewAdubo({nome:"",preco:"",toneladas:"",vencimento:""});
+    setNewAdubo({nome:"",preco:"",toneladas:"",vencimento:"",unidade:"ton"});
     setShowAddAdubo(false);
   }
 
@@ -2121,6 +2122,14 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
             <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
+              <select value={newAdubo.unidade} onChange={e=>setNewAdubo(p=>({...p,unidade:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="ton">Toneladas (ton)</option>
+                <option value="kg">Quilos (kg)</option>
+              </select>
+            </div>
+            <div>
               <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Vencimento</div>
               <input type="date" value={newAdubo.vencimento} onChange={e=>setNewAdubo(p=>({...p,vencimento:e.target.value}))}
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
@@ -2141,13 +2150,14 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
               <tr style={{background:"#f5f5f5"}}>
                 <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Produto</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Preço (R$/ton)</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Toneladas</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Quantidade</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {adubos.length===0?(<tr><td colSpan={5} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum adubo adicionado.</td></tr>)
+              {adubos.length===0?(<tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum adubo adicionado.</td></tr>)
               :adubos.map((a,i)=>{
                 return (
                   <tr key={a.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
@@ -2162,6 +2172,13 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
                     <td style={{padding:"8px 12px",textAlign:"right"}}>
                       <input type="number" step="0.01" value={a.toneladas} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,toneladas:parseFloat(e.target.value)||0}:x))}
                         style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <select value={a.unidade||"ton"} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,unidade:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="ton">Toneladas</option>
+                        <option value="kg">Quilos</option>
+                      </select>
                     </td>
                     <td style={{padding:"8px 12px",textAlign:"center"}}>
                       <input type="date" value={a.vencimento} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,vencimento:e.target.value}:x))}
@@ -2185,7 +2202,7 @@ function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras
 function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, setCompras}) {
   const [showAddVar, setShowAddVar] = useState(false);
   const [showRelatorio, setShowRelatorio] = useState(false);
-  const [newVar, setNewVar] = useState({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat"});
+  const [newVar, setNewVar] = useState({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat",unidade:"bags"});
 
   function adicionarVariedade() {
     if(!newVar.nome.trim()) return;
@@ -2199,9 +2216,10 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
       quantidade:parseFloat(newVar.quantidade)||0,
       populacao:parseFloat(newVar.populacao)||0,
       vencimento:newVar.vencimento||"",
-      tratamento_escolhido:newVar.tratamento_escolhido||"sem_trat"
+      tratamento_escolhido:newVar.tratamento_escolhido||"sem_trat",
+      unidade:newVar.unidade||"bags"
     }]);
-    setNewVar({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat"});
+    setNewVar({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat",unidade:"bags"});
     setShowAddVar(false);
   }
 
@@ -2305,7 +2323,15 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
             <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade (Bags)</div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
+              <select value={newVar.unidade} onChange={e=>setNewVar(p=>({...p,unidade:e.target.value}))}
+                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="bags">Bags</option>
+                <option value="sacos">Sacos</option>
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade</div>
               <input type="number" step="0.01" placeholder="0" value={newVar.quantidade} onChange={e=>setNewVar(p=>({...p,quantidade:e.target.value}))}
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
@@ -2348,14 +2374,15 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 1</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 2</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Tratamento</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Bags</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Qtd</th>
+                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>População</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {variedades.length===0?(<tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
+              {variedades.length===0?(<tr><td colSpan={11} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
               :variedades.map((v,i)=>{
                 return (
                   <tr key={v.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
@@ -2375,6 +2402,13 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
                     <td style={{padding:"8px 12px",textAlign:"right"}}>
                       <input type="number" step="0.01" value={v.quantidade} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,quantidade:parseFloat(e.target.value)||0}:x))}
                         style={{width:"70px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"center"}}>
+                      <select value={v.unidade||"bags"} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,unidade:e.target.value}:x))}
+                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="bags">Bags</option>
+                        <option value="sacos">Sacos</option>
+                      </select>
                     </td>
                     <td style={{padding:"8px 12px",textAlign:"right"}}>
                       <input type="number" step="0.01" value={v.populacao} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,populacao:parseFloat(e.target.value)||0}:x))}
