@@ -1173,7 +1173,7 @@ function ProdutividadeView({data, setData}) {
 function ComprasView({compras, setCompras}) {
   const [showAdd, setShowAdd] = useState(false);
   const [tabCat, setTabCat] = useState("sementes");
-  const [nova, setNova] = useState({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",obs:""});
+  const [nova, setNova] = useState({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",enviar:0,obs:""});
 
   const CATS = [{id:"sementes",label:"🌾 Sementes"},{id:"adubos",label:"🌱 Adubos"},{id:"insumos",label:"💊 Insumos"},{id:"cobertura",label:"🌿 Plantas Cobertura"}];
   const items = compras[tabCat]||[];
@@ -1182,7 +1182,7 @@ function ComprasView({compras, setCompras}) {
   function adicionar() {
     if(!nova.produto.trim()) return;
     setCompras(c=>({...c,[tabCat]:[...(c[tabCat]||[]),{...nova,id:Date.now()+"",preco:parseFloat(nova.preco)||0,qtd:parseFloat(nova.qtd)||0}]}));
-    setNova({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",obs:""});
+    setNova({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",enviar:0,obs:""});
     setShowAdd(false);
   }
 
@@ -1210,8 +1210,8 @@ function ComprasView({compras, setCompras}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
             {[{f:"produto",l:"Produto",t:"text"},{f:"fornecedor",l:"Fornecedor",t:"text"},
               {f:"qtd",l:"Quantidade",t:"number"},{f:"unidade",l:"Unidade",t:"text"},
-              {f:"preco",l:"Preço Unit.(R$)",t:"number"},{f:"data",l:"Data",t:"text"},
-              {f:"safra",l:"Safra",t:"text"},{f:"obs",l:"Obs.",t:"text"}
+              {f:"preco",l:"Preço Unit.(R$)",t:"number"},{f:"data",l:"Data",t:"date"},
+              {f:"obs",l:"Obs.",t:"text"}
             ].map(({f,l,t})=>(
               <div key={f}>
                 <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>{l}</div>
@@ -1219,6 +1219,18 @@ function ComprasView({compras, setCompras}) {
                   style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
               </div>
             ))}
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Safra</div>
+              <select value={nova.safra||""} onChange={e=>setNova(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+                <option value="">-- Selecione --</option>
+                <option value="Verão">Verão</option>
+                <option value="Safrinha">Safrinha</option>
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Enviar</div>
+              <input type="checkbox" checked={nova.enviar===1} onChange={e=>setNova(p=>({...p,enviar:e.target.checked?1:0}))} style={{width:"18px",height:"18px",cursor:"pointer",marginTop:6}}/>
+            </div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:12}}>
             <button onClick={adicionar} style={{padding:"9px 20px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
@@ -1232,24 +1244,25 @@ function ComprasView({compras, setCompras}) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:"#2e7d32",color:"#fff"}}>
-                {["Produto","Fornecedor","Qtd","Unid.","Preço","Total","Data","Safra","Obs",""].map(h=>(
+                {["Produto","Fornecedor","Qtd","Unid.","Preço","Total","Data","Safra","Enviar","Obs",""].map(h=>(
                   <th key={h} style={{padding:"7px 9px",textAlign:"left",fontSize:9,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {items.length===0?(<tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma compra registrada.</td></tr>)
+              {items.length===0?(<tr><td colSpan={11} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma compra registrada.</td></tr>)
               :items.map((item,i)=>(
                 <tr key={item.id||i} style={{background:i%2===0?"#fff":"#f9f9f9"}}>
-                  <td style={{padding:"6px 9px",fontWeight:600}}>{item.produto}</td>
-                  <td style={{padding:"6px 9px",color:"#555"}}>{item.fornecedor}</td>
-                  <td style={{padding:"6px 9px",textAlign:"right"}}>{fmtNum(item.qtd)}</td>
-                  <td style={{padding:"6px 9px",color:"#888"}}>{item.unidade}</td>
-                  <td style={{padding:"6px 9px",textAlign:"right"}}>{fmtR2(item.preco)}</td>
+                  <td style={{padding:"6px 9px"}}><input type="text" value={item.produto||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,produto:e.target.value}:x)}))} style={{width:"100%",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
+                  <td style={{padding:"6px 9px"}}><input type="text" value={item.fornecedor||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,fornecedor:e.target.value}:x)}))} style={{width:"100%",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
+                  <td style={{padding:"6px 9px"}}><input type="number" step="0.01" value={item.qtd||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,qtd:parseFloat(e.target.value)||0}:x)}))} style={{width:"70px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
+                  <td style={{padding:"6px 9px"}}><input type="text" value={item.unidade||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,unidade:e.target.value}:x)}))} style={{width:"60px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
+                  <td style={{padding:"6px 9px"}}><input type="number" step="0.01" value={item.preco||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,preco:parseFloat(e.target.value)||0}:x)}))} style={{width:"80px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
                   <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#2e7d32"}}>{fmtR((item.preco||0)*(item.qtd||1))}</td>
-                  <td style={{padding:"6px 9px",color:"#888"}}>{item.data}</td>
-                  <td style={{padding:"6px 9px",color:"#aaa",fontSize:10}}>{item.safra}</td>
-                  <td style={{padding:"6px 9px",color:"#aaa",fontSize:10}}>{item.obs}</td>
+                  <td style={{padding:"6px 9px"}}><input type="date" value={item.data||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,data:e.target.value}:x)}))} style={{width:"100px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
+                  <td style={{padding:"6px 9px"}}><select value={item.safra||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,safra:e.target.value}:x)}))} style={{width:"90px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}><option value="">-- Sel. --</option><option value="Verão">Verão</option><option value="Safrinha">Safrinha</option></select></td>
+                  <td style={{padding:"6px 9px",textAlign:"center"}}><input type="checkbox" checked={item.enviar===1} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,enviar:e.target.checked?1:0}:x)}))} style={{width:"16px",height:"16px",cursor:"pointer"}}/></td>
+                  <td style={{padding:"6px 9px"}}><input type="text" value={item.obs||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,obs:e.target.value}:x)}))} style={{width:"100%",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
                   <td style={{padding:"6px 4px",textAlign:"center"}}>
                     <button onClick={()=>setCompras(c=>({...c,[tabCat]:c[tabCat].filter((_,ri)=>ri!==i)}))} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:13}}>✕</button>
                   </td>
