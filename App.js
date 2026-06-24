@@ -1173,7 +1173,7 @@ function ProdutividadeView({data, setData}) {
 function ComprasView({compras, setCompras}) {
   const [showAdd, setShowAdd] = useState(false);
   const [tabCat, setTabCat] = useState("sementes");
-  const [nova, setNova] = useState({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",obs:""});
+  const [nova, setNova] = useState({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",enviar:0,obs:""});
 
   const CATS = [{id:"sementes",label:"🌾 Sementes"},{id:"adubos",label:"🌱 Adubos"},{id:"insumos",label:"💊 Insumos"},{id:"cobertura",label:"🌿 Plantas Cobertura"}];
   const items = compras[tabCat]||[];
@@ -1182,7 +1182,7 @@ function ComprasView({compras, setCompras}) {
   function adicionar() {
     if(!nova.produto.trim()) return;
     setCompras(c=>({...c,[tabCat]:[...(c[tabCat]||[]),{...nova,id:Date.now()+"",preco:parseFloat(nova.preco)||0,qtd:parseFloat(nova.qtd)||0}]}));
-    setNova({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",obs:""});
+    setNova({produto:"",fornecedor:"",preco:"",qtd:"",unidade:"sc",data:"",safra:"",enviar:0,obs:""});
     setShowAdd(false);
   }
 
@@ -1210,7 +1210,8 @@ function ComprasView({compras, setCompras}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
             {[{f:"produto",l:"Produto",t:"text"},{f:"fornecedor",l:"Fornecedor",t:"text"},
               {f:"qtd",l:"Quantidade",t:"number"},{f:"unidade",l:"Unidade",t:"text"},
-              {f:"preco",l:"Preço Unit.(R$)",t:"number"},{f:"data",l:"Data",t:"date"}
+              {f:"preco",l:"Preço Unit.(R$)",t:"number"},{f:"data",l:"Data",t:"date"},
+              {f:"obs",l:"Obs.",t:"text"}
             ].map(({f,l,t})=>(
               <div key={f}>
                 <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>{l}</div>
@@ -1220,8 +1221,7 @@ function ComprasView({compras, setCompras}) {
             ))}
             <div>
               <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Safra</div>
-              <select value={nova.safra||""} onChange={e=>setNova(p=>({...p,safra:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
+              <select value={nova.safra||""} onChange={e=>setNova(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
                 <option value="">-- Selecione --</option>
                 <option value="Verão">Verão</option>
                 <option value="Safrinha">Safrinha</option>
@@ -1229,13 +1229,7 @@ function ComprasView({compras, setCompras}) {
             </div>
             <div>
               <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Enviar</div>
-              <input type="checkbox" checked={nova.enviar===true||nova.enviar===1} onChange={e=>setNova(p=>({...p,enviar:e.target.checked?1:0}))}
-                style={{width:"18px",height:"18px",cursor:"pointer"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Obs.</div>
-              <input type="text" value={nova.obs||""} onChange={e=>setNova(p=>({...p,obs:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+              <input type="checkbox" checked={nova.enviar===1} onChange={e=>setNova(p=>({...p,enviar:e.target.checked?1:0}))} style={{width:"18px",height:"18px",cursor:"pointer",marginTop:6}}/>
             </div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:12}}>
@@ -1267,7 +1261,7 @@ function ComprasView({compras, setCompras}) {
                   <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#2e7d32"}}>{fmtR((item.preco||0)*(item.qtd||1))}</td>
                   <td style={{padding:"6px 9px"}}><input type="date" value={item.data||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,data:e.target.value}:x)}))} style={{width:"100px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
                   <td style={{padding:"6px 9px"}}><select value={item.safra||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,safra:e.target.value}:x)}))} style={{width:"90px",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}><option value="">-- Sel. --</option><option value="Verão">Verão</option><option value="Safrinha">Safrinha</option></select></td>
-                  <td style={{padding:"6px 9px",textAlign:"center"}}><input type="checkbox" checked={item.enviar===1||item.enviar===true} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,enviar:e.target.checked?1:0}:x)}))} style={{width:"16px",height:"16px",cursor:"pointer"}}/></td>
+                  <td style={{padding:"6px 9px",textAlign:"center"}}><input type="checkbox" checked={item.enviar===1} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,enviar:e.target.checked?1:0}:x)}))} style={{width:"16px",height:"16px",cursor:"pointer"}}/></td>
                   <td style={{padding:"6px 9px"}}><input type="text" value={item.obs||""} onChange={e=>setCompras(c=>({...c,[tabCat]:c[tabCat].map((x,xi)=>xi===i?{...x,obs:e.target.value}:x)}))} style={{width:"100%",border:"1px solid #ddd",padding:"4px",fontSize:11,boxSizing:"border-box",borderRadius:3}}/></td>
                   <td style={{padding:"6px 4px",textAlign:"center"}}>
                     <button onClick={()=>setCompras(c=>({...c,[tabCat]:c[tabCat].filter((_,ri)=>ri!==i)}))} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:13}}>✕</button>
@@ -1921,324 +1915,21 @@ function gerarDocCotacao(tipo, tipoLabel, safraLabel, produtos, allPrices, forne
   URL.revokeObjectURL(url);
 }
 
-// ── CotacaoInsumosView ────────────────────────────────────────────────────────
-function CotacaoInsumosView({safraLabel, insumos, setInsumos, compras, setCompras}) {
-  const [showAddInsumo, setShowAddInsumo] = useState(false);
-  const [newInsumo, setNewInsumo] = useState({nome:"",preco:"",quantidade:"",unidade:"L"});
-
-  function adicionarInsumo() {
-    if(!newInsumo.nome.trim()) return;
-    setInsumos(i=>[...i,{
-      id:Date.now()+"",
-      nome:newInsumo.nome,
-      preco:parseFloat(newInsumo.preco)||0,
-      quantidade:parseFloat(newInsumo.quantidade)||0,
-      unidade:newInsumo.unidade||"L"
-    }]);
-    setNewInsumo({nome:"",preco:"",quantidade:"",unidade:"L"});
-    setShowAddInsumo(false);
-  }
-
-  function deletarInsumo(id) {
-    if(window.confirm("Remover este insumo?"))
-      setInsumos(i=>i.filter(ii=>ii.id!==id));
-  }
-
-  function fecharCotacao() {
-    if(insumos.length===0){alert("Adicione insumos primeiro!");return;}
-    if(window.confirm(`Fechar cotação com ${insumos.length} insumos? Isso gravará na aba Compras.`)){
-      const novasCompras = insumos.map(i=>{
-        return {
-          id:Date.now()+"_"+Math.random(),
-          produto:i.nome,
-          fornecedor:"Cotação Insumos",
-          qtd:i.quantidade||1,
-          unidade:i.unidade||"L",
-          preco:i.preco,
-          data:new Date().toLocaleDateString("pt-BR"),
-          safra:safraLabel,
-          obs:""
-        };
-      });
-      setCompras(c=>({...c,insumos:[...(c.insumos||[]),...novasCompras]}));
-      alert("✅ Cotação de Insumos fechada e registrada em Compras!");
-      setInsumos([]);
-    }
-  }
-
-  return (
-    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div><div style={{fontSize:12,color:"#666"}}>Cotação Insumos · {safraLabel}</div><div style={{fontSize:18,fontWeight:800,color:"#5c3a8a"}}>💊 Cotação de Insumos</div></div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setShowAddInsumo(!showAddInsumo)} style={{padding:"8px 14px",background:"#5c3a8a",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar Insumo</button>
-          <button onClick={fecharCotacao} style={{padding:"8px 14px",background:"#7c5aa6",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
-        </div>
-      </div>
-
-      {showAddInsumo&&(
-        <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #5c3a8a"}}>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Insumo</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Produto</div>
-              <input type="text" placeholder="Ex: Herbicida XYZ" value={newInsumo.nome} onChange={e=>setNewInsumo(p=>({...p,nome:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Preço</div>
-              <input type="number" step="0.01" placeholder="0.00" value={newInsumo.preco} onChange={e=>setNewInsumo(p=>({...p,preco:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade</div>
-              <input type="number" step="0.01" placeholder="0" value={newInsumo.quantidade} onChange={e=>setNewInsumo(p=>({...p,quantidade:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
-              <select value={newInsumo.unidade} onChange={e=>setNewInsumo(p=>({...p,unidade:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
-                <option value="L">Litros (L)</option>
-                <option value="kg">Quilos (kg)</option>
-                <option value="un">Unidades</option>
-              </select>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:10,marginTop:12}}>
-            <button onClick={adicionarInsumo} style={{padding:"9px 20px",background:"#5c3a8a",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
-            <button onClick={()=>setShowAddInsumo(false)} style={{padding:"9px 16px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-        <div style={{background:"#5c3a8a",color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:12}}>Insumos Cotados ({insumos.length})</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{background:"#f5f5f5"}}>
-                <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Produto</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Preço</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Quantidade</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {insumos.length===0?(<tr><td colSpan={5} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum insumo adicionado.</td></tr>)
-              :insumos.map((i,idx)=>{
-                return (
-                  <tr key={i.id} style={{background:idx%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
-                    <td style={{padding:"8px 12px"}}>
-                      <input type="text" value={i.nome} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,nome:e.target.value}:x))}
-                        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3,boxSizing:"border-box"}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={i.preco} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,preco:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={i.quantidade} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,quantidade:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <select value={i.unidade} onChange={e=>setInsumos(ii=>ii.map(x=>x.id===i.id?{...x,unidade:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="L">Litros (L)</option>
-                        <option value="kg">Quilos (kg)</option>
-                        <option value="un">Unidades</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <button onClick={()=>deletarInsumo(i.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── CotacaoAdubacaoView ───────────────────────────────────────────────────────
-function CotacaoAdubacaoView({safraLabel, adubos, setAdubos, compras, setCompras}) {
-  const [showAddAdubo, setShowAddAdubo] = useState(false);
-  const [newAdubo, setNewAdubo] = useState({nome:"",preco:"",toneladas:"",vencimento:"",unidade:"ton"});
-
-  function adicionarAdubo() {
-    if(!newAdubo.nome.trim()) return;
-    setAdubos(a=>[...a,{
-      id:Date.now()+"",
-      nome:newAdubo.nome,
-      preco:parseFloat(newAdubo.preco)||0,
-      toneladas:parseFloat(newAdubo.toneladas)||0,
-      vencimento:newAdubo.vencimento||"",
-      unidade:newAdubo.unidade||"ton"
-    }]);
-    setNewAdubo({nome:"",preco:"",toneladas:"",vencimento:"",unidade:"ton"});
-    setShowAddAdubo(false);
-  }
-
-  function deletarAdubo(id) {
-    if(window.confirm("Remover este adubo?"))
-      setAdubos(a=>a.filter(aa=>aa.id!==id));
-  }
-
-  function fecharCotacao() {
-    if(adubos.length===0){alert("Adicione adubos primeiro!");return;}
-    if(window.confirm(`Fechar cotação com ${adubos.length} adubos? Isso gravará na aba Compras.`)){
-      const novasCompras = adubos.map(a=>{
-        return {
-          id:Date.now()+"_"+Math.random(),
-          produto:a.nome,
-          fornecedor:"Cotação Adubação",
-          qtd:a.toneladas||1,
-          unidade:"ton",
-          preco:a.preco,
-          data:new Date().toLocaleDateString("pt-BR"),
-          safra:safraLabel,
-          vencimento:a.vencimento,
-          obs:""
-        };
-      });
-      setCompras(c=>({...c,adubos:[...(c.adubos||[]),...novasCompras]}));
-      alert("✅ Cotação de Adubação fechada e registrada em Compras!");
-      setAdubos([]);
-    }
-  }
-
-  return (
-    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <div><div style={{fontSize:12,color:"#666"}}>Cotação Adubação · {safraLabel}</div><div style={{fontSize:18,fontWeight:800,color:"#8b4513"}}>🌾 Cotação de Adubação</div></div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setShowAddAdubo(!showAddAdubo)} style={{padding:"8px 14px",background:"#8b4513",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar Adubo</button>
-          <button onClick={fecharCotacao} style={{padding:"8px 14px",background:"#a0522d",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
-        </div>
-      </div>
-
-      {showAddAdubo&&(
-        <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #8b4513"}}>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Adubo</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Produto</div>
-              <input type="text" placeholder="Ex: Adubo NPK" value={newAdubo.nome} onChange={e=>setNewAdubo(p=>({...p,nome:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Preço (R$/ton)</div>
-              <input type="number" step="0.01" placeholder="0.00" value={newAdubo.preco} onChange={e=>setNewAdubo(p=>({...p,preco:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Toneladas</div>
-              <input type="number" step="0.01" placeholder="0" value={newAdubo.toneladas} onChange={e=>setNewAdubo(p=>({...p,toneladas:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
-              <select value={newAdubo.unidade} onChange={e=>setNewAdubo(p=>({...p,unidade:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
-                <option value="ton">Toneladas (ton)</option>
-                <option value="kg">Quilos (kg)</option>
-              </select>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Vencimento</div>
-              <input type="date" value={newAdubo.vencimento} onChange={e=>setNewAdubo(p=>({...p,vencimento:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:10,marginTop:12}}>
-            <button onClick={adicionarAdubo} style={{padding:"9px 20px",background:"#8b4513",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
-            <button onClick={()=>setShowAddAdubo(false)} style={{padding:"9px 16px",background:"#f5f5f5",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-        <div style={{background:"#8b4513",color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:12}}>Adubos Cotados ({adubos.length})</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-            <thead>
-              <tr style={{background:"#f5f5f5"}}>
-                <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Produto</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Preço (R$/ton)</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Quantidade</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adubos.length===0?(<tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhum adubo adicionado.</td></tr>)
-              :adubos.map((a,i)=>{
-                return (
-                  <tr key={a.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
-                    <td style={{padding:"8px 12px"}}>
-                      <input type="text" value={a.nome} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,nome:e.target.value}:x))}
-                        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3,boxSizing:"border-box"}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={a.preco} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,preco:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={a.toneladas} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,toneladas:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"100px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <select value={a.unidade||"ton"} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,unidade:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="ton">Toneladas</option>
-                        <option value="kg">Quilos</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <input type="date" value={a.vencimento} onChange={e=>setAdubos(aa=>aa.map(x=>x.id===a.id?{...x,vencimento:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <button onClick={()=>deletarAdubo(a.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── CotacaoSementesView ───────────────────────────────────────────────────────
 function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, setCompras}) {
   const [showAddVar, setShowAddVar] = useState(false);
-  const [showRelatorio, setShowRelatorio] = useState(false);
-  const [newVar, setNewVar] = useState({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat",unidade:"bags"});
+  const [newVar, setNewVar] = useState({nome:"",sem_trat:"",trat1:"",trat2:""});
 
   function adicionarVariedade() {
     if(!newVar.nome.trim()) return;
     setVariedades(v=>[...v,{
       id:Date.now()+"",
       nome:newVar.nome,
-      cultura:newVar.cultura||"Soja",
       sem_trat:parseFloat(newVar.sem_trat)||0,
       trat1:parseFloat(newVar.trat1)||0,
-      trat2:parseFloat(newVar.trat2)||0,
-      quantidade:parseFloat(newVar.quantidade)||0,
-      populacao:parseFloat(newVar.populacao)||0,
-      vencimento:newVar.vencimento||"",
-      tratamento_escolhido:newVar.tratamento_escolhido||"sem_trat",
-      unidade:newVar.unidade||"bags"
+      trat2:parseFloat(newVar.trat2)||0
     }]);
-    setNewVar({nome:"",cultura:"Soja",sem_trat:"",trat1:"",trat2:"",quantidade:"",populacao:"",vencimento:"",tratamento_escolhido:"sem_trat",unidade:"bags"});
+    setNewVar({nome:"",sem_trat:"",trat1:"",trat2:""});
     setShowAddVar(false);
   }
 
@@ -2250,47 +1941,23 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
   function fecharCotacao() {
     if(variedades.length===0){alert("Adicione variedades primeiro!");return;}
     if(window.confirm(`Fechar cotação com ${variedades.length} variedades? Isso gravará na aba Compras.`)){
-      // Agrupa por cultura e calcula preço médio
-      const porCultura = {};
-      variedades.forEach(v=>{
-        const cult = v.cultura||"Soja";
-        if(!porCultura[cult]) porCultura[cult] = [];
-        porCultura[cult].push(v);
-      });
-
-      // Cria registros em Compras (um por cultura)
-      const novasCompras = Object.entries(porCultura).map(([cult, vars])=>{
-        // Calcula preço médio da cultura (usa tratamento escolhido de cada variedade)
-        let precoTotal = 0;
-        vars.forEach(v=>{
-          let preco_selecionado = v.sem_trat;
-          if(v.tratamento_escolhido==="trat1") preco_selecionado = v.trat1;
-          else if(v.tratamento_escolhido==="trat2") preco_selecionado = v.trat2;
-          precoTotal += preco_selecionado;
-        });
-        const precoMedio = precoTotal / vars.length;
-
-        // Calcula total (preço médio × quantidade total de sacos)
-        const qtdTotal = vars.reduce((sum, v) => sum + (v.quantidade||0), 0);
-        const valorTotal = precoMedio * qtdTotal;
-
+      // Grava cada variedade em Compras
+      const novasCompras = variedades.map(v=>{
+        const preco_medio = (v.sem_trat + v.trat1 + v.trat2) / 3;
         return {
           id:Date.now()+"_"+Math.random(),
-          produto:`Sementes ${cult}`,
+          produto:v.nome,
           fornecedor:"Cotação Sementes",
-          qtd:precoMedio, // Preço médio como qtd (vai mostrar o preço)
-          unidade:"R$/bag",
-          preco:precoMedio,
+          qtd:1,
+          unidade:"bag/sc",
+          preco:preco_medio,
           data:new Date().toLocaleDateString("pt-BR"),
           safra:safraLabel,
-          obs:`Preço Médio: ${fmtR2(precoMedio)} | Total Sacos: ${qtdTotal} | Valor Total: ${fmtR2(valorTotal)}`,
-          valor_total: valorTotal,
-          preco_medio: precoMedio
+          obs:`sem_trat: ${fmtR2(v.sem_trat)} | trat1: ${fmtR2(v.trat1)} | trat2: ${fmtR2(v.trat2)}`
         };
       });
-      
       setCompras(c=>({...c,sementes:[...(c.sementes||[]),...novasCompras]}));
-      alert("✅ Cotação fechada! Preços médios calculados e registrados em Compras!");
+      alert("✅ Cotação fechada e registrada em Compras!");
       setVariedades([]);
     }
   }
@@ -2309,18 +1976,6 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
         <div style={{background:"#fff",borderRadius:10,padding:16,marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,0.1)",border:"2px solid #1a5c2e"}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Adicionar Variedade</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Cultura</div>
-              <select value={newVar.cultura} onChange={e=>setNewVar(p=>({...p,cultura:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
-                <option value="Soja">Soja</option>
-                <option value="Milho">Milho</option>
-                <option value="Feijão">Feijão</option>
-                <option value="Trigo">Trigo</option>
-                <option value="Sorgo">Sorgo</option>
-                <option value="Arroz">Arroz</option>
-              </select>
-            </div>
             <div>
               <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Variedade</div>
               <input type="text" placeholder="Ex: P4537" value={newVar.nome} onChange={e=>setNewVar(p=>({...p,nome:e.target.value}))}
@@ -2341,38 +1996,6 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
               <input type="number" step="0.01" placeholder="0.00" value={newVar.trat2} onChange={e=>setNewVar(p=>({...p,trat2:e.target.value}))}
                 style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
             </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Unidade</div>
-              <select value={newVar.unidade} onChange={e=>setNewVar(p=>({...p,unidade:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
-                <option value="bags">Bags</option>
-                <option value="sacos">Sacos</option>
-              </select>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Quantidade</div>
-              <input type="number" step="0.01" placeholder="0" value={newVar.quantidade} onChange={e=>setNewVar(p=>({...p,quantidade:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>População</div>
-              <input type="number" step="0.01" placeholder="0" value={newVar.populacao} onChange={e=>setNewVar(p=>({...p,populacao:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Vencimento</div>
-              <input type="date" value={newVar.vencimento} onChange={e=>setNewVar(p=>({...p,vencimento:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Tratamento Escolhido</div>
-              <select value={newVar.tratamento_escolhido} onChange={e=>setNewVar(p=>({...p,tratamento_escolhido:e.target.value}))}
-                style={{width:"100%",padding:"7px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}>
-                <option value="sem_trat">Sem Tratamento</option>
-                <option value="trat1">Tratamento 1</option>
-                <option value="trat2">Tratamento 2</option>
-              </select>
-            </div>
           </div>
           <div style={{display:"flex",gap:10,marginTop:12}}>
             <button onClick={adicionarVariedade} style={{padding:"9px 20px",background:"#1a5c2e",border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar</button>
@@ -2388,55 +2011,24 @@ function CotacaoSementesView({safraLabel, variedades, setVariedades, compras, se
             <thead>
               <tr style={{background:"#f5f5f5"}}>
                 <th style={{padding:"9px 12px",textAlign:"left",fontWeight:700}}>Variedade</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Cultura</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Sem Trat.</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 1</th>
                 <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Trat. 2</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Tratamento</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Qtd</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Unidade</th>
-                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>População</th>
-                <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Vencimento</th>
+                <th style={{padding:"9px 12px",textAlign:"right",fontWeight:700}}>Médio</th>
                 <th style={{padding:"9px 12px",textAlign:"center",fontWeight:700}}>Ação</th>
               </tr>
             </thead>
             <tbody>
-              {variedades.length===0?(<tr><td colSpan={11} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
+              {variedades.length===0?(<tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#aaa"}}>Nenhuma variedade adicionada.</td></tr>)
               :variedades.map((v,i)=>{
+                const media = (v.sem_trat+v.trat1+v.trat2)/3;
                 return (
                   <tr key={v.id} style={{background:i%2===0?"#fff":"#f9f9f9",borderBottom:"1px solid #eee"}}>
                     <td style={{padding:"8px 12px",fontWeight:600}}>{v.nome}</td>
-                    <td style={{padding:"8px 12px",textAlign:"center",fontSize:11,color:"#666"}}>{v.cultura||"Soja"}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.sem_trat)}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat1)}</td>
                     <td style={{padding:"8px 12px",textAlign:"right",color:"#666"}}>{fmtR2(v.trat2)}</td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <select value={v.tratamento_escolhido} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,tratamento_escolhido:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="sem_trat">Sem Trat.</option>
-                        <option value="trat1">Trat. 1</option>
-                        <option value="trat2">Trat. 2</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={v.quantidade} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,quantidade:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"70px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <select value={v.unidade||"bags"} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,unidade:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="bags">Bags</option>
-                        <option value="sacos">Sacos</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"right"}}>
-                      <input type="number" step="0.01" value={v.populacao} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,populacao:parseFloat(e.target.value)||0}:x))}
-                        style={{width:"70px",padding:"4px 6px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
-                    <td style={{padding:"8px 12px",textAlign:"center"}}>
-                      <input type="date" value={v.vencimento} onChange={e=>setVariedades(vv=>vv.map(x=>x.id===v.id?{...x,vencimento:e.target.value}:x))}
-                        style={{fontSize:11,padding:"4px 6px",border:"1px solid #ccc",borderRadius:3}}/>
-                    </td>
+                    <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#1a5c2e"}}>{fmtR2(media)}</td>
                     <td style={{padding:"8px 12px",textAlign:"center"}}>
                       <button onClick={()=>deletarVariedade(v.id)} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:14}}>✕</button>
                     </td>
@@ -3072,10 +2664,6 @@ function App() {
   const [cotSafSem,    setCotSafSem]        = useState(() => ls.get(KEYS.cotacoes+"_s_sem",  {}));
   const [variedadesVeraoSem, setVariedadesVeraoSem] = useState(() => ls.get(KEYS.cotacoes+"_v_sem_var", []));
   const [variedadesSafSem, setVariedadesSafSem] = useState(() => ls.get(KEYS.cotacoes+"_s_sem_var", []));
-  const [adubosVerao, setAdubosVerao] = useState(() => ls.get(KEYS.cotacoes+"_v_adub", []));
-  const [adubosSafrinha, setAdubosSafrinha] = useState(() => ls.get(KEYS.cotacoes+"_s_adub", []));
-  const [insumosVerao, setInsumosVerao] = useState(() => ls.get(KEYS.cotacoes+"_v_ins", []));
-  const [insumosSafrinha, setInsumosSafrinha] = useState(() => ls.get(KEYS.cotacoes+"_s_ins", []));
 
   // ── Fornecedores ──
   const [fornVeraoAdub, setFornVeraoAdub]   = useState(() => ls.get(KEYS.fornecedores+"_v_adub",  [...FORN_DEFAULT_ADUB]));
@@ -3110,11 +2698,6 @@ function App() {
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_ins",  cotSafIns);    }, [cotSafIns]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem",  cotSafSem);    }, [cotSafSem]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_v_sem_var", variedadesVeraoSem); }, [variedadesVeraoSem]);
-  useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem); }, [variedadesSafSem]);
-  useEffect(() => { ls.set(KEYS.cotacoes+"_v_adub", adubosVerao); }, [adubosVerao]);
-  useEffect(() => { ls.set(KEYS.cotacoes+"_s_adub", adubosSafrinha); }, [adubosSafrinha]);
-  useEffect(() => { ls.set(KEYS.cotacoes+"_v_ins", insumosVerao); }, [insumosVerao]);
-  useEffect(() => { ls.set(KEYS.cotacoes+"_s_ins", insumosSafrinha); }, [insumosSafrinha]);
   useEffect(() => { ls.set(KEYS.cotacoes+"_s_sem_var", variedadesSafSem);   }, [variedadesSafSem]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_adub", fornVeraoAdub); }, [fornVeraoAdub]);
   useEffect(() => { ls.set(KEYS.fornecedores+"_v_ins",  fornVeraoIns);  }, [fornVeraoIns]);
@@ -3221,17 +2804,17 @@ function App() {
       {id:"prog_verao",    icon:"🌱", label:"Programação Verão"},
       {id:"campo_verao",   icon:"🗺️", label:"Campo Verão"},
       {id:"ts_verao",      icon:"🌾", label:"TS / Kit Sulco Verão"},
+      {id:"cot_v_adub",    icon:"🌱", label:"Cotação Adubação"},
+      {id:"cot_v_ins",     icon:"💊", label:"Cotação Insumos"},
       {id:"cot_v_sem",     icon:"🌾", label:"Cotação Sementes"},
-      {id:"cot_v_adub_simple",    icon:"🌱", label:"Cotação Adubação"},
-      {id:"cot_v_ins_simple",     icon:"💊", label:"Cotação Insumos"},
     ]},
     { label:"🌾 Safrinha/Inverno", color:"#5c4a00", items:[
       {id:"prog_safrinha",   icon:"🌾", label:"Programação Safrinha"},
       {id:"campo_safrinha",  icon:"🗺️", label:"Campo Safrinha"},
       {id:"ts_safrinha",     icon:"🌾", label:"TS / Kit Sulco Safrinha"},
+      {id:"cot_s_adub",      icon:"🌱", label:"Cotação Adubação"},
+      {id:"cot_s_ins",       icon:"💊", label:"Cotação Insumos"},
       {id:"cot_s_sem",       icon:"🌾", label:"Cotação Sementes"},
-      {id:"cot_s_adub_simple",      icon:"🌱", label:"Cotação Adubação"},
-      {id:"cot_s_ins_simple",       icon:"💊", label:"Cotação Insumos"},
     ]},
     { label:"📊 Análises", color:"#1565C0", items:[
       {id:"resumo",        icon:"📊", label:"Resumo"},
@@ -3450,10 +3033,6 @@ function App() {
       {view==="cot_s_adub" && <CotacaoView tipo="adub" safraLabel="Safrinha" produtos={prodSafAdub} allPrices={cotSafAdub}  setAllPrices={setCotSafAdub}  fornecedores={fornSafAdub}  setFornecedores={setFornSafAdub}  onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
       {view==="cot_s_ins"  && <CotacaoView tipo="ins"  safraLabel="Safrinha" produtos={prodSafIns}  allPrices={cotSafIns}   setAllPrices={setCotSafIns}   fornecedores={fornSafIns}   setFornecedores={setFornSafIns}   onFechar={(d)=>fecharCotacao(d,setDataSafrinha)}/>}
       {view==="cot_s_sem"  && <CotacaoSementesView safraLabel="Safrinha" variedades={variedadesSafSem} setVariedades={setVariedadesSafSem} compras={compras} setCompras={setCompras}/>}
-      {view==="cot_v_adub_simple" && <CotacaoAdubacaoView safraLabel="Verão" adubos={adubosVerao} setAdubos={setAdubosVerao} compras={compras} setCompras={setCompras}/>}
-      {view==="cot_s_adub_simple" && <CotacaoAdubacaoView safraLabel="Safrinha" adubos={adubosSafrinha} setAdubos={setAdubosSafrinha} compras={compras} setCompras={setCompras}/>}
-      {view==="cot_v_ins_simple" && <CotacaoInsumosView safraLabel="Verão" insumos={insumosVerao} setInsumos={setInsumosVerao} compras={compras} setCompras={setCompras}/>}
-      {view==="cot_s_ins_simple" && <CotacaoInsumosView safraLabel="Safrinha" insumos={insumosSafrinha} setInsumos={setInsumosSafrinha} compras={compras} setCompras={setCompras}/>}
     </div>
   );
 }
