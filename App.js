@@ -1417,4 +1417,3 @@ function tdS(align,bg,color="#c8dff0",bold=false){return {padding:"7px 10px",bac
 export default App;
 
 
-export default App;
