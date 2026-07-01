@@ -50,7 +50,7 @@ const CULTURE_COLORS_INVERNO = {
   Sorgo:         { bg:"#3a1a5c", light:"#f3e5f5", accent:"#7b1fa2", badge:"#ab47bc" },
 };
 const CAT_ICONS = {
-  "Adubação":"🌱","Sementes / TS":"🌾","Kit Sulco":"🪱",
+  "Adubação":"🌱","Sementes":"🌾","TS":"🧪","Kit Sulco":"🪱",
   "Dessecação e Pós":"💧","Foliares":"🍃","Fungicidas":"🔬",
   "Inseticidas":"🛡️","Óleos / Adjuvantes":"🧴",
 };
@@ -104,6 +104,26 @@ function derivarAdubacao(data) {
 
 function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JSON.parse(r):def; } catch { return def; } }
 function saveLS(key, d)   { try { localStorage.setItem(key, JSON.stringify(d)); } catch(e) {} }
+
+// Divide a categoria antiga "Sementes / TS" em duas: "Sementes" (só a semente em si,
+// produtos que começam com "SEMENTE") e "TS" (tratamento de sementes, o resto).
+// Idempotente — roda em todo carregamento, então também migra dados já salvos no
+// localStorage sem perder nada que o usuário tenha editado ou adicionado.
+function splitSementesTS(cultureData) {
+  const nd = JSON.parse(JSON.stringify(cultureData));
+  Object.values(nd).forEach(culture => {
+    const idx = (culture.categories || []).findIndex(c => c.name === "Sementes / TS");
+    if (idx === -1) return;
+    const cat = culture.categories[idx];
+    const sementes = cat.products.filter(p => p.produto.trim().toUpperCase().startsWith("SEMENTE"));
+    const ts = cat.products.filter(p => !p.produto.trim().toUpperCase().startsWith("SEMENTE"));
+    const novas = [];
+    if (sementes.length) novas.push({ name:"Sementes", products:sementes });
+    if (ts.length) novas.push({ name:"TS", products:ts });
+    culture.categories.splice(idx, 1, ...novas);
+  });
+  return nd;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTAÇÃO DE PLANILHAS (Colheita, Financeiro)
@@ -777,8 +797,8 @@ function App() {
   const [safrasArquivadas, setSafrasArquivadas] = useState(() => loadLS(KEY_SAFRAS+"_arquivo", []));
 
   // ── Programação ──
-  const [dataVerao, setDataVerao] = useState(() => loadLS(KEY_PROG+"_verao", INITIAL_DATA_VERAO));
-  const [dataInverno, setDataInverno] = useState(() => loadLS(KEY_PROG+"_inverno", INITIAL_DATA_INVERNO));
+  const [dataVerao, setDataVerao] = useState(() => splitSementesTS(loadLS(KEY_PROG+"_verao", INITIAL_DATA_VERAO)));
+  const [dataInverno, setDataInverno] = useState(() => splitSementesTS(loadLS(KEY_PROG+"_inverno", INITIAL_DATA_INVERNO)));
 
   // ── Cotação ──
   const [cotVeraoAdub, setCotVeraoAdub]   = useState(() => loadLS(KEY_COTACAO+"_verao_adub", {}));
