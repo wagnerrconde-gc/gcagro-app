@@ -807,7 +807,8 @@ function App() {
   const [cotInvIns, setCotInvIns]         = useState(() => loadLS(KEY_COTACAO+"_inv_ins", {}));
 
   // ── UI ──
-  const [appView, setAppView]             = useState("prog_verao");
+  const [appView, setAppView]             = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [activeCultureVerao, setActiveCultureVerao] = useState("Soja");
   const [activeCultureInverno, setActiveCultureInverno] = useState("Milho");
   const [expandedCats, setExpandedCats]   = useState({});
@@ -1133,22 +1134,23 @@ function App() {
 
   // ── NAV ──
   const isCotView = appView.startsWith("cot_");
-  const navBg = isCotView ? "#0d1e36" : appView.startsWith("prog_inv")||appView.startsWith("resumo_inv") ? "#2c1810" : colors.bg;
+  const navBg = appView==="dashboard" ? "#1a5c2e" : isCotView ? "#0d1e36" : appView.startsWith("prog_inv")||appView.startsWith("resumo_inv") ? "#2c1810" : colors.bg;
 
   const MAIN_TABS = [
-    { id:"prog_verao",   label:"🌱 Verão",       sub:"Set–Abr" },
-    { id:"prog_inv",     label:"🌾 Inverno",      sub:"Jan–Set" },
-    { id:"resumo_verao", label:"📊 Resumo Verão", sub:"" },
-    { id:"resumo_inv",   label:"📊 Resumo Inv.",  sub:"" },
-    { id:"cot_verao_adub", label:"🌱 Cot. Adub. Verão",  sub:"" },
-    { id:"cot_verao_ins",  label:"💰 Cot. Ins. Verão",   sub:"" },
-    { id:"cot_inv_adub",   label:"🌱 Cot. Adub. Inv.",   sub:"" },
-    { id:"cot_inv_ins",    label:"💰 Cot. Ins. Inv.",    sub:"" },
-    { id:"plan_verao",     label:"🗺️ Plano Verão",       sub:"" },
-    { id:"plan_inv",       label:"🗺️ Plano Inverno",     sub:"" },
-    { id:"colheita",       label:"🌾 Colheita",          sub:"" },
-    { id:"financeiro",     label:"💵 Financeiro",        sub:"" },
-    { id:"safras",         label:"🗂️ Safras",             sub:"" },
+    { id:"dashboard",      label:"Dashboard",           icon:"📊", group:null },
+    { id:"prog_verao",     label:"Verão",                icon:"🌱", group:"Programação" },
+    { id:"prog_inv",       label:"Inverno",               icon:"🌾", group:"Programação" },
+    { id:"resumo_verao",   label:"Resumo Verão",          icon:"📈", group:"Resumos" },
+    { id:"resumo_inv",     label:"Resumo Inverno",        icon:"📈", group:"Resumos" },
+    { id:"cot_verao_adub", label:"Cot. Adub. Verão",      icon:"🌱", group:"Cotação" },
+    { id:"cot_verao_ins",  label:"Cot. Insumos Verão",    icon:"💰", group:"Cotação" },
+    { id:"cot_inv_adub",   label:"Cot. Adub. Inverno",    icon:"🌱", group:"Cotação" },
+    { id:"cot_inv_ins",    label:"Cot. Insumos Inverno",  icon:"💰", group:"Cotação" },
+    { id:"plan_verao",     label:"Plano Verão",           icon:"🗺️", group:"Planejamento" },
+    { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
+    { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
+    { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
+    { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
   ];
 
   // ── Set cotContext when entering cot views ──
@@ -1167,19 +1169,10 @@ function App() {
       <div style={{background:navBg,color:"#fff",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",height:52}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={()=>setSidebarOpen(true)} aria-label="Abrir menu"
+              style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,color:"#fff",width:34,height:34,fontSize:17,cursor:"pointer"}}>☰</button>
             <span style={{fontSize:17,fontWeight:800,letterSpacing:1}}>🌿 GC Agro</span>
             <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10}}>{safraAtiva}</span>
-          </div>
-          <div style={{display:"flex",gap:2,overflowX:"auto"}}>
-            {MAIN_TABS.map(t=>(
-              <button key={t.id} onClick={()=>setAppView(t.id)}
-                style={{padding:"6px 10px",background:appView===t.id?"rgba(255,255,255,0.2)":"transparent",border:"none",
-                  borderBottom:appView===t.id?"2px solid rgba(255,255,255,0.9)":"2px solid transparent",
-                  color:"#fff",fontSize:11,cursor:"pointer",fontWeight:appView===t.id?700:400,
-                  opacity:appView===t.id?1:0.7,whiteSpace:"nowrap"}}>
-                {t.label}
-              </button>
-            ))}
           </div>
           <div style={{display:"flex",gap:6}}>
             <button onClick={()=>printView(appView)} style={{padding:"6px 12px",background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>📄 PDF</button>
@@ -1202,6 +1195,163 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* ── SIDEBAR (gaveta) ── */}
+      {sidebarOpen && (
+        <div onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:290}}/>
+      )}
+      <div style={{position:"fixed",top:0,left:0,bottom:0,width:270,background:"#0d1f14",zIndex:291,
+          transform:sidebarOpen?"translateX(0)":"translateX(-105%)",transition:"transform 0.25s ease",
+          overflowY:"auto",boxShadow:"4px 0 24px rgba(0,0,0,0.35)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 16px 12px",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+          <span style={{fontSize:16,fontWeight:800,color:"#fff",letterSpacing:1}}>🌿 GC Agro</span>
+          <button onClick={()=>setSidebarOpen(false)} aria-label="Fechar menu"
+            style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:6,color:"#fff",width:30,height:30,fontSize:15,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{padding:"10px 10px 24px"}}>
+          {MAIN_TABS.map((t,i)=>{
+            const prevGroup = i>0 ? MAIN_TABS[i-1].group : undefined;
+            const showHeader = t.group && t.group!==prevGroup;
+            const active = appView===t.id;
+            return (
+              <div key={t.id}>
+                {showHeader && <div style={{padding:"14px 10px 4px",fontSize:10,letterSpacing:2,textTransform:"uppercase",color:"#5a8a6a"}}>{t.group}</div>}
+                <button onClick={()=>{setAppView(t.id);setSidebarOpen(false);}}
+                  style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:2,
+                    background:active?"rgba(255,255,255,0.14)":"transparent",border:"none",borderRadius:8,
+                    color:"#fff",fontSize:13,fontWeight:active?700:400,cursor:"pointer"}}>
+                  <span style={{fontSize:15}}>{t.icon}</span><span>{t.label}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════
+          DASHBOARD
+      ══════════════════════════════════════════════════════ */}
+      {appView==="dashboard" && (()=>{
+        const culturasVerao = summaryVerao.filter(c=>c.ativo);
+        const culturasInverno = summaryInverno.filter(c=>c.ativo);
+        const areaTotal = culturasVerao.reduce((s,c)=>s+c.area,0) + culturasInverno.reduce((s,c)=>s+c.area,0);
+        const maxAreaVerao = Math.max(1, ...culturasVerao.map(c=>c.area), 0);
+        const maxAreaInverno = Math.max(1, ...culturasInverno.map(c=>c.area), 0);
+        const maxFin = Math.max(1, ...financeiroTotais.porCategoria.map(c=>Math.max(c.orcado,c.realizado)), 0);
+        const NAV_CARDS = [
+          { id:"prog_verao",  label:"Programação Verão",   icon:"🌱", color:"#1a5c2e" },
+          { id:"prog_inv",    label:"Programação Inverno", icon:"🌾", color:"#5c4a00" },
+          { id:"plan_verao",  label:"Planejamento Verão",  icon:"🗺️", color:"#1565C0" },
+          { id:"plan_inv",    label:"Planejamento Inverno",icon:"🗺️", color:"#1565C0" },
+          { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
+          { id:"financeiro",  label:"Financeiro",          icon:"💵", color:"#6a1b9a" },
+          { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
+        ];
+
+        return (
+          <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>Olá! 👋</div>
+              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva}</div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Área total (ativas)</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#1a3a1a"}}>{fmtN(areaTotal,1)} ha</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Custo insumos (Verão+Inv.)</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#1a3a1a"}}>{fmt(refInsumosSafraAtiva)}</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Colhido</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalSacas,0)} sc</div>
+                <div style={{fontSize:11,color:"#999"}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Saldo financeiro</div>
+                <div style={{fontSize:22,fontWeight:800,color:financeiroTotais.saldo<0?"#c62828":"#2e7d32"}}>{fmt(financeiroTotais.saldo)}</div>
+                <div style={{fontSize:11,color:"#999"}}>Orçado {fmt(financeiroTotais.orcado)}</div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:20}}>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#1a3a1a",marginBottom:12}}>🌱 Área — Verão</div>
+                {culturasVerao.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
+                {culturasVerao.map(c=>{
+                  const cc = CULTURE_COLORS_VERAO[c.name]||{bg:"#546e7a"};
+                  const pct = (c.area/maxAreaVerao)*100;
+                  return (
+                    <div key={c.name} style={{marginBottom:10}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                        <span style={{fontWeight:600,color:"#333"}}>{c.name}</span><span style={{color:"#888"}}>{fmtN(c.area,1)} ha</span>
+                      </div>
+                      <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#5c4a00",marginBottom:12}}>🌾 Área — Inverno</div>
+                {culturasInverno.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
+                {culturasInverno.map(c=>{
+                  const cc = CULTURE_COLORS_INVERNO[c.name]||{bg:"#546e7a"};
+                  const pct = (c.area/maxAreaInverno)*100;
+                  return (
+                    <div key={c.name} style={{marginBottom:10}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                        <span style={{fontWeight:600,color:"#333"}}>{c.name}</span><span style={{color:"#888"}}>{fmtN(c.area,1)} ha</span>
+                      </div>
+                      <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {financeiroTotais.porCategoria.length>0 && (
+              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:20}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#6a1b9a",marginBottom:12}}>💵 Financeiro — Orçado x Realizado</div>
+                {financeiroTotais.porCategoria.map(c=>(
+                  <div key={c.categoria} style={{marginBottom:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{fontWeight:600,color:"#333"}}>{c.categoria}</span>
+                      <span style={{color:"#888"}}>{fmt(c.orcado)} / {fmt(c.realizado)}</span>
+                    </div>
+                    <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden",marginBottom:2}}>
+                      <div style={{height:"100%",width:`${(c.orcado/maxFin)*100}%`,background:"#ce93d8",borderRadius:4}}/>
+                    </div>
+                    <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${(c.realizado/maxFin)*100}%`,background:c.realizado>c.orcado?"#c62828":"#6a1b9a",borderRadius:4}}/>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:14,fontSize:10,color:"#999",marginTop:8}}>
+                  <span><span style={{display:"inline-block",width:8,height:8,background:"#ce93d8",borderRadius:2,marginRight:4}}/>Orçado</span>
+                  <span><span style={{display:"inline-block",width:8,height:8,background:"#6a1b9a",borderRadius:2,marginRight:4}}/>Realizado</span>
+                </div>
+              </div>
+            )}
+
+            <div style={{fontSize:13,fontWeight:700,color:"#1a3a1a",marginBottom:10}}>Acesso rápido</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+              {NAV_CARDS.map(nc=>(
+                <button key={nc.id} onClick={()=>setAppView(nc.id)}
+                  style={{background:"#fff",border:"none",borderRadius:12,padding:"16px 14px",textAlign:"left",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                  <div style={{fontSize:22,marginBottom:6}}>{nc.icon}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:nc.color}}>{nc.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════
           PROGRAMAÇÃO
