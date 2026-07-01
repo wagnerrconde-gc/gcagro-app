@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+const { useState, useMemo, useEffect, useRef } = React;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIREBASE CONFIG — substitua pelos seus valores do Firebase Console
@@ -478,7 +478,7 @@ const INITIAL_DATA_INVERNO = {
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
-export default function App() {
+function App() {
   // ── Safras ──
   const [safraAtiva, setSafraAtiva] = useState(() => loadLS(KEY_SAFRAS+"_ativa", "Verão 25/26"));
   const [safrasArquivadas, setSafrasArquivadas] = useState(() => loadLS(KEY_SAFRAS+"_arquivo", []));
@@ -1412,8 +1412,4 @@ export default function App() {
 function StatC({label,value,color}){return <div style={{background:"#0d1e36",borderRadius:7,padding:"9px 11px"}}><div style={{fontSize:9,color:"#5a7a9a",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{label}</div><div style={{fontSize:12,fontWeight:700,color}}>{value}</div></div>;}
 function thS(align,bg,color="#7a9ab8"){return {padding:"8px 10px",background:bg,color,textAlign:align,fontSize:10,letterSpacing:1,fontWeight:600,textTransform:"uppercase",whiteSpace:"nowrap",border:"1px solid #1e3a5f22"};}
 function tdS(align,bg,color="#c8dff0",bold=false){return {padding:"7px 10px",background:bg,color,textAlign:align,fontSize:11,fontWeight:bold?700:400,border:"1px solid #1e3a5f22",whiteSpace:"nowrap"};}
--e 
-
-export default App;
-
 

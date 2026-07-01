@@ -33,7 +33,7 @@
     fetch('./App.js')
       .then(r => r.text())
       .then(code => {
-        const transformed = Babel.transform(code, { presets: ['react'] }).code;
+        const transformed = Babel.transform(code, { presets: [["react", { runtime: "classic" }]] }).code;
         const script = document.createElement('script');
         script.textContent = transformed;
         document.head.appendChild(script);
