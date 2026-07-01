@@ -19,9 +19,9 @@ const FIREBASE_CONFIG = {
 const KEY_PROG       = "gcagro_prog_v2";
 const KEY_COTACAO    = "gcagro_cotacao_v2";
 const KEY_SAFRAS     = "gcagro_safras_v2";
-const KEY_COLHEITA   = "gcagro_colheita_v1";
-const KEY_ESTOQUE    = "gcagro_estoque_v1";
+const KEY_COLHEITA   = "gcagro_colheita_v2";
 const KEY_FINANCEIRO = "gcagro_financeiro_v1";
+const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -106,7 +106,7 @@ function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JS
 function saveLS(key, d)   { try { localStorage.setItem(key, JSON.stringify(d)); } catch(e) {} }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IMPORTAÇÃO DE PLANILHAS (Colheita, Estoque, Financeiro)
+// IMPORTAÇÃO DE PLANILHAS (Colheita, Financeiro)
 // ─────────────────────────────────────────────────────────────────────────────
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
@@ -221,24 +221,15 @@ async function importSpreadsheet(file, aliasMap, buildRecord, setRecords, onDone
 }
 
 const ALIASES_COLHEITA = {
+  lote:     ["lote","talhao","campo","area_nome","area_talhao","lote_fazenda"],
   cultura:  ["cultura","culture","cultivo"],
-  talhao:   ["talhao","lote","campo","area_nome","area_talhao"],
   data:     ["data","data_colheita","dia"],
   area_ha:  ["area_ha","area","area_colhida","ha","hectares"],
   sacas:    ["sacas","sc","sacas_colhidas","quantidade_sacas","sc_60kg","qtd_sacas"],
   kg:       ["kg","quilos","peso_kg","kg_colhidos"],
   umidade:  ["umidade","umidade_pct","umidade_percent","umid"],
+  pmg:      ["pmg","peso_mil_graos","peso_de_mil_graos","pmg_g"],
   obs:      ["obs","observacao","observacoes"],
-};
-const ALIASES_ESTOQUE = {
-  produto:    ["produto","item","insumo"],
-  categoria:  ["categoria","cat","tipo_produto","grupo"],
-  unidade:    ["unidade","und","un","medida"],
-  tipo:       ["tipo","tipo_movimento","movimento","entrada_saida"],
-  data:       ["data","data_movimento","dia"],
-  quantidade: ["quantidade","qtd","qtde","quant"],
-  parceiro:   ["fornecedor","destino","fornecedor_destino","parceiro"],
-  obs:        ["obs","observacao","observacoes"],
 };
 const ALIASES_FINANCEIRO = {
   safra:      ["safra"],
@@ -251,19 +242,26 @@ const ALIASES_FINANCEIRO = {
   obs:        ["obs","observacao","observacoes"],
 };
 
-function buildColheitaRecord(m, safraAtiva) {
-  if (!m.cultura && !m.talhao) return null;
-  const areaHa = toNum(m.area_ha);
-  const sacas = m.sacas != null ? toNum(m.sacas) : (m.kg != null ? toNum(m.kg) / 60 : 0);
-  return { id:newId(), safra:safraAtiva, cultura:String(m.cultura||"").trim(), talhao:String(m.talhao||"").trim(),
-    data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), obs:String(m.obs||"").trim() };
+// Indexa os lotes do Planejamento de Campo (Verão + Safrinha) por nome, para a
+// Colheita resolver cultura/área/previsão automaticamente a partir do lote escolhido.
+function makeLoteResolver(planVerao, planSafrinha) {
+  const index = {};
+  planVerao.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"verao", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita }; });
+  planSafrinha.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"inv", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita }; });
+  return (loteNome) => index[String(loteNome||"").trim().toLowerCase()] || null;
 }
-function buildEstoqueRecord(m) {
-  if (!m.produto) return null;
-  const tipo = String(m.tipo||"").trim().toLowerCase().startsWith("s") ? "saida" : "entrada";
-  return { id:newId(), produto:String(m.produto).trim(), categoria:String(m.categoria||"Outros").trim(),
-    unidade:String(m.unidade||"un").trim(), tipo, data:formatMaybeDate(m.data),
-    quantidade:toNum(m.quantidade), parceiro:String(m.parceiro||"").trim(), obs:String(m.obs||"").trim() };
+
+function buildColheitaRecord(m, safraAtiva, resolveLote) {
+  const loteNome = String(m.lote||"").trim();
+  if (!loteNome && !m.cultura) return null;
+  const found = loteNome ? resolveLote(loteNome) : null;
+  const areaHa = m.area_ha != null ? toNum(m.area_ha) : (found ? found.areaHa : 0);
+  const sacas = m.sacas != null ? toNum(m.sacas) : (m.kg != null ? toNum(m.kg) / 60 : 0);
+  return { id:newId(), safra:safraAtiva, tipo: found ? found.tipo : "verao",
+    loteId: found ? found.loteId : null, lote: loteNome || (found ? found.lote : ""),
+    cultura: String(m.cultura || (found ? found.cultura : "")).trim(),
+    previsaoColheita: found ? found.previsaoColheita : "",
+    data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), pmg:toNum(m.pmg), obs:String(m.obs||"").trim() };
 }
 function buildFinanceiroRecord(m, safraAtiva) {
   if (!m.descricao && !m.categoria) return null;
@@ -651,6 +649,125 @@ const INITIAL_DATA_INVERNO = {
   "Milho Sequeiro": { area:0, ativo:false, op_costs:{ PLANTIO:300, "APLICAÇÕES":300, FRETE:300, COLHEITA:300, "INVESTIMENTO SOLO":490 }, categories:[] },
   "Sorgo": { area:0, ativo:false, op_costs:{ PLANTIO:300, "APLICAÇÕES":300, FRETE:300, COLHEITA:300 }, categories:[] },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLANEJAMENTO DE CAMPO — dados por lote/talhão (recuperados de um commit anterior
+// que havia sido sobrescrito por engano por um "restore" de backup mais antigo)
+// ─────────────────────────────────────────────────────────────────────────────
+const PLAN_VERAO_INICIAL = [
+  {id:"pv1",lote:"LOTE 11 PIVOT 01",area:100,cultura:"Soja",variedade:"NEO 761 I2X",adubacao:"Yara Basa 128 kg",kcl:"241 kg",ciclo:117,populacao:12,dataPlantio:"16/10/2025",previsaoColheita:"10/02/2026",obs:""},
+  {id:"pv2",lote:"LOTE 11 PIVOT 02",area:80.5,cultura:"Soja",variedade:"OLIMPO IPRO / DM 78IX80 I2X",adubacao:"Yara Basa 44 kg",kcl:"250 kg",ciclo:123,populacao:10.5,dataPlantio:"11/10/2025",previsaoColheita:"11/02/2026",obs:""},
+  {id:"pv3",lote:"LOTE 11 PIVOT 03",area:41,cultura:"Soja",variedade:"RAPTOR I2X / NEO 700 I2X",adubacao:"Yara Basa 164 kg",kcl:"223 kg",ciclo:107,populacao:12,dataPlantio:"14/10/2025",previsaoColheita:"29/01/2026",obs:""},
+  {id:"pv4",lote:"LOTE 11 PIVOT 04",area:13.5,cultura:"Milho",variedade:"AS 1868 PRO 4",adubacao:"Yara Basa 124 kg",kcl:"250 kg",ciclo:135,populacao:3.5,dataPlantio:"06/11/2025",previsaoColheita:"21/03/2026",obs:""},
+  {id:"pv5",lote:"LOTE 11 SEQUEIRO BICOS",area:54,cultura:"Milho",variedade:"FS 695 PWU / DKB 358 PRO 4 / AS 1868",adubacao:"Yara Basa 122 kg",kcl:"217 kg",ciclo:135,populacao:3.5,dataPlantio:"06/11/2025",previsaoColheita:"21/03/2026",obs:""},
+  {id:"pv6",lote:"LOTE 11 BICOS DIVISA",area:36,cultura:"Soja",variedade:"NS 7524 IPRO",adubacao:"Yara Basa 122 kg",kcl:"217 kg",ciclo:117,populacao:12.5,dataPlantio:"06/11/2025",previsaoColheita:"03/03/2026",obs:""},
+  {id:"pv7",lote:"LOTE 11 SEQUEIRO MUTHEMA",area:38,cultura:"Soja",variedade:"NS 7524 IPRO",adubacao:"Yara Basa 122 kg",kcl:"217 kg",ciclo:117,populacao:12.5,dataPlantio:"05/11/2025",previsaoColheita:"02/03/2026",obs:""},
+  {id:"pv8",lote:"LOTE 13 PIVOT 01",area:101.5,cultura:"Soja",variedade:"TORMENTA CE / MITICA CE",adubacao:"Yara Basa 14 kg",kcl:"226 kg",ciclo:115,populacao:12.5,dataPlantio:"14/10/2025",previsaoColheita:"06/02/2026",obs:""},
+  {id:"pv9",lote:"LOTE 13 PIVOT 02",area:57.5,cultura:"Soja",variedade:"OLIMPO IPRO",adubacao:"Yara Basa 129 kg",kcl:"220 kg",ciclo:123,populacao:10.5,dataPlantio:"10/10/2025",previsaoColheita:"10/02/2026",obs:""},
+  {id:"pv10",lote:"LOTE 13 PIVOT 03",area:26.5,cultura:"Milho",variedade:"FS 695 PWU RR / DKB 358 PRO 4",adubacao:"Yara Basa 179 kg",kcl:"217 kg",ciclo:135,populacao:3.5,dataPlantio:"05/11/2025",previsaoColheita:"20/03/2026",obs:""},
+  {id:"pv11",lote:"LOTE 13 SEQUEIRO",area:119.5,cultura:"Soja",variedade:"TORMENTA CE",adubacao:"Yara Basa 66 kg",kcl:"221 kg",ciclo:115,populacao:12.5,dataPlantio:"05/11/2025",previsaoColheita:"28/02/2026",obs:""},
+  {id:"pv12",lote:"LOTE 38",area:132,cultura:"Soja",variedade:"NS 7676 IPRO",adubacao:"Fort OM 140 kg",kcl:"156 kg",ciclo:120,populacao:10,dataPlantio:"19/11/2025",previsaoColheita:"19/03/2026",obs:""},
+  {id:"pv13",lote:"LOTE 39",area:251.4,cultura:"Soja",variedade:"TORMENTA CE / B 5830 CE / NEO 761",adubacao:"Yara Basa 135 kg",kcl:"189 kg",ciclo:118,populacao:12,dataPlantio:"20/11/2025",previsaoColheita:"18/03/2026",obs:""},
+  {id:"pv14",lote:"LOTE 40",area:158,cultura:"Milho",variedade:"P 40537 PWU RR",adubacao:"Yara Basa 194 kg",kcl:"248 kg",ciclo:135,populacao:3.5,dataPlantio:"10/11/2025",previsaoColheita:"25/03/2026",obs:""},
+  {id:"pv15",lote:"LOTE 40 CHAPADÃO",area:136.5,cultura:"Feijão",variedade:"RAJADO FS 311",adubacao:"Fort OM 250 / Yara Basa 80 kg",kcl:"212 kg",ciclo:80,populacao:12,dataPlantio:"08/11/2025",previsaoColheita:"27/01/2026",obs:""},
+];
+const PLAN_SAFRINHA_INICIAL = [
+  {id:"ps1",lote:"LOTE 11 PIVOT 01",area:100,cultura:"Feijão Irrigado",variedade:"DAMA",adubacaoPlantio:"MAP 176 kg",cobertura:"KCl 139 kg",nCobertura:"Ureia 250 kg",populacao:0,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps2",lote:"LOTE 11 PIVOT 02",area:80.5,cultura:"Milho",variedade:"P3808 VYHR",adubacaoPlantio:"MAP 73 kg",cobertura:"KCl 250 kg",nCobertura:"Ureia 400 kg",populacao:3.4,dataPlantio:"",previsaoColheita:"",obs:"TSI Completo"},
+  {id:"ps3",lote:"LOTE 11 PIVOT 03",area:41,cultura:"Milho",variedade:"FS 695 PWURR",adubacaoPlantio:"MAP 211 kg",cobertura:"KCl 217 kg",nCobertura:"Ureia 400 kg",populacao:3.4,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps4",lote:"LOTE 11 PIVOT 04",area:14,cultura:"Feijão Irrigado",variedade:"DAMA",adubacaoPlantio:"MAP 150 kg",cobertura:"KCl 176 kg",nCobertura:"Ureia 250 kg",populacao:0,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps5",lote:"LOTE 13 PIVOT 01",area:101.5,cultura:"Trigo",variedade:"BRS 264",adubacaoPlantio:"MAP 100 kg",cobertura:"KCl 100 kg",nCobertura:"Ureia 300 kg",populacao:0,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps6",lote:"LOTE 13 PIVOT 02",area:57.5,cultura:"Milho",variedade:"P40537 PWURR",adubacaoPlantio:"MAP 180 kg",cobertura:"KCl 250 kg",nCobertura:"Ureia 400 kg",populacao:3.4,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps7",lote:"LOTE 13 PIVOT 03",area:26.5,cultura:"Feijão Irrigado",variedade:"DAMA",adubacaoPlantio:"MAP 210 kg",cobertura:"KCl 131 kg",nCobertura:"Ureia 250 kg",populacao:0,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps8",lote:"LOTE 40 CHAPADÃO",area:136.5,cultura:"Sorgo",variedade:"K 200",adubacaoPlantio:"MAP 58 kg",cobertura:"KCl 171 kg",nCobertura:"Ureia 200 kg",populacao:12.5,dataPlantio:"",previsaoColheita:"",obs:"Beneficiado"},
+  {id:"ps9",lote:"LOTE 13 SEQUEIRO",area:119.5,cultura:"Sorgo",variedade:"1G100 / AA 227",adubacaoPlantio:"MAP 48 kg",cobertura:"KCl 141 kg",nCobertura:"Ureia 150 kg",populacao:12,dataPlantio:"",previsaoColheita:"",obs:""},
+  {id:"ps10",lote:"LOTE 11 MUTHEMA + BICO DIVISA",area:75,cultura:"Sorgo",variedade:"1G100",adubacaoPlantio:"MAP 52 kg",cobertura:"KCl 150 kg",nCobertura:"Ureia 150 kg",populacao:12.5,dataPlantio:"",previsaoColheita:"",obs:""},
+];
+
+function PlanejamentoTable({data, setData, tipo, cultureColors}) {
+  const isVerao = tipo === "verao";
+  const cor = isVerao ? "#1a5c2e" : "#5c4a00";
+  const culturaOpts = isVerao
+    ? ["Soja","Milho","Feijão","Trigo","Sorgo"]
+    : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
+  const total = data.reduce((s,r)=>s+(r.area||0),0);
+
+  function upd(i, field, val) {
+    setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
+  }
+  function addLote() {
+    setData(d => [...d, isVerao
+      ? { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacao:"", kcl:"", ciclo:0, populacao:0, dataPlantio:"", previsaoColheita:"", obs:"" }
+      : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", populacao:0, dataPlantio:"", previsaoColheita:"", obs:"" }
+    ]);
+  }
+
+  const cols = isVerao
+    ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
+       ["adubacao","Adubação Plantio","text",100],["kcl","KCl","text",80],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55],
+       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
+    : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
+       ["adubacaoPlantio","Adub. Plantio","text",90],["cobertura","Cobertura (KCl)","text",90],["nCobertura","N Cobertura (Ureia)","text",90],
+       ["populacao","Pop.(sem/m)","number",55],["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
+
+  return (
+    <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
+        <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
+      </div>
+      <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead>
+              <tr style={{background:cor,color:"#fff"}}>
+                {[...cols.map(c=>c[1]),""].map(h=>(
+                  <th key={h} style={{padding:"8px 8px",textAlign:"left",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row,i)=>{
+                const bg = i%2===0?"#fff":"#f9f9f9";
+                const cc = (cultureColors[row.cultura]) || { light:"#f5f5f5", bg:"#546e7a" };
+                return (
+                  <tr key={row.id||i} style={{background:bg}}>
+                    {cols.map(([field,,type,width])=>(
+                      <td key={field} style={{padding:"3px 5px"}}>
+                        {type==="select" ? (
+                          <select value={row[field]||culturaOpts[0]} onChange={e=>upd(i,field,e.target.value)}
+                            style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,background:cc.light,color:cc.bg,fontWeight:700}}>
+                            {culturaOpts.map(c=><option key={c}>{c}</option>)}
+                          </select>
+                        ) : (
+                          <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
+                            placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
+                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:type==="number"?"right":"left"}}/>
+                        )}
+                      </td>
+                    ))}
+                    <td style={{padding:"3px 4px",textAlign:"center"}}>
+                      <button onClick={()=>{if(window.confirm(`Remover lote "${row.lote||"sem nome"}"?`))setData(d=>d.filter((_,ri)=>ri!==i));}} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:13}}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {data.length===0 && <tr><td colSpan={cols.length+1} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum lote cadastrado.</td></tr>}
+            </tbody>
+            <tfoot>
+              <tr style={{background:cor,color:"#fff",fontWeight:700}}>
+                <td style={{padding:"7px 8px",fontSize:11}}>TOTAL</td>
+                <td style={{padding:"7px 8px",textAlign:"right",fontSize:12}}>{fmtN(total,1)} ha</td>
+                <td colSpan={cols.length-1}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -692,17 +809,18 @@ function App() {
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
   const [fecharData, setFecharData]       = useState(null);
 
-  // ── Colheita / Estoque / Financeiro ──
+  // ── Planejamento de Campo ──
+  const [planVerao, setPlanVerao]         = useState(() => loadLS(KEY_PLANEJAMENTO+"_verao", PLAN_VERAO_INICIAL));
+  const [planSafrinha, setPlanSafrinha]   = useState(() => loadLS(KEY_PLANEJAMENTO+"_safrinha", PLAN_SAFRINHA_INICIAL));
+
+  // ── Colheita / Financeiro ──
   const [colheitaRecords, setColheitaRecords]     = useState(() => loadLS(KEY_COLHEITA, []));
-  const [estoqueRecords, setEstoqueRecords]       = useState(() => loadLS(KEY_ESTOQUE, []));
   const [financeiroRecords, setFinanceiroRecords] = useState(() => loadLS(KEY_FINANCEIRO, []));
   const [editingRecordCell, setEditingRecordCell] = useState(null); // "module|id|field"
   const [importMsg, setImportMsg]         = useState(null); // {modulo, texto}
   const [addingColheita, setAddingColheita]     = useState(false);
-  const [addingEstoque, setAddingEstoque]       = useState(false);
   const [addingFinanceiro, setAddingFinanceiro] = useState(false);
-  const [newColheita, setNewColheita] = useState({cultura:"",talhao:"",data:"",areaHa:"",sacas:"",umidade:"",obs:""});
-  const [newEstoque, setNewEstoque]   = useState({produto:"",categoria:"",unidade:"",tipo:"entrada",data:"",quantidade:"",parceiro:"",obs:""});
+  const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
   const [newFinanceiro, setNewFinanceiro] = useState({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
 
   // ── Auto-save ──
@@ -712,9 +830,13 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_verao_ins", cotVeraoIns); }, [cotVeraoIns]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_adub", cotInvAdub); }, [cotInvAdub]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_ins", cotInvIns); }, [cotInvIns]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
-  useEffect(() => { saveLS(KEY_ESTOQUE, estoqueRecords); }, [estoqueRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
+
+  const resolveLote = useMemo(() => makeLoteResolver(planVerao, planSafrinha), [planVerao, planSafrinha]);
+  const lotesDisponiveis = newColheita.tipo === "verao" ? planVerao : planSafrinha;
 
   // ── Derived products ──
   const prodVeraoAdub = useMemo(() => derivarAdubacao(dataVerao), [dataVerao]);
@@ -887,22 +1009,12 @@ function App() {
   const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p),0)}))}; }),[dataVerao]);
   const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p),0)}))}; }),[dataInverno]);
 
-  // ── Colheita / Estoque / Financeiro: totais derivados ──
+  // ── Colheita / Financeiro: totais derivados ──
   const colheitaTotais = useMemo(() => {
     const totalArea = colheitaRecords.reduce((s,r)=>s+r.areaHa,0);
     const totalSacas = colheitaRecords.reduce((s,r)=>s+r.sacas,0);
     return { totalArea, totalSacas, media: totalArea>0 ? totalSacas/totalArea : 0 };
   }, [colheitaRecords]);
-
-  const saldoEstoque = useMemo(() => {
-    const map = {};
-    estoqueRecords.forEach(r => {
-      const key = r.produto.trim().toLowerCase()+"|"+r.unidade;
-      if (!map[key]) map[key] = { produto:r.produto, unidade:r.unidade, categoria:r.categoria, saldo:0 };
-      map[key].saldo += r.tipo==="saida" ? -r.quantidade : r.quantidade;
-    });
-    return Object.values(map).sort((a,b)=>a.produto.localeCompare(b.produto));
-  }, [estoqueRecords]);
 
   const financeiroTotais = useMemo(() => {
     const orcado = financeiroRecords.reduce((s,r)=>s+r.orcado,0);
@@ -924,12 +1036,8 @@ function App() {
 
   // ── Import handlers ──
   function handleImportColheita(file) {
-    importSpreadsheet(file, ALIASES_COLHEITA, m=>buildColheitaRecord(m, safraAtiva), setColheitaRecords,
+    importSpreadsheet(file, ALIASES_COLHEITA, m=>buildColheitaRecord(m, safraAtiva, resolveLote), setColheitaRecords,
       txt=>{ setImportMsg({modulo:"colheita",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
-  }
-  function handleImportEstoque(file) {
-    importSpreadsheet(file, ALIASES_ESTOQUE, buildEstoqueRecord, setEstoqueRecords,
-      txt=>{ setImportMsg({modulo:"estoque",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
   }
   function handleImportFinanceiro(file) {
     importSpreadsheet(file, ALIASES_FINANCEIRO, m=>buildFinanceiroRecord(m, safraAtiva), setFinanceiroRecords,
@@ -938,20 +1046,14 @@ function App() {
 
   // ── Add/delete manuais ──
   function submitColheita() {
-    if (!newColheita.cultura.trim()) return;
-    addRecord(setColheitaRecords, { safra:safraAtiva, cultura:newColheita.cultura.trim(), talhao:newColheita.talhao.trim(),
-      data:newColheita.data.trim(), areaHa:parseFloat(newColheita.areaHa)||0, sacas:parseFloat(newColheita.sacas)||0,
-      umidade:parseFloat(newColheita.umidade)||0, obs:newColheita.obs.trim() });
-    setNewColheita({cultura:"",talhao:"",data:"",areaHa:"",sacas:"",umidade:"",obs:""});
+    const lote = lotesDisponiveis.find(l => l.id === newColheita.loteId);
+    if (!lote) return;
+    addRecord(setColheitaRecords, { safra:safraAtiva, tipo:newColheita.tipo, loteId:lote.id, lote:lote.lote,
+      cultura:lote.cultura, previsaoColheita:lote.previsaoColheita,
+      data:newColheita.data.trim(), areaHa:parseFloat(newColheita.areaHa)||lote.area, sacas:parseFloat(newColheita.sacas)||0,
+      umidade:parseFloat(newColheita.umidade)||0, pmg:parseFloat(newColheita.pmg)||0, obs:newColheita.obs.trim() });
+    setNewColheita({tipo:newColheita.tipo,loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
     setAddingColheita(false);
-  }
-  function submitEstoque() {
-    if (!newEstoque.produto.trim()) return;
-    addRecord(setEstoqueRecords, { produto:newEstoque.produto.trim(), categoria:newEstoque.categoria.trim()||"Outros",
-      unidade:newEstoque.unidade.trim()||"un", tipo:newEstoque.tipo, data:newEstoque.data.trim(),
-      quantidade:parseFloat(newEstoque.quantidade)||0, parceiro:newEstoque.parceiro.trim(), obs:newEstoque.obs.trim() });
-    setNewEstoque({produto:"",categoria:"",unidade:"",tipo:"entrada",data:"",quantidade:"",parceiro:"",obs:""});
-    setAddingEstoque(false);
   }
   function submitFinanceiro() {
     if (!newFinanceiro.descricao.trim() && !newFinanceiro.categoria.trim()) return;
@@ -1022,8 +1124,9 @@ function App() {
     { id:"cot_verao_ins",  label:"💰 Cot. Ins. Verão",   sub:"" },
     { id:"cot_inv_adub",   label:"🌱 Cot. Adub. Inv.",   sub:"" },
     { id:"cot_inv_ins",    label:"💰 Cot. Ins. Inv.",    sub:"" },
+    { id:"plan_verao",     label:"🗺️ Plano Verão",       sub:"" },
+    { id:"plan_inv",       label:"🗺️ Plano Inverno",     sub:"" },
     { id:"colheita",       label:"🌾 Colheita",          sub:"" },
-    { id:"estoque",        label:"📦 Estoque",           sub:"" },
     { id:"financeiro",     label:"💵 Financeiro",        sub:"" },
     { id:"safras",         label:"🗂️ Safras",             sub:"" },
   ];
@@ -1293,10 +1396,16 @@ function App() {
       })()}
 
       {/* ══════════════════════════════════════════════════════
+          PLANEJAMENTO DE CAMPO
+      ══════════════════════════════════════════════════════ */}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO}/>}
+
+      {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
       ══════════════════════════════════════════════════════ */}
       {appView==="colheita" && (
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+        <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Área colhida</div>
@@ -1316,14 +1425,15 @@ function App() {
             </div>
           </div>
           {importMsg?.modulo==="colheita" && <div style={{background:"#fffde7",border:"1px solid #fbc02d",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:12,color:"#7a5c00"}}>{importMsg.texto}</div>}
-          <div style={{fontSize:11,color:"#999",marginBottom:8}}>Colunas reconhecidas na importação: cultura, talhão, data, área_ha, sacas (ou kg), umidade, obs.</div>
+          <div style={{fontSize:11,color:"#999",marginBottom:8}}>O lote é resolvido pelo nome cadastrado no Planejamento de Campo (Verão/Inverno), de onde vêm cultura, área e previsão de colheita. Colunas reconhecidas na importação: lote, cultura (opcional, sobrepõe o plano), data, área_ha (opcional), sacas (ou kg), umidade, pmg, obs.</div>
 
           <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+            <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#e8f5e9"}}>
-                  {["Safra","Cultura","Talhão","Data","Área(ha)","Sacas","Sc/ha","Umid.(%)","Obs",""].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:["Cultura","Talhão","Obs"].includes(h)?"left":"right",color:"#2e7d32",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #a5d6a7"}}>{h}</th>
+                  {["Temporada","Lote","Cultura","Data","Área(ha)","Sacas","Sc/ha","PMG(g)","Umid.(%)","Prev. Colheita","Obs",""].map(h=>(
+                    <th key={h} style={{padding:"7px 9px",textAlign:["Lote","Cultura","Obs"].includes(h)?"left":"right",color:"#2e7d32",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #a5d6a7",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1333,14 +1443,16 @@ function App() {
                   const bg = i%2===0?"#fff":"#fafafa";
                   return (
                     <tr key={r.id} style={{background:bg}}>
-                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}>{r.safra}</td>
-                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"col|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"cultura",v)}/></td>
-                      <td style={{padding:"6px 9px"}}><RecEditCell recKey={"col|"+r.id} field="talhao" value={r.talhao} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"talhao",v)}/></td>
+                      <td style={{padding:"6px 9px",fontSize:11,color:r.tipo==="inv"?"#5c4a00":"#1a5c2e",fontWeight:600}}>{r.tipo==="inv"?"Inverno":"Verão"}</td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"col|"+r.id} field="lote" value={r.lote} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"lote",v)}/></td>
+                      <td style={{padding:"6px 9px"}}><RecEditCell recKey={"col|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"cultura",v)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="data" align="right" value={r.data} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"data",v)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="areaHa" type="number" align="right" value={fmtN(r.areaHa,2)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"areaHa",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="sacas" type="number" align="right" value={fmtN(r.sacas,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"sacas",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#2e7d32"}}>{fmtN(prod,1)}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="pmg" type="number" align="right" value={fmtN(r.pmg||0,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"pmg",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="umidade" type="number" align="right" value={fmtN(r.umidade,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"umidade",v,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888",fontSize:11}}>{r.previsaoColheita||"—"}</td>
                       <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"col|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"obs",v)}/></td>
                       <td style={{padding:"6px 4px",textAlign:"center"}}>
                         <button onClick={()=>{if(window.confirm("Remover registro?"))deleteRecord(setColheitaRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
@@ -1350,14 +1462,28 @@ function App() {
                 })}
                 {addingColheita && (
                   <tr style={{background:"#fffde7"}}>
-                    <td style={{padding:"5px 6px",color:"#bbb",fontSize:10}}>{safraAtiva}</td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Cultura" value={newColheita.cultura} onChange={e=>setNewColheita(p=>({...p,cultura:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Talhão" value={newColheita.talhao} onChange={e=>setNewColheita(p=>({...p,talhao:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}>
+                      <select value={newColheita.tipo} onChange={e=>setNewColheita(p=>({...p,tipo:e.target.value,loteId:""}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="verao">Verão</option>
+                        <option value="inv">Inverno</option>
+                      </select>
+                    </td>
+                    <td style={{padding:"5px 6px"}} colSpan={2}>
+                      <select value={newColheita.loteId} onChange={e=>{
+                          const lote = lotesDisponiveis.find(l=>l.id===e.target.value);
+                          setNewColheita(p=>({...p,loteId:e.target.value,areaHa:lote?lote.area:""}));
+                        }} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="">Selecione o lote...</option>
+                        {lotesDisponiveis.map(l=><option key={l.id} value={l.id}>{l.lote} — {l.cultura}</option>)}
+                      </select>
+                    </td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newColheita.data} onChange={e=>setNewColheita(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Área" type="number" step="any" value={newColheita.areaHa} onChange={e=>setNewColheita(p=>({...p,areaHa:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Sacas" type="number" step="any" value={newColheita.sacas} onChange={e=>setNewColheita(p=>({...p,sacas:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td/>
+                    <td style={{padding:"5px 6px"}}><input placeholder="PMG(g)" type="number" step="any" value={newColheita.pmg} onChange={e=>setNewColheita(p=>({...p,pmg:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Umid.%" type="number" step="any" value={newColheita.umidade} onChange={e=>setNewColheita(p=>({...p,umidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td/>
                     <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newColheita.obs} onChange={e=>setNewColheita(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}>
                       <button onClick={submitColheita} style={{background:"#2e7d32",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
@@ -1366,116 +1492,11 @@ function App() {
                   </tr>
                 )}
                 {colheitaRecords.length===0 && !addingColheita && (
-                  <tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita ainda. Importe uma planilha ou adicione manualmente.</td></tr>
+                  <tr><td colSpan={12} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita ainda. Importe uma planilha ou adicione manualmente.</td></tr>
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          ESTOQUE DE INSUMOS
-      ══════════════════════════════════════════════════════ */}
-      {appView==="estoque" && (
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
-          <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-            <div>
-              <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Produtos em estoque</div>
-              <div style={{fontSize:20,fontWeight:800,color:"#37474f"}}>{saldoEstoque.length}</div>
             </div>
-            <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}>
-              <div style={{fontSize:11,color:"#888"}}>Com saldo negativo</div>
-              <div style={{fontSize:18,fontWeight:700,color:"#c62828"}}>{saldoEstoque.filter(s=>s.saldo<0).length}</div>
-            </div>
-            <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
-              <ImportButton label="Importar planilha" color="#37474f" onFile={handleImportEstoque}/>
-              <button onClick={()=>setAddingEstoque(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #37474f",color:"#37474f",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Movimento</button>
-            </div>
-          </div>
-          {importMsg?.modulo==="estoque" && <div style={{background:"#fffde7",border:"1px solid #fbc02d",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:12,color:"#7a5c00"}}>{importMsg.texto}</div>}
-          <div style={{fontSize:11,color:"#999",marginBottom:8}}>Colunas reconhecidas: produto, categoria, unidade, tipo (entrada/saída), data, quantidade, fornecedor/destino, obs.</div>
-
-          <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:14}}>
-            <div style={{background:"#37474f",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>📊 Saldo atual por produto</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{background:"#eceff1"}}>
-                  {["Produto","Categoria","Unidade","Saldo"].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:h==="Saldo"?"right":"left",color:"#37474f",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #cfd8dc"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {saldoEstoque.map((s,i)=>(
-                  <tr key={s.produto+"|"+s.unidade} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                    <td style={{padding:"6px 9px",fontWeight:600}}>{s.produto}</td>
-                    <td style={{padding:"6px 9px",color:"#888"}}>{s.categoria}</td>
-                    <td style={{padding:"6px 9px",color:"#888"}}>{s.unidade}</td>
-                    <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:s.saldo<0?"#c62828":"#2e7d32"}}>{fmtQtd(s.saldo)}</td>
-                  </tr>
-                ))}
-                {saldoEstoque.length===0 && <tr><td colSpan={4} style={{padding:"16px",textAlign:"center",color:"#bbb",fontSize:12}}>Sem movimentações registradas.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-            <div style={{background:"#455a64",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>🔄 Movimentações</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{background:"#eceff1"}}>
-                  {["Data","Produto","Categoria","Unid.","Tipo","Qtd","Fornec./Destino","Obs",""].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd"?"right":"left",color:"#455a64",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #cfd8dc"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {estoqueRecords.map((r,i)=>(
-                  <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"est|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"data",v)}/></td>
-                    <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"est|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"produto",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"est|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"categoria",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"est|"+r.id} field="unidade" value={r.unidade} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"unidade",v)}/></td>
-                    <td style={{padding:"6px 9px"}}>
-                      <span onClick={()=>updateRecordField(setEstoqueRecords,r.id,"tipo",r.tipo==="entrada"?"saida":"entrada")} style={{cursor:"pointer",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,background:r.tipo==="saida"?"#ffebee":"#e8f5e9",color:r.tipo==="saida"?"#c62828":"#2e7d32"}}>
-                        {r.tipo==="saida"?"Saída":"Entrada"}
-                      </span>
-                    </td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"est|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"quantidade",v,true)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"est|"+r.id} field="parceiro" value={r.parceiro} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"parceiro",v)}/></td>
-                    <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"est|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setEstoqueRecords,r.id,"obs",v)}/></td>
-                    <td style={{padding:"6px 4px",textAlign:"center"}}>
-                      <button onClick={()=>{if(window.confirm("Remover movimento?"))deleteRecord(setEstoqueRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                ))}
-                {addingEstoque && (
-                  <tr style={{background:"#fffde7"}}>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newEstoque.data} onChange={e=>setNewEstoque(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newEstoque.produto} onChange={e=>setNewEstoque(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Categoria" value={newEstoque.categoria} onChange={e=>setNewEstoque(p=>({...p,categoria:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Unid." value={newEstoque.unidade} onChange={e=>setNewEstoque(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}>
-                      <select value={newEstoque.tipo} onChange={e=>setNewEstoque(p=>({...p,tipo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="entrada">Entrada</option>
-                        <option value="saida">Saída</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Qtd" type="number" step="any" value={newEstoque.quantidade} onChange={e=>setNewEstoque(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Fornec./Destino" value={newEstoque.parceiro} onChange={e=>setNewEstoque(p=>({...p,parceiro:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newEstoque.obs} onChange={e=>setNewEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}>
-                      <button onClick={submitEstoque} style={{background:"#37474f",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
-                      <button onClick={()=>setAddingEstoque(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
-                    </td>
-                  </tr>
-                )}
-                {estoqueRecords.length===0 && !addingEstoque && (
-                  <tr><td colSpan={9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma movimentação ainda. Importe uma planilha ou adicione manualmente.</td></tr>
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
       )}
