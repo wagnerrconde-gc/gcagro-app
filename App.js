@@ -113,6 +113,20 @@ function derivarAdubacao(data) {
 function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JSON.parse(r):def; } catch { return def; } }
 function saveLS(key, d)   { try { localStorage.setItem(key, JSON.stringify(d)); } catch(e) {} }
 
+// Migra preços de cotação do formato antigo (número único por produto) para o novo
+// formato com dois vencimentos manuais ({v1, v2}). Idempotente: se já migrado, mantém.
+function migrateVencPrecos(pricesObj) {
+  const out = {};
+  Object.entries(pricesObj || {}).forEach(([forn, prods]) => {
+    const np = {};
+    Object.entries(prods || {}).forEach(([prodKey, val]) => {
+      np[prodKey] = (val && typeof val === "object") ? val : { v1: val || 0, v2: 0 };
+    });
+    out[forn] = np;
+  });
+  return out;
+}
+
 // Divide a categoria antiga "Sementes / TS" em duas: "Sementes" (só a semente em si,
 // produtos que começam com "SEMENTE") e "TS" (tratamento de sementes, o resto).
 // Idempotente — roda em todo carregamento, então também migra dados já salvos no
@@ -819,10 +833,11 @@ function App() {
   const [dataInverno, setDataInverno] = useState(() => splitSementesTS(renameCategoria(loadLS(KEY_PROG+"_inverno", INITIAL_DATA_INVERNO), "Dessecação e Pós", "Herbicidas - Dessecação e Pós")));
 
   // ── Cotação ──
-  const [cotVeraoAdub, setCotVeraoAdub]   = useState(() => loadLS(KEY_COTACAO+"_verao_adub", {}));
-  const [cotVeraoIns, setCotVeraoIns]     = useState(() => loadLS(KEY_COTACAO+"_verao_ins", {}));
-  const [cotInvAdub, setCotInvAdub]       = useState(() => loadLS(KEY_COTACAO+"_inv_adub", {}));
-  const [cotInvIns, setCotInvIns]         = useState(() => loadLS(KEY_COTACAO+"_inv_ins", {}));
+  const [cotVeraoAdub, setCotVeraoAdub]   = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_adub", {})));
+  const [cotVeraoIns, setCotVeraoIns]     = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_ins", {})));
+  const [cotInvAdub, setCotInvAdub]       = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_adub", {})));
+  const [cotInvIns, setCotInvIns]         = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_ins", {})));
+  const [cotVencLabels, setCotVencLabels] = useState(() => loadLS(KEY_COTACAO+"_venc_labels", {}));
 
   // ── Cotação Adubação: lista de produtos editável manualmente (desacoplada da Programação) ──
   const [cotAdubProdVerao, setCotAdubProdVerao] = useState(() => loadLS(KEY_COTACAO+"_produtos_verao_adub", null) || derivarAdubacao(dataVerao));
@@ -859,6 +874,8 @@ function App() {
   const [adminTab, setAdminTab]           = useState("merit");
   const [filterCat, setFilterCat]         = useState("Todas");
   const [fornCatFilter, setFornCatFilter] = useState("Todas");
+  const [activeVencTab, setActiveVencTab] = useState("v1");
+  const [adminVencTab, setAdminVencTab]   = useState("v1");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
@@ -885,6 +902,7 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_verao_ins", cotVeraoIns); }, [cotVeraoIns]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_adub", cotInvAdub); }, [cotInvAdub]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_ins", cotInvIns); }, [cotInvIns]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_venc_labels", cotVencLabels); }, [cotVencLabels]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_adub", cotAdubProdVerao); }, [cotAdubProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_adub", cotAdubProdInv); }, [cotAdubProdInv]);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
@@ -940,6 +958,16 @@ function App() {
   function getFornecedores(ctx) {
     if (!ctx) return FORN_INSUMOS;
     return ctx.tipo==="adub" ? FORN_ADUBACAO : FORN_INSUMOS;
+  }
+  // ── Vencimentos de pagamento (duas datas manuais por cotação) ──
+  function getVencLabels(ctx) {
+    const k = ctx ? ctx.safra+"_"+ctx.tipo : null;
+    return (k && cotVencLabels[k]) || {v1:"Pagamento 1", v2:"Pagamento 2"};
+  }
+  function setVencLabel(ctx, vk, label) {
+    if (!ctx) return;
+    const k = ctx.safra+"_"+ctx.tipo;
+    setCotVencLabels(prev => ({...prev, [k]: {...(prev[k]||{v1:"Pagamento 1",v2:"Pagamento 2"}), [vk]: label}}));
   }
 
   // ── Cotação Adubação: CRUD da lista editável ──
@@ -1058,10 +1086,17 @@ function App() {
     const d = {};
     produtos.forEach(p => {
       const key = p.nome.toLowerCase();
-      const vals = fornecedores.map(f=>({nome:f, preco:(allPrices[f]||{})[key]||0})).filter(x=>x.preco>0);
+      const vals = [];
+      fornecedores.forEach(f => {
+        const precos = allPrices[f]||{};
+        ["v1","v2"].forEach(vk => {
+          const preco = (precos[key]||{})[vk];
+          if (preco>0) vals.push({nome:f, venc:vk, preco:Number(preco)});
+        });
+      });
       const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
       d[key] = { nomeReal:p.nome, iaReal:p.ingrediente_ativo||"",
-        splits: melhor ? [{nome:melhor.nome, qtd:100, preco:melhor.preco}] : [{nome:"", qtd:100, preco:0}] };
+        splits: melhor ? [{nome:melhor.nome, venc:melhor.venc, qtd:100, preco:melhor.preco}] : [{nome:"", venc:"v1", qtd:100, preco:0}] };
     });
     setFecharDecisions(d);
     setShowFecharCotModal(true);
@@ -1957,7 +1992,9 @@ function App() {
         if (cotScreen==="fornecedor") {
           const color = FORN_COLORS[cotRole.idx%8];
           const fCat = fornCatFilter, setFCat = setFornCatFilter;
-          const filled = Object.values(myPrices).filter(v=>v>0).length;
+          const vTab = activeVencTab, setVTab = setActiveVencTab;
+          const vencLabels = getVencLabels(cotContext);
+          const filled = Object.values(myPrices).filter(v=>v&&(v.v1>0||v.v2>0)).length;
           return (
             <div style={{color:"#e8f4fd"}}>
               <div style={{background:"#111d35",borderBottom:"1px solid #1e3a5f",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
@@ -1976,6 +2013,11 @@ function App() {
               <div style={{margin:"12px 20px 0",padding:"10px 14px",background:"#0d2040",borderLeft:`3px solid ${color}`,borderRadius:4,fontSize:11,color:"#7a9ab8"}}>
                 ⚠ Preencha apenas o preço unitário (R$). Os preços dos outros fornecedores são invisíveis para você.
               </div>
+              <div style={{margin:"12px 20px 0",display:"flex",gap:3}}>
+                {["v1","v2"].map(vk=>(
+                  <button key={vk} onClick={()=>setVTab(vk)} style={{padding:"9px 18px",background:vTab===vk?color:"#111d35",border:`1px solid ${vTab===vk?color:"#1e3a5f"}`,borderRadius:7,color:vTab===vk?"#fff":"#7a9ab8",fontSize:12,fontWeight:vTab===vk?700:400,cursor:"pointer"}}>💰 {vencLabels[vk]}</button>
+                ))}
+              </div>
               <div style={{padding:"10px 20px 0",display:"flex",gap:6,flexWrap:"wrap"}}>
                 {["Todas",...categorias].map(cat=>(
                   <button key={cat} onClick={()=>setFCat(cat)} style={{padding:"5px 12px",background:fCat===cat?color:"#111d35",border:`1px solid ${fCat===cat?color:"#1e3a5f"}`,borderRadius:18,color:fCat===cat?"#fff":"#7a9ab8",fontSize:11,cursor:"pointer"}}>{cat}</button>
@@ -1989,12 +2031,13 @@ function App() {
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
                       <div style={{display:"grid",gridTemplateColumns:isAdub?"1fr 60px 100px 150px":"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
-                        {(isAdub?["Produto","Unid.","Qtd. Total","Preço Unit. (R$)"]:["Produto","Unid.","Qtd. Total","I.A.","Preço Unit. (R$)"]).map(h=>(
+                        {(isAdub?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels[vTab]})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels[vTab]})`]).map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
                           const key=p.nome.toLowerCase();
-                          const val=myPrices[key]!==undefined?myPrices[key]:"";
+                          const entry=myPrices[key]||{};
+                          const val=entry[vTab]!==undefined?entry[vTab]:"";
                           const bg=i%2===0?"#0d1e36":"#0f2240";
                           return (
                             <React.Fragment key={key}>
@@ -2004,7 +2047,7 @@ function App() {
                               {!isAdub && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
                               <div style={{padding:"5px 7px",background:bg}}>
                                 <input type="number" step="0.01" min="0" value={val}
-                                  onChange={e=>setMyPrices(prev=>({...prev,[key]:e.target.value===""?"":parseFloat(e.target.value)}))}
+                                  onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),[vTab]:e.target.value===""?"":parseFloat(e.target.value)}}))}
                                   placeholder="0,00"
                                   style={{width:"100%",padding:"5px 9px",background:val>0?"#0d2a4a":"#0a1628",border:`1px solid ${val>0?color+"88":"#1e3a5f"}`,borderRadius:5,color:val>0?"#e8f4fd":"#5a7a9a",fontSize:12,outline:"none",boxSizing:"border-box",textAlign:"right"}}/>
                               </div>
@@ -2026,10 +2069,12 @@ function App() {
         }
 
         if (cotScreen==="admin") {
+          const vTabA = adminVencTab, setVTabA = setAdminVencTab;
+          const vencLabels = getVencLabels(cotContext);
           const totalRef2 = produtos.reduce((s,p)=>s+p.qtd_total*p.preco_ref,0);
           const totalPorForn = fornecedores.map(f=>{
             const pr=allPrices[f]||{};let t=0;
-            produtos.forEach(p=>{const v=pr[p.nome.toLowerCase()];if(v>0)t+=v*p.qtd_total;});
+            produtos.forEach(p=>{const v=(pr[p.nome.toLowerCase()]||{})[vTabA];if(v>0)t+=v*p.qtd_total;});
             return t;
           });
           const filtProds = produtos.filter(p=>filterCat==="Todas"||p.categoria===filterCat);
@@ -2048,10 +2093,19 @@ function App() {
                 </div>
               </div>
 
+              {/* Vencimentos de pagamento (labels manuais) */}
+              <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>Datas de pagamento:</span>
+                {["v1","v2"].map(vk=>(
+                  <input key={vk} value={vencLabels[vk]} onChange={e=>setVencLabel(cotContext,vk,e.target.value)}
+                    style={{padding:"6px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
+                ))}
+              </div>
+
               {/* Status */}
               <div style={{padding:"14px 20px 0",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
                 {fornecedores.map((f,i)=>{
-                  const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v>0).length;const done=count>0;
+                  const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const done=count>0;
                   return (
                     <div key={f} style={{padding:"10px 13px",background:"#111d35",borderRadius:9,border:`1px solid ${done?FORN_COLORS[i%8]+"88":"#1e3a5f"}`}}>
                       <div style={{fontSize:10,color:done?FORN_COLORS[i%8]:"#3a5a7a",marginBottom:3}}>{done?"✓":"⏳"}</div>
@@ -2071,6 +2125,11 @@ function App() {
 
               {adminTab==="merit"&&(
                 <div style={{padding:"14px 20px 40px"}}>
+                  <div style={{display:"flex",gap:3,marginBottom:14}}>
+                    {["v1","v2"].map(vk=>(
+                      <button key={vk} onClick={()=>setVTabA(vk)} style={{padding:"7px 16px",background:vTabA===vk?"#1565C0":"#111d35",border:`1px solid ${vTabA===vk?"#1565C0":"#1e3a5f"}`,borderRadius:7,color:vTabA===vk?"#fff":"#7a9ab8",fontSize:11,fontWeight:vTabA===vk?700:400,cursor:"pointer"}}>💰 {vencLabels[vk]}</button>
+                    ))}
+                  </div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
                     {["Todas",...categorias].map(cat=>(
                       <button key={cat} onClick={()=>setFilterCat(cat)} style={{padding:"4px 11px",background:filterCat===cat?"#1565C0":"#111d35",border:`1px solid ${filterCat===cat?"#1565C0":"#1e3a5f"}`,borderRadius:18,color:filterCat===cat?"#fff":"#7a9ab8",fontSize:10,cursor:"pointer"}}>{cat}</button>
@@ -2100,7 +2159,7 @@ function App() {
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.map(f=>{const v=(allPrices[f]||{})[key];return v>0?Number(v):null;});
+                                const fornPrecos=fornecedores.map(f=>{const v=(allPrices[f]||{})[key]?.[vTabA];return v>0?Number(v):null;});
                                 const validos=fornPrecos.filter(v=>v!==null);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
@@ -2173,8 +2232,8 @@ function App() {
                 <div style={{padding:"16px 20px 40px"}}>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     {fornecedores.map((f,i)=>{
-                      const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v>0).length;const total=totalPorForn[i];
-                      const wins=produtos.filter(p=>{const v=pr[p.nome.toLowerCase()];if(!v||v<=0)return false;const others=fornecedores.filter(x=>x!==f).map(x=>(allPrices[x]||{})[p.nome.toLowerCase()]).filter(v2=>v2>0);return others.every(v2=>Number(v)<=Number(v2));}).length;
+                      const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const total=totalPorForn[i];
+                      const wins=produtos.filter(p=>{const v=(pr[p.nome.toLowerCase()]||{})[vTabA];if(!v||v<=0)return false;const others=fornecedores.filter(x=>x!==f).map(x=>(allPrices[x]?.[p.nome.toLowerCase()]||{})[vTabA]).filter(v2=>v2>0);return others.every(v2=>Number(v)<=Number(v2));}).length;
                       return (
                         <div key={f} style={{background:"#111d35",borderRadius:11,padding:"18px",border:`1px solid ${count>0?FORN_COLORS[i%8]+"66":"#1e3a5f"}`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
@@ -2416,12 +2475,13 @@ function App() {
         const isAdubFechar = cotContext?.tipo==="adub";
         const decisions = fecharDecisions || {};
         const setDecisions = setFecharDecisions;
+        const vencLabels = getVencLabels(cotContext);
 
         function updateSplit(key, idx, field, val) {
           setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:nd[key].splits.map((s,i)=>i===idx?{...s,[field]:val}:s)}; return nd; });
         }
         function addSplit(key) {
-          setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:[...nd[key].splits,{nome:"",qtd:0,preco:0}]}; return nd; });
+          setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:[...nd[key].splits,{nome:"",venc:"v1",qtd:0,preco:0}]}; return nd; });
         }
         function remSplit(key, idx) {
           setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:nd[key].splits.filter((_,i)=>i!==idx)}; return nd; });
@@ -2441,9 +2501,10 @@ function App() {
             if (isAdubFechar) {
               const prod = produtos.find(p=>p.nome.toLowerCase()===key);
               const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
+              const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
               novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
                 categoria:"Adubação "+temporadaLabel, produto:dec.nomeReal, unidade:prod?.unidade||"TN", quantidade:prod?.qtd_total||0,
-                precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(f=>f.nome).join(" + "), obs:"" });
+                precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(fornLabel).join(" + "), obs:"" });
             }
           });
           if (novasCompras.length) setComprasRecords(rs => [...rs, ...novasCompras]);
@@ -2461,7 +2522,14 @@ function App() {
                 const dec=decisions[key];
                 if (!dec) return null;
                 const pm=calcPrecoMedio(dec.splits);
-                const allVals=fornecedores.map(f=>({nome:f,preco:(allPrices[f]||{})[key]||0})).filter(x=>x.preco>0);
+                const allVals=[];
+                fornecedores.forEach(f=>{
+                  const precos=allPrices[f]||{};
+                  ["v1","v2"].forEach(vk=>{
+                    const preco=(precos[key]||{})[vk];
+                    if (preco>0) allVals.push({nome:f, venc:vk, preco:Number(preco)});
+                  });
+                });
                 return (
                   <div key={key} style={{background:"#111d35",borderRadius:9,padding:"14px",marginBottom:10,border:"1px solid #1e3a5f"}}>
                     <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
@@ -2480,7 +2548,7 @@ function App() {
                       </div>
                     </div>
                     {allVals.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                      {allVals.map(v=><span key={v.nome} style={{fontSize:10,padding:"2px 8px",background:"#1e3a5f",borderRadius:10,color:"#7ab8ff"}}>{v.nome}: {fmtC(v.preco)}</span>)}
+                      {allVals.map((v,vi)=><span key={v.nome+v.venc+vi} style={{fontSize:10,padding:"2px 8px",background:"#1e3a5f",borderRadius:10,color:"#7ab8ff"}}>{v.nome} ({vencLabels[v.venc]}): {fmtC(v.preco)}</span>)}
                     </div>}
                     {dec.splits.map((split,si)=>(
                       <div key={si} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
@@ -2488,6 +2556,11 @@ function App() {
                           style={{flex:2,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}>
                           <option value="">-- Fornecedor --</option>
                           {fornecedores.map(f=><option key={f} value={f}>{f}</option>)}
+                        </select>
+                        <select value={split.venc||"v1"} onChange={e=>updateSplit(key,si,"venc",e.target.value)}
+                          style={{flex:1,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}>
+                          <option value="v1">{vencLabels.v1}</option>
+                          <option value="v2">{vencLabels.v2}</option>
                         </select>
                         <input type="number" placeholder="%" value={split.qtd} onChange={e=>updateSplit(key,si,"qtd",e.target.value)}
                           style={{width:70,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
