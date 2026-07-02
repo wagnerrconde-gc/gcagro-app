@@ -905,6 +905,7 @@ function App() {
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
   const [fecharDecisions, setFecharDecisions] = useState(null);
+  const [gerarCotMsg, setGerarCotMsg] = useState(null);
 
   // ── Planejamento de Campo ──
   const [planVerao, setPlanVerao]         = useState(() => loadLS(KEY_PLANEJAMENTO+"_verao", PLAN_VERAO_INICIAL));
@@ -1176,6 +1177,27 @@ function App() {
     setShowFecharCotModal(true);
   }
 
+  // ── Gerar Cotação (sincroniza Adubação/Sementes da Programação p/ as cotações editáveis) ──
+  function mergeNovosProdutos(existentes, derivados) {
+    const nomes = new Set(existentes.map(p=>p.nome.trim().toLowerCase()));
+    const novos = derivados.filter(p=>!nomes.has(p.nome.trim().toLowerCase()));
+    return novos.length ? [...existentes, ...novos] : existentes;
+  }
+  function gerarCotacao() {
+    const safra = appView==="prog_verao" ? "verao" : "inv";
+    const d = safra==="verao" ? dataVerao : dataInverno;
+    const adubDerivado = derivarAdubacao(d);
+    const semDerivado = derivarSementes(d);
+    const adubAtual = safra==="verao" ? cotAdubProdVerao : cotAdubProdInv;
+    const semAtual = safra==="verao" ? cotSemProdVerao : cotSemProdInv;
+    const adubMerged = mergeNovosProdutos(adubAtual, adubDerivado);
+    const semMerged = mergeNovosProdutos(semAtual, semDerivado);
+    (safra==="verao" ? setCotAdubProdVerao : setCotAdubProdInv)(adubMerged);
+    (safra==="verao" ? setCotSemProdVerao : setCotSemProdInv)(semMerged);
+    setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length });
+    setTimeout(()=>setGerarCotMsg(null), 4000);
+  }
+
   // ── Safras ──
   function arquivarSafra() {
     const arquivo = {
@@ -1421,10 +1443,18 @@ function App() {
             <span style={{fontSize:17,fontWeight:800,letterSpacing:1}}>🌿 GC Agro</span>
             <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10}}>{safraAtiva}</span>
           </div>
-          <div style={{display:"flex",gap:6}}>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {(appView==="prog_verao"||appView==="prog_inv") && (
+              <button onClick={gerarCotacao} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
+            )}
             <button onClick={()=>printView(appView)} style={{padding:"6px 12px",background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>📄 PDF</button>
           </div>
         </div>
+        {gerarCotMsg && (
+          <div style={{padding:"6px 16px",background:"rgba(46,125,50,0.9)",color:"#fff",fontSize:11,textAlign:"center"}}>
+            ✓ Cotação atualizada: {gerarCotMsg.adub} adubo(s) e {gerarCotMsg.sem} semente(s) novos enviados para a cotação.
+          </div>
+        )}
         {/* Culture sub-tabs for prog views */}
         {(appView==="prog_verao"||appView==="prog_inv") && (
           <div style={{display:"flex",gap:4,padding:"4px 16px 6px",overflowX:"auto"}}>
