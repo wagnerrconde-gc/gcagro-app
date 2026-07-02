@@ -899,8 +899,6 @@ function App() {
   const [adminTab, setAdminTab]           = useState("merit");
   const [filterCat, setFilterCat]         = useState("Todas");
   const [fornCatFilter, setFornCatFilter] = useState("Todas");
-  const [activeVencTab, setActiveVencTab] = useState("v1");
-  const [adminVencTab, setAdminVencTab]   = useState("v1");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
@@ -2102,7 +2100,6 @@ function App() {
         if (cotScreen==="fornecedor") {
           const color = FORN_COLORS[cotRole.idx%8];
           const fCat = fornCatFilter, setFCat = setFornCatFilter;
-          const vTab = activeVencTab, setVTab = setActiveVencTab;
           const vencLabels = getVencLabels(cotContext);
           const filled = Object.values(myPrices).filter(v=>v&&(v.v1>0||v.v2>0)).length;
           return (
@@ -2123,11 +2120,6 @@ function App() {
               <div style={{margin:"12px 20px 0",padding:"10px 14px",background:"#0d2040",borderLeft:`3px solid ${color}`,borderRadius:4,fontSize:11,color:"#7a9ab8"}}>
                 ⚠ Preencha apenas o preço unitário (R$). Os preços dos outros fornecedores são invisíveis para você.
               </div>
-              <div style={{margin:"12px 20px 0",display:"flex",gap:3}}>
-                {["v1","v2"].map(vk=>(
-                  <button key={vk} onClick={()=>setVTab(vk)} style={{padding:"9px 18px",background:vTab===vk?color:"#111d35",border:`1px solid ${vTab===vk?color:"#1e3a5f"}`,borderRadius:7,color:vTab===vk?"#fff":"#7a9ab8",fontSize:12,fontWeight:vTab===vk?700:400,cursor:"pointer"}}>💰 {vencLabels[vk]}</button>
-                ))}
-              </div>
               <div style={{padding:"10px 20px 0",display:"flex",gap:6,flexWrap:"wrap"}}>
                 {["Todas",...categorias].map(cat=>(
                   <button key={cat} onClick={()=>setFCat(cat)} style={{padding:"5px 12px",background:fCat===cat?color:"#111d35",border:`1px solid ${fCat===cat?color:"#1e3a5f"}`,borderRadius:18,color:fCat===cat?"#fff":"#7a9ab8",fontSize:11,cursor:"pointer"}}>{cat}</button>
@@ -2140,14 +2132,13 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:isEditableList?"1fr 60px 100px 150px":"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
-                        {(isEditableList?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels[vTab]})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels[vTab]})`]).map(h=>(
+                      <div style={{display:"grid",gridTemplateColumns:isEditableList?"1fr 60px 100px 140px 140px":"1fr 60px 100px 80px 140px 140px",gap:1,background:"#1e3a5f22"}}>
+                        {(isEditableList?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`]).map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
                           const key=p.nome.toLowerCase();
                           const entry=myPrices[key]||{};
-                          const val=entry[vTab]!==undefined?entry[vTab]:"";
                           const bg=i%2===0?"#0d1e36":"#0f2240";
                           return (
                             <React.Fragment key={key}>
@@ -2155,12 +2146,17 @@ function App() {
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
                               {!isEditableList && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
-                              <div style={{padding:"5px 7px",background:bg}}>
-                                <input type="number" step="0.01" min="0" value={val}
-                                  onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),[vTab]:e.target.value===""?"":parseFloat(e.target.value)}}))}
-                                  placeholder="0,00"
-                                  style={{width:"100%",padding:"5px 9px",background:val>0?"#0d2a4a":"#0a1628",border:`1px solid ${val>0?color+"88":"#1e3a5f"}`,borderRadius:5,color:val>0?"#e8f4fd":"#5a7a9a",fontSize:12,outline:"none",boxSizing:"border-box",textAlign:"right"}}/>
-                              </div>
+                              {["v1","v2"].map(vk=>{
+                                const val = entry[vk]!==undefined?entry[vk]:"";
+                                return (
+                                  <div key={vk} style={{padding:"5px 7px",background:bg}}>
+                                    <input type="number" step="0.01" min="0" value={val}
+                                      onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),[vk]:e.target.value===""?"":parseFloat(e.target.value)}}))}
+                                      placeholder="0,00"
+                                      style={{width:"100%",padding:"5px 9px",background:val>0?"#0d2a4a":"#0a1628",border:`1px solid ${val>0?color+"88":"#1e3a5f"}`,borderRadius:5,color:val>0?"#e8f4fd":"#5a7a9a",fontSize:12,outline:"none",boxSizing:"border-box",textAlign:"right"}}/>
+                                  </div>
+                                );
+                              })}
                             </React.Fragment>
                           );
                         })}
@@ -2179,7 +2175,6 @@ function App() {
         }
 
         if (cotScreen==="admin") {
-          const vTabA = adminVencTab, setVTabA = setAdminVencTab;
           const vencLabels = getVencLabels(cotContext);
           const updateEditableField = isSem ? updateSementeField : updateAduboField;
           const deleteEditableRow = isSem ? deleteSementeRow : deleteAduboRow;
@@ -2187,7 +2182,11 @@ function App() {
           const totalRef2 = produtos.reduce((s,p)=>s+p.qtd_total*p.preco_ref,0);
           const totalPorForn = fornecedores.map(f=>{
             const pr=allPrices[f]||{};let t=0;
-            produtos.forEach(p=>{const v=(pr[p.nome.toLowerCase()]||{})[vTabA];if(v>0)t+=v*p.qtd_total;});
+            produtos.forEach(p=>{
+              const entry=pr[p.nome.toLowerCase()]||{};
+              const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0);
+              if (vals.length) t += Math.min(...vals)*p.qtd_total;
+            });
             return t;
           });
           const filtProds = produtos.filter(p=>filterCat==="Todas"||p.categoria===filterCat);
@@ -2256,11 +2255,6 @@ function App() {
 
               {adminTab==="merit"&&(
                 <div style={{padding:"14px 20px 40px"}}>
-                  <div style={{display:"flex",gap:3,marginBottom:14}}>
-                    {["v1","v2"].map(vk=>(
-                      <button key={vk} onClick={()=>setVTabA(vk)} style={{padding:"7px 16px",background:vTabA===vk?"#1565C0":"#111d35",border:`1px solid ${vTabA===vk?"#1565C0":"#1e3a5f"}`,borderRadius:7,color:vTabA===vk?"#fff":"#7a9ab8",fontSize:11,fontWeight:vTabA===vk?700:400,cursor:"pointer"}}>💰 {vencLabels[vk]}</button>
-                    ))}
-                  </div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
                     {["Todas",...categorias].map(cat=>(
                       <button key={cat} onClick={()=>setFilterCat(cat)} style={{padding:"4px 11px",background:filterCat===cat?"#1565C0":"#111d35",border:`1px solid ${filterCat===cat?"#1565C0":"#1e3a5f"}`,borderRadius:18,color:filterCat===cat?"#fff":"#7a9ab8",fontSize:10,cursor:"pointer"}}>{cat}</button>
@@ -2276,21 +2270,26 @@ function App() {
                           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                             <thead>
                               <tr>
-                                <th style={thS("left","#111d35")}>Produto</th>
-                                {!isEditableList && <th style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
-                                <th style={thS("center","#111d35")}>Unid.</th>
-                                <th style={thS("right","#111d35")}>Qtd.</th>
-                                <th style={thS("right","#111d35")}>Ref.</th>
-                                {fornecedores.map((f,i)=>(<th key={f} style={thS("right",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.split(" ")[0]}</th>))}
-                                <th style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
-                                <th style={thS("center","#1a0d0d","#f87171")}>Economia</th>
-                                {isEditableList && <th style={thS("center","#111d35")}></th>}
+                                <th rowSpan={2} style={thS("left","#111d35")}>Produto</th>
+                                {!isEditableList && <th rowSpan={2} style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
+                                <th rowSpan={2} style={thS("center","#111d35")}>Unid.</th>
+                                <th rowSpan={2} style={thS("right","#111d35")}>Qtd.</th>
+                                <th rowSpan={2} style={thS("right","#111d35")}>Ref.</th>
+                                {fornecedores.map((f,i)=>(<th key={f} colSpan={2} style={thS("center",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.split(" ")[0]}</th>))}
+                                <th rowSpan={2} style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
+                                <th rowSpan={2} style={thS("center","#1a0d0d","#f87171")}>Economia</th>
+                                {isEditableList && <th rowSpan={2} style={thS("center","#111d35")}></th>}
+                              </tr>
+                              <tr>
+                                {fornecedores.map((f,i)=>["v1","v2"].map(vk=>(
+                                  <th key={f+vk} style={{...thS("right",FORN_COLORS[i%8]+"11",FORN_COLORS[i%8]),fontSize:9}}>{vencLabels[vk]}</th>
+                                )))}
                               </tr>
                             </thead>
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.map(f=>{const v=(allPrices[f]||{})[key]?.[vTabA];return v>0?Number(v):null;});
+                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const v=(allPrices[f]||{})[key]?.[vk];return v>0?Number(v):null;}));
                                 const validos=fornPrecos.filter(v=>v!==null);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
@@ -2386,7 +2385,8 @@ function App() {
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     {fornecedores.map((f,i)=>{
                       const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const total=totalPorForn[i];
-                      const wins=produtos.filter(p=>{const v=(pr[p.nome.toLowerCase()]||{})[vTabA];if(!v||v<=0)return false;const others=fornecedores.filter(x=>x!==f).map(x=>(allPrices[x]?.[p.nome.toLowerCase()]||{})[vTabA]).filter(v2=>v2>0);return others.every(v2=>Number(v)<=Number(v2));}).length;
+                      const bestOf = (prices,key) => { const entry=(prices[key]||{}); const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0); return vals.length?Math.min(...vals):null; };
+                      const wins=produtos.filter(p=>{const v=bestOf(pr,p.nome.toLowerCase());if(!v)return false;const others=fornecedores.filter(x=>x!==f).map(x=>bestOf(allPrices[x]||{},p.nome.toLowerCase())).filter(v2=>v2!==null);return others.every(v2=>v<=v2);}).length;
                       return (
                         <div key={f} style={{background:"#111d35",borderRadius:11,padding:"18px",border:`1px solid ${count>0?FORN_COLORS[i%8]+"66":"#1e3a5f"}`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
