@@ -38,8 +38,10 @@
   <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
-    // Carrega App.js via fetch, compila com Babel e executa
-    fetch('./App.js')
+    // Carrega App.js via fetch, compila com Babel e executa.
+    // Cache-bust com timestamp: garante que toda atualização publicada
+    // apareça no próximo carregamento, sem precisar limpar cache manualmente.
+    fetch('./App.js?t=' + Date.now(), { cache: 'no-store' })
       .then(r => r.text())
       .then(code => {
         const transformed = Babel.transform(code, { presets: [["react", { runtime: "classic" }]] }).code;
