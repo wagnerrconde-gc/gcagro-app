@@ -1162,8 +1162,16 @@ function App() {
     if (appView.startsWith("cot_")) { setCotScreen("login"); setCotRole(null); }
   }, [appView]);
 
+  const tintColor = isCotView ? "10,22,40" : appView.includes("inv") ? "26,15,0" : "240,244,248";
+  const tintAlpha = isCotView || appView.includes("inv") ? 0.82 : 0.86;
+
   return (
-    <div style={{minHeight:"100vh",background:isCotView?"#0a1628":appView.includes("inv")?"#1a0f00":"#f0f4f8",fontFamily:"system-ui,sans-serif"}}>
+    <div style={{minHeight:"100vh",fontFamily:"system-ui,sans-serif"}}>
+      {/* Foto de fundo fixa, com um véu semi-transparente por cima (cor muda por seção) para manter a leitura */}
+      <div style={{position:"fixed",inset:0,zIndex:-1,
+        backgroundImage:"url('images/bg-soja.jpg')",backgroundSize:"cover",backgroundPosition:"center"}}/>
+      <div style={{position:"fixed",inset:0,zIndex:-1,background:`rgba(${tintColor},${tintAlpha})`}}/>
+      <div style={{minHeight:"100vh"}}>
 
       {/* ── TOP NAV ── */}
       <div style={{background:navBg,color:"#fff",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
@@ -2192,6 +2200,7 @@ function App() {
         );
       })()}
 
+    </div>
     </div>
   );
 }
