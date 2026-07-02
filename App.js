@@ -1060,8 +1060,11 @@ function App() {
 
   // ── Fechar cotação (lançar na programação) ──
   function fecharCotacao(prodKey, fornecedores_qtds, precoMedio, nomeReal, iaReal) {
-    // fornecedores_qtds: [{nome, qtd, preco}]
+    // fornecedores_qtds: [{nome, qtd, preco, venc}]
     const setD = cotContext?.safra==="verao" ? setDataVerao : setDataInverno;
+    const vencLabels = getVencLabels(cotContext);
+    const fornecedorLabel = fornecedores_qtds.map(f=>f.nome).join(" + ");
+    const vencimentoLabel = [...new Set(fornecedores_qtds.map(f=>vencLabels[f.venc||"v1"]))].join(" + ");
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(culture => {
@@ -1069,7 +1072,9 @@ function App() {
           cat.products.forEach(p => {
             if (p.produto.trim().toLowerCase() === prodKey) {
               p.preco_compra = precoMedio;
-              p.fornecedor_compra = fornecedores_qtds.map(f=>f.nome).join(" + ");
+              p.fornecedor_compra = fornecedorLabel;
+              p.revenda = fornecedorLabel;
+              p.vencimento = vencimentoLabel;
               if (nomeReal) p.produto = nomeReal;
               if (iaReal) p.ingrediente_ativo = iaReal;
             }
@@ -1563,8 +1568,8 @@ function App() {
             const catTotal = catTotals[catIdx]||0;
             const icon = CAT_ICONS[cat.name]||"📦";
             const showIA = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"].includes(cat.name);
-            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose","Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Fornecedor","Total","R$/ha","Revenda","Venc.",""];
-            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose","area",null,"fase","obs","preco_unit",null,null,null,null,"revenda","vencimento"];
+            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose","Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
+            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose","area",null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -1598,14 +1603,13 @@ function App() {
                             <tr key={prodIdx} style={{background:bg}}>
                               <td style={{padding:"6px 8px",fontWeight:600}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
                               {showIA && <td style={{padding:"6px 8px",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
-                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(p.dose>0?p.dose*p.area:p.area)}</td>
+                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,1)}/></td>
+                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
+                              <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(p.dose>0?p.dose*p.area:p.area,1)}</td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#777"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
                               <td style={{padding:"6px 8px",color:"#888",maxWidth:120}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#888",textDecoration:comprado?"line-through":""}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb"}}>{comprado?fmt(p.preco_compra):"—"}</td>
-                              <td style={{padding:"6px 8px",fontSize:10,color:"#2e7d32"}}>{p.fornecedor_compra||"—"}</td>
                               <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:comprado?"#2e7d32":colors.bg}}>{fmt(total)}</td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{culture.area>0?fmt(total/culture.area):"-"}</td>
                               <td style={{padding:"6px 8px"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
