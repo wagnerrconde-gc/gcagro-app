@@ -56,6 +56,12 @@ const CAT_ICONS = {
   "Inseticidas":"🛡️","Óleos / Adjuvantes":"🧴",
 };
 
+const CATEGORIAS_COMPRA_PADRAO = ["Sementes","Adubação Verão","Adubação Inverno","Químicos Verão","Químicos Inverno"];
+const CATEGORIA_COMPRA_ICONS = {
+  "Sementes":"🌾","Adubação Verão":"🌱","Adubação Inverno":"🌱",
+  "Químicos Verão":"🧪","Químicos Inverno":"🧪",
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,7 +82,8 @@ function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
   Object.values(data).forEach(culture => {
     culture.categories.forEach(cat => {
-      if (excluirAdubacao && cat.name === "Adubação") return;
+      // Adubação e Sementes têm cotações próprias e dedicadas — não entram na de Insumos.
+      if (excluirAdubacao && (cat.name === "Adubação" || cat.name === "Sementes")) return;
       cat.products.forEach(p => {
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
@@ -827,6 +834,9 @@ function App() {
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
   const [addingCompra, setAddingCompra]     = useState(false);
   const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
+  const [comprasSafraSel, setComprasSafraSel] = useState(null);
+  const [comprasCatSel, setComprasCatSel]     = useState(null);
+  const [novaPastaNome, setNovaPastaNome]     = useState("");
 
   // ── UI ──
   const [appView, setAppView]             = useState("dashboard");
@@ -1126,6 +1136,33 @@ function App() {
     });
     return { total, totalSafraAtiva, porSafra: Object.values(porSafra) };
   }, [comprasRecords, safraAtiva]);
+
+  const comprasSafrasList = useMemo(() => {
+    const safras = new Set(comprasRecords.map(r=>r.safra));
+    safras.add(safraAtiva);
+    return Array.from(safras).map(safra => {
+      const recs = comprasRecords.filter(r=>r.safra===safra);
+      return { safra, total: recs.reduce((s,r)=>s+r.valorTotal,0), count: recs.length };
+    }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
+  }, [comprasRecords, safraAtiva]);
+
+  const comprasCategoriasList = useMemo(() => {
+    if (!comprasSafraSel) return [];
+    const map = {};
+    CATEGORIAS_COMPRA_PADRAO.forEach(cat => { map[cat] = { categoria:cat, total:0, count:0 }; });
+    comprasRecords.filter(r=>r.safra===comprasSafraSel).forEach(r => {
+      const cat = r.categoria || "Outros";
+      if (!map[cat]) map[cat] = { categoria:cat, total:0, count:0 };
+      map[cat].total += r.valorTotal;
+      map[cat].count += 1;
+    });
+    return Object.values(map).sort((a,b)=> b.count-a.count || a.categoria.localeCompare(b.categoria));
+  }, [comprasRecords, comprasSafraSel]);
+
+  const comprasRecordsFiltrados = useMemo(() => {
+    if (!comprasSafraSel || !comprasCatSel) return [];
+    return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
+  }, [comprasRecords, comprasSafraSel, comprasCatSel]);
 
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -2181,98 +2218,132 @@ function App() {
             </div>
           </div>
 
-          <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-            <button onClick={()=>setAddingCompra(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+          {/* Breadcrumb */}
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
+            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);}}
+              style={{cursor:"pointer",fontWeight:comprasSafraSel?600:800,color:"#00695c"}}>🛒 Compras</span>
+            {comprasSafraSel && (<>
+              <span style={{color:"#bbb"}}>›</span>
+              <span onClick={()=>setComprasCatSel(null)} style={{cursor:"pointer",fontWeight:comprasCatSel?600:800,color:"#00695c"}}>📁 {comprasSafraSel}</span>
+            </>)}
+            {comprasCatSel && (<>
+              <span style={{color:"#bbb"}}>›</span>
+              <span style={{fontWeight:800,color:"#00695c"}}>{CATEGORIA_COMPRA_ICONS[comprasCatSel]||"📁"} {comprasCatSel}</span>
+            </>)}
           </div>
-          <div style={{fontSize:11,color:"#999",marginBottom:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação.</div>
 
-          {comprasTotais.porSafra.length>0 && (
-            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:14}}>
-              <div style={{background:"#00695c",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>📊 Comparativo por safra</div>
+          {/* NÍVEL 0: pastas de safra */}
+          {!comprasSafraSel && (<>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:16}}>
+              {comprasSafrasList.map(s=>(
+                <div key={s.safra} onClick={()=>setComprasSafraSel(s.safra)}
+                  style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #00695c":"1px solid transparent"}}>
+                  <div style={{fontSize:26}}>📁</div>
+                  <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras safra {s.safra}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:4}}>{s.count} lançamento{s.count===1?"":"s"}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(s.total)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <input placeholder="Nome da nova safra (ex: Verão 26/27)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
+                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{if(novaPastaNome.trim()){setComprasSafraSel(novaPastaNome.trim());setNovaPastaNome("");}}}
+                disabled={!novaPastaNome.trim()}
+                style={{padding:"7px 14px",background:"#00695c",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de safra</button>
+            </div>
+          </>)}
+
+          {/* NÍVEL 1: pastas de categoria dentro da safra */}
+          {comprasSafraSel && !comprasCatSel && (<>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+              {comprasCategoriasList.map(c=>(
+                <div key={c.categoria} onClick={()=>setComprasCatSel(c.categoria)}
+                  style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer"}}>
+                  <div style={{fontSize:24}}>{CATEGORIA_COMPRA_ICONS[c.categoria]||"📁"}</div>
+                  <div style={{fontWeight:700,fontSize:13,marginTop:6,color:"#1a3a1a"}}>{c.categoria}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:4}}>{c.count} lançamento{c.count===1?"":"s"}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(c.total)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <input placeholder="Nova categoria (ex: Calcário/Corretivos)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
+                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{if(novaPastaNome.trim()){setComprasCatSel(novaPastaNome.trim());setNovaPastaNome("");}}}
+                disabled={!novaPastaNome.trim()}
+                style={{padding:"7px 14px",background:"#00695c",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de categoria</button>
+            </div>
+          </>)}
+
+          {/* NÍVEL 2: registros da safra + categoria selecionadas */}
+          {comprasSafraSel && comprasCatSel && (<>
+            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+              <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+              <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {["Safra","Quantidade","Total gasto"].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Safra"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4"}}>{h}</th>
+                    {["Data","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Produto","Fornecedor","Obs"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {comprasTotais.porSafra.map((s,i)=>(
-                    <tr key={s.safra} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                      <td style={{padding:"6px 9px",fontWeight:600}}>{s.safra}</td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}>{fmtQtd(s.quantidade)}</td>
-                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(s.total)}</td>
+                  {comprasRecordsFiltrados.map((r,i)=>(
+                    <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}>
+                        <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          <option value="TN">TN</option>
+                          <option value="KG">KG</option>
+                        </select>
+                      </td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"quantidade",v,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="precoUnitario" type="number" align="right" value={fmt(r.precoUnitario)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"precoUnitario",v,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(r.valorTotal)}</td>
+                      <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="fornecedor" value={r.fornecedor} onCommit={v=>updateRecordField(setComprasRecords,r.id,"fornecedor",v)}/></td>
+                      <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"compra|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setComprasRecords,r.id,"obs",v)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover compra?"))deleteRecord(setComprasRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
                     </tr>
                   ))}
+                  {addingCompra && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          <option value="TN">TN</option>
+                          <option value="KG">KG</option>
+                        </select>
+                      </td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td/>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Fornecedor" value={newCompra.fornecedor} onChange={e=>setNewCompra(p=>({...p,fornecedor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitCompra} style={{background:"#00695c",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>setAddingCompra(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {comprasRecordsFiltrados.length===0 && !addingCompra && (
+                    <tr><td colSpan={9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente.</td></tr>
+                  )}
                 </tbody>
               </table>
+              </div>
             </div>
-          )}
-
-          <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-            <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{background:"#e0f2f1"}}>
-                  {["Data","Safra","Produto","Categoria","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Obs",""].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:["Produto","Categoria","Fornecedor","Obs"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {comprasRecords.map((r,i)=>(
-                  <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
-                    <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"compra|"+r.id} field="safra" value={r.safra} onCommit={v=>updateRecordField(setComprasRecords,r.id,"safra",v)}/></td>
-                    <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setComprasRecords,r.id,"categoria",v)}/></td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}>
-                      <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="TN">TN</option>
-                        <option value="KG">KG</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"quantidade",v,true)}/></td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="precoUnitario" type="number" align="right" value={fmt(r.precoUnitario)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"precoUnitario",v,true)}/></td>
-                    <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(r.valorTotal)}</td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="fornecedor" value={r.fornecedor} onCommit={v=>updateRecordField(setComprasRecords,r.id,"fornecedor",v)}/></td>
-                    <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"compra|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setComprasRecords,r.id,"obs",v)}/></td>
-                    <td style={{padding:"6px 4px",textAlign:"center"}}>
-                      <button onClick={()=>{if(window.confirm("Remover compra?"))deleteRecord(setComprasRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                ))}
-                {addingCompra && (
-                  <tr style={{background:"#fffde7"}}>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder={safraAtiva} value={newCompra.safra} onChange={e=>setNewCompra(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Categoria" value={newCompra.categoria} onChange={e=>setNewCompra(p=>({...p,categoria:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}>
-                      <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="TN">TN</option>
-                        <option value="KG">KG</option>
-                      </select>
-                    </td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td/>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Fornecedor" value={newCompra.fornecedor} onChange={e=>setNewCompra(p=>({...p,fornecedor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}>
-                      <button onClick={submitCompra} style={{background:"#00695c",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
-                      <button onClick={()=>setAddingCompra(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
-                    </td>
-                  </tr>
-                )}
-                {comprasRecords.length===0 && !addingCompra && (
-                  <tr><td colSpan={11} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada ainda. Feche uma cotação de adubação ou lance manualmente.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
+          </>)}
         </div>
       )}
 
@@ -2369,8 +2440,9 @@ function App() {
             fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
             if (isAdubFechar) {
               const prod = produtos.find(p=>p.nome.toLowerCase()===key);
+              const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
               novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
-                categoria:"Adubação", produto:dec.nomeReal, unidade:prod?.unidade||"TN", quantidade:prod?.qtd_total||0,
+                categoria:"Adubação "+temporadaLabel, produto:dec.nomeReal, unidade:prod?.unidade||"TN", quantidade:prod?.qtd_total||0,
                 precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(f=>f.nome).join(" + "), obs:"" });
             }
           });
