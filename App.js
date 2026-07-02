@@ -51,7 +51,7 @@ const CULTURE_COLORS_INVERNO = {
 };
 const CAT_ICONS = {
   "Adubação":"🌱","Sementes":"🌾","TS":"🧪","Kit Sulco":"🪱",
-  "Dessecação e Pós":"💧","Foliares":"🍃","Fungicidas":"🔬",
+  "Herbicidas - Dessecação e Pós":"💧","Foliares":"🍃","Fungicidas":"🔬",
   "Inseticidas":"🛡️","Óleos / Adjuvantes":"🧴",
 };
 
@@ -121,6 +121,16 @@ function splitSementesTS(cultureData) {
     if (sementes.length) novas.push({ name:"Sementes", products:sementes });
     if (ts.length) novas.push({ name:"TS", products:ts });
     culture.categories.splice(idx, 1, ...novas);
+  });
+  return nd;
+}
+
+// Renomeia uma categoria pelo nome antigo, se existir — idempotente, migra dados
+// já salvos no localStorage junto com os dados padrão.
+function renameCategoria(cultureData, oldName, newName) {
+  const nd = JSON.parse(JSON.stringify(cultureData));
+  Object.values(nd).forEach(culture => {
+    (culture.categories || []).forEach(cat => { if (cat.name === oldName) cat.name = newName; });
   });
   return nd;
 }
@@ -324,7 +334,7 @@ const INITIAL_DATA_VERAO = {
         { produto:"Nodugran", dose:10, area:957, fase:"doses", obs:"10 DOSES", preco_unit:1.28, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Bradyrhizobium", revenda:"Produttiva", vencimento:"30/04/2026" },
         { produto:"Torpeno (Trichoderma)", dose:0.12, area:957, fase:"", obs:"", preco_unit:200, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Trichoderma", revenda:"Produttiva", vencimento:"30/04/2026" },
       ]},
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Roundup Wg / Tecnup", dose:5, area:1100, fase:"", obs:"Preço médio", preco_unit:28.96, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Glifosato", revenda:"Trisolo / Adm", vencimento:"30/04/2026" },
         { produto:"Pôquer", dose:1.5, area:960, fase:"", obs:"980 l em estoque", preco_unit:33.5, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Haloxifope", revenda:"Terrena", vencimento:"30/04/2026" },
         { produto:"Diquat", dose:2, area:957, fase:"", obs:"Dessecação Colheita", preco_unit:22.5, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Diquat", revenda:"Plantar", vencimento:"30/04/2026" },
@@ -390,7 +400,7 @@ const INITIAL_DATA_VERAO = {
         { produto:"Tropic", dose:5, area:136.5, fase:"doses", obs:"", preco_unit:4.8, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Co+Mo", revenda:"Valoriza", vencimento:"30/04/2026" },
         { produto:"Torpeno", dose:0.12, area:136.5, fase:"", obs:"", preco_unit:200, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Trichoderma", revenda:"Produttiva", vencimento:"30/04/2026" },
       ]},
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Roundup wg", dose:2, area:136.5, fase:"", obs:"", preco_unit:28.96, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Glifosato", revenda:"ADM", vencimento:"30/04/2026" },
         { produto:"Basagran 600", dose:1, area:136.5, fase:"", obs:"", preco_unit:97.6, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Bentazona", revenda:"Terrena", vencimento:"30/10/2025" },
         { produto:"Dual Gold", dose:0.8, area:136.5, fase:"", obs:"Pré plantio", preco_unit:55, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"S-Metolacloro", revenda:"Nascente", vencimento:"30/04/2026" },
@@ -444,7 +454,7 @@ const INITIAL_DATA_VERAO = {
         { produto:"Torpeno", dose:0.12, area:252, fase:"", obs:"", preco_unit:200, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Trichoderma", revenda:"Produttiva", vencimento:"30/04/2026" },
         { produto:"Azos", dose:2, area:252, fase:"doses", obs:"", preco_unit:4.35, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Azospirillum", revenda:"Nascente", vencimento:"30/04/2026" },
       ]},
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Proof", dose:4, area:252, fase:"", obs:"Dessecação", preco_unit:22.9, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Diquat", revenda:"Nascente", vencimento:"30/04/2026" },
         { produto:"Reglone", dose:2, area:252, fase:"", obs:"", preco_unit:26.9, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Diquat", revenda:"Nascente", vencimento:"30/04/2026" },
         { produto:"Off road", dose:2, area:252, fase:"", obs:"", preco_unit:18.6, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"Glufosinato", revenda:"ADM", vencimento:"30/04/2026" },
@@ -503,7 +513,7 @@ const INITIAL_DATA_INVERNO = {
         { produto:"Raicol Resist", dose:0.173, area:100.0, fase:"", obs:"SEQUEIRO", preco_unit:230.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Produttiva", vencimento:"2025-08-30" },
         { produto:"Provilar", dose:0.3, area:100.0, fase:"", obs:"Pivot 1/11", preco_unit:240.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Produttiva", vencimento:"2025-08-30" }
       ] },
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Primoleo", dose:6.0, area:575.0, fase:"", obs:"Dessecação", preco_unit:22.11, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Nascente", vencimento:"2025-09-15" },
         { produto:"Mesotriona", dose:0.2, area:415.0, fase:"", obs:"", preco_unit:85.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Pioneira", vencimento:"2025-08-30" },
         { produto:"Diquat", dose:2.0, area:575.0, fase:"", obs:"", preco_unit:23.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Produttiva", vencimento:"2025-08-30" },
@@ -553,7 +563,7 @@ const INITIAL_DATA_INVERNO = {
         { produto:"Protege / Arvatico / Provilar", dose:0.3, area:160.0, fase:"", obs:"Gastar estoque // comprar provilar", preco_unit:0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"", vencimento:"" },
         { produto:"Azospirilum", dose:0.2, area:160.0, fase:"", obs:"320 doses", preco_unit:0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"", vencimento:"" }
       ] },
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Amplo", dose:1.0, area:160.0, fase:"", obs:"", preco_unit:0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"", vencimento:"" },
         { produto:"Select", dose:2.0, area:160.0, fase:"", obs:"", preco_unit:0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"", vencimento:"" },
         { produto:"Dual Gold", dose:0.75, area:160.0, fase:"", obs:"", preco_unit:0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"", vencimento:"" },
@@ -628,7 +638,7 @@ const INITIAL_DATA_INVERNO = {
         { produto:"Vigorgeo Azos", dose:0.2, area:100.0, fase:"", obs:"Aplicar logo após nascimento", preco_unit:4.8, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Produttiva", vencimento:"2025-09-30" },
         { produto:"Torpeno", dose:0.2, area:100.0, fase:"", obs:"Aplicar logo após nascimento", preco_unit:216.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Produttiva", vencimento:"2025-09-30" }
       ] },
-      { name:"Dessecação e Pós", products:[
+      { name:"Herbicidas - Dessecação e Pós", products:[
         { produto:"Dual Gold", dose:0.8, area:100.0, fase:"", obs:"Dessecação", preco_unit:54.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Nascente", vencimento:"2025-09-30" },
         { produto:"Topik", dose:0.25, area:100.0, fase:"", obs:"", preco_unit:595.0, preco_compra:null, fornecedor_compra:null, ingrediente_ativo:"", revenda:"Nascente", vencimento:"2025-09-30" }
       ] },
@@ -797,8 +807,8 @@ function App() {
   const [safrasArquivadas, setSafrasArquivadas] = useState(() => loadLS(KEY_SAFRAS+"_arquivo", []));
 
   // ── Programação ──
-  const [dataVerao, setDataVerao] = useState(() => splitSementesTS(loadLS(KEY_PROG+"_verao", INITIAL_DATA_VERAO)));
-  const [dataInverno, setDataInverno] = useState(() => splitSementesTS(loadLS(KEY_PROG+"_inverno", INITIAL_DATA_INVERNO)));
+  const [dataVerao, setDataVerao] = useState(() => splitSementesTS(renameCategoria(loadLS(KEY_PROG+"_verao", INITIAL_DATA_VERAO), "Dessecação e Pós", "Herbicidas - Dessecação e Pós")));
+  const [dataInverno, setDataInverno] = useState(() => splitSementesTS(renameCategoria(loadLS(KEY_PROG+"_inverno", INITIAL_DATA_INVERNO), "Dessecação e Pós", "Herbicidas - Dessecação e Pós")));
 
   // ── Cotação ──
   const [cotVeraoAdub, setCotVeraoAdub]   = useState(() => loadLS(KEY_COTACAO+"_verao_adub", {}));
@@ -1400,6 +1410,9 @@ function App() {
             const isOpen = expandedCats[activeCulture+catIdx]!==false;
             const catTotal = catTotals[catIdx]||0;
             const icon = CAT_ICONS[cat.name]||"📦";
+            const showIA = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"].includes(cat.name);
+            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose","Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Fornecedor","Total","R$/ha","Revenda","Venc.",""];
+            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose","area",null,"fase","obs","preco_unit",null,null,null,null,"revenda","vencimento"];
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -1418,7 +1431,7 @@ function App() {
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                       <thead>
                         <tr style={{background:colors.light}}>
-                          {["Produto","I.A.","Dose","Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Fornecedor","Total","R$/ha","Revenda","Venc.",""].map(h=>(
+                          {progHeaders.map(h=>(
                             <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"||h==="I.A."||h==="Obs"?"left":"right",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
                           ))}
                         </tr>
@@ -1432,7 +1445,7 @@ function App() {
                           return (
                             <tr key={prodIdx} style={{background:bg}}>
                               <td style={{padding:"6px 8px",fontWeight:600}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
-                              <td style={{padding:"6px 8px",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>
+                              {showIA && <td style={{padding:"6px 8px",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose)}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area)}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(p.dose>0?p.dose*p.area:p.area)}</td>
@@ -1453,7 +1466,7 @@ function App() {
                         })}
                         {addingTo?.catIdx===catIdx?(
                           <tr style={{background:"#fffde7"}}>
-                            {["produto","ingrediente_ativo","dose","area",null,"fase","obs","preco_unit",null,null,null,null,"revenda","vencimento"].map((field,i)=>(
+                            {addRowFields.map((field,i)=>(
                               <td key={i} style={{padding:"5px 6px"}}>
                                 {field?(<input placeholder={field} type={["dose","area","preco_unit"].includes(field)?"number":"text"} step="any"
                                   value={newProd[field]||""} onChange={e=>setNewProd(p=>({...p,[field]:e.target.value}))}
@@ -1467,7 +1480,7 @@ function App() {
                             </td>
                           </tr>
                         ):(
-                          <tr><td colSpan={15} style={{padding:"5px 10px"}}>
+                          <tr><td colSpan={progHeaders.length} style={{padding:"5px 10px"}}>
                             <button onClick={()=>{setAddingTo({catIdx});setNewProd({produto:"",dose:"",area:culture.area,fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});}}
                               style={{background:"none",border:"1px dashed "+colors.badge,color:colors.accent,borderRadius:5,padding:"3px 12px",cursor:"pointer",fontSize:11}}>+ Adicionar produto</button>
                           </td></tr>
