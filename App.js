@@ -109,6 +109,21 @@ function derivarAdubacao(data) {
   });
   return Object.values(map);
 }
+function derivarSementes(data) {
+  const map = {};
+  Object.values(data).forEach(culture => {
+    culture.categories.forEach(cat => {
+      if (cat.name !== "Sementes") return;
+      cat.products.forEach(p => {
+        const key = p.produto.trim().toLowerCase();
+        const qtd = p.dose > 0 ? p.dose * p.area : p.area;
+        if (map[key]) { map[key].qtd_total += qtd; }
+        else { map[key] = { nome:p.produto.trim(), unidade:"bag", qtd_total:qtd, categoria:"Sementes", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
+      });
+    });
+  });
+  return Object.values(map);
+}
 
 function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JSON.parse(r):def; } catch { return def; } }
 function saveLS(key, d)   { try { localStorage.setItem(key, JSON.stringify(d)); } catch(e) {} }
@@ -837,13 +852,23 @@ function App() {
   const [cotVeraoIns, setCotVeraoIns]     = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_ins", {})));
   const [cotInvAdub, setCotInvAdub]       = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_adub", {})));
   const [cotInvIns, setCotInvIns]         = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_ins", {})));
+  const [cotVeraoSem, setCotVeraoSem]     = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_sem", {})));
+  const [cotInvSem, setCotInvSem]         = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_sem", {})));
   const [cotVencLabels, setCotVencLabels] = useState(() => loadLS(KEY_COTACAO+"_venc_labels", {}));
+  const [sementesFornecedores, setSementesFornecedores] = useState(() => loadLS(KEY_COTACAO+"_sem_fornecedores", []));
+  const [newSemFornecedor, setNewSemFornecedor] = useState("");
 
   // ── Cotação Adubação: lista de produtos editável manualmente (desacoplada da Programação) ──
   const [cotAdubProdVerao, setCotAdubProdVerao] = useState(() => loadLS(KEY_COTACAO+"_produtos_verao_adub", null) || derivarAdubacao(dataVerao));
   const [cotAdubProdInv, setCotAdubProdInv]     = useState(() => loadLS(KEY_COTACAO+"_produtos_inv_adub", null) || derivarAdubacao(dataInverno));
   const [addingAdubo, setAddingAdubo]     = useState(false);
   const [newAdubo, setNewAdubo]           = useState({nome:"",unidade:"TN",qtd_total:"",preco_ref:""});
+
+  // ── Cotação Sementes: lista de produtos editável manualmente (desacoplada da Programação) ──
+  const [cotSemProdVerao, setCotSemProdVerao] = useState(() => loadLS(KEY_COTACAO+"_produtos_verao_sem", null) || derivarSementes(dataVerao));
+  const [cotSemProdInv, setCotSemProdInv]     = useState(() => loadLS(KEY_COTACAO+"_produtos_inv_sem", null) || derivarSementes(dataInverno));
+  const [addingSemente, setAddingSemente] = useState(false);
+  const [newSemente, setNewSemente]       = useState({nome:"",unidade:"bag",qtd_total:"",preco_ref:""});
 
   // ── Compras (histórico de compras fechadas na Cotação) ──
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
@@ -905,6 +930,11 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_venc_labels", cotVencLabels); }, [cotVencLabels]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_adub", cotAdubProdVerao); }, [cotAdubProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_adub", cotAdubProdInv); }, [cotAdubProdInv]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_verao_sem", cotVeraoSem); }, [cotVeraoSem]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_inv_sem", cotInvSem); }, [cotInvSem]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_sem", cotSemProdVerao); }, [cotSemProdVerao]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_sem", cotSemProdInv); }, [cotSemProdInv]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_sem_fornecedores", sementesFornecedores); }, [sementesFornecedores]);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
@@ -936,28 +966,45 @@ function App() {
     if (!ctx) return {};
     if (ctx.safra==="verao" && ctx.tipo==="adub") return cotVeraoAdub;
     if (ctx.safra==="verao" && ctx.tipo==="ins")  return cotVeraoIns;
+    if (ctx.safra==="verao" && ctx.tipo==="sem")  return cotVeraoSem;
     if (ctx.safra==="inv"   && ctx.tipo==="adub") return cotInvAdub;
     if (ctx.safra==="inv"   && ctx.tipo==="ins")  return cotInvIns;
+    if (ctx.safra==="inv"   && ctx.tipo==="sem")  return cotInvSem;
     return {};
   }
   function setCotData(ctx, val) {
     if (!ctx) return;
     if (ctx.safra==="verao" && ctx.tipo==="adub") setCotVeraoAdub(val);
     if (ctx.safra==="verao" && ctx.tipo==="ins")  setCotVeraoIns(val);
+    if (ctx.safra==="verao" && ctx.tipo==="sem")  setCotVeraoSem(val);
     if (ctx.safra==="inv"   && ctx.tipo==="adub") setCotInvAdub(val);
     if (ctx.safra==="inv"   && ctx.tipo==="ins")  setCotInvIns(val);
+    if (ctx.safra==="inv"   && ctx.tipo==="sem")  setCotInvSem(val);
   }
   function getProdutos(ctx) {
     if (!ctx) return [];
     if (ctx.safra==="verao" && ctx.tipo==="adub") return cotAdubProdVerao;
     if (ctx.safra==="verao" && ctx.tipo==="ins")  return prodVeraoIns;
+    if (ctx.safra==="verao" && ctx.tipo==="sem")  return cotSemProdVerao;
     if (ctx.safra==="inv"   && ctx.tipo==="adub") return cotAdubProdInv;
     if (ctx.safra==="inv"   && ctx.tipo==="ins")  return prodInvIns;
+    if (ctx.safra==="inv"   && ctx.tipo==="sem")  return cotSemProdInv;
     return [];
   }
   function getFornecedores(ctx) {
     if (!ctx) return FORN_INSUMOS;
-    return ctx.tipo==="adub" ? FORN_ADUBACAO : FORN_INSUMOS;
+    if (ctx.tipo==="adub") return FORN_ADUBACAO;
+    if (ctx.tipo==="sem")  return sementesFornecedores;
+    return FORN_INSUMOS;
+  }
+  function addSementeFornecedor() {
+    const nome = newSemFornecedor.trim();
+    if (!nome || sementesFornecedores.some(f=>f.toLowerCase()===nome.toLowerCase())) return;
+    setSementesFornecedores(list => [...list, nome]);
+    setNewSemFornecedor("");
+  }
+  function removeSementeFornecedor(nome) {
+    setSementesFornecedores(list => list.filter(f=>f!==nome));
   }
   // ── Vencimentos de pagamento (duas datas manuais por cotação) ──
   function getVencLabels(ctx) {
@@ -970,7 +1017,7 @@ function App() {
     setCotVencLabels(prev => ({...prev, [k]: {...(prev[k]||{v1:"Pagamento 1",v2:"Pagamento 2"}), [vk]: label}}));
   }
 
-  // ── Cotação Adubação: CRUD da lista editável ──
+  // ── Cotação Adubação/Sementes: CRUD das listas editáveis ──
   function setAduboProdutos(ctx, updater) {
     if (!ctx || ctx.tipo!=="adub") return;
     if (ctx.safra==="verao") setCotAdubProdVerao(updater); else setCotAdubProdInv(updater);
@@ -992,6 +1039,28 @@ function App() {
     if (!cotContext) return;
     if (!window.confirm(`Remover "${nome}" da lista de cotação?`)) return;
     setAduboProdutos(cotContext, list => list.filter(p => p.nome!==nome));
+  }
+  function setSementeProdutos(ctx, updater) {
+    if (!ctx || ctx.tipo!=="sem") return;
+    if (ctx.safra==="verao") setCotSemProdVerao(updater); else setCotSemProdInv(updater);
+  }
+  function addSementeRow() {
+    if (!newSemente.nome.trim() || !cotContext) return;
+    setSementeProdutos(cotContext, list => [...list, { nome:newSemente.nome.trim(), unidade:newSemente.unidade,
+      qtd_total:parseFloat(newSemente.qtd_total)||0, categoria:"Sementes", preco_ref:parseFloat(newSemente.preco_ref)||0, ingrediente_ativo:"" }]);
+    setNewSemente({nome:"",unidade:"bag",qtd_total:"",preco_ref:""});
+    setAddingSemente(false);
+  }
+  function updateSementeField(nome, field, value) {
+    if (!cotContext) return;
+    setSementeProdutos(cotContext, list => list.map(p => p.nome===nome
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      : p));
+  }
+  function deleteSementeRow(nome) {
+    if (!cotContext) return;
+    if (!window.confirm(`Remover "${nome}" da lista de cotação?`)) return;
+    setSementeProdutos(cotContext, list => list.filter(p => p.nome!==nome));
   }
 
   // ── Programação helpers ──
@@ -1308,8 +1377,10 @@ function App() {
     { id:"resumo_verao",   label:"Resumo Verão",          icon:"📈", group:"Resumos" },
     { id:"resumo_inv",     label:"Resumo Inverno",        icon:"📈", group:"Resumos" },
     { id:"cot_verao_adub", label:"Cot. Adub. Verão",      icon:"🌱", group:"Cotação" },
+    { id:"cot_verao_sem",  label:"Cot. Sementes Verão",   icon:"🌾", group:"Cotação" },
     { id:"cot_verao_ins",  label:"Cot. Insumos Verão",    icon:"💰", group:"Cotação" },
     { id:"cot_inv_adub",   label:"Cot. Adub. Inverno",    icon:"🌱", group:"Cotação" },
+    { id:"cot_inv_sem",    label:"Cot. Sementes Inverno", icon:"🌾", group:"Cotação" },
     { id:"cot_inv_ins",    label:"Cot. Insumos Inverno",  icon:"💰", group:"Cotação" },
     { id:"plan_verao",     label:"Plano Verão",           icon:"🗺️", group:"Planejamento" },
     { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
@@ -1323,8 +1394,10 @@ function App() {
   useEffect(() => {
     if (appView==="cot_verao_adub") setCotContext({safra:"verao",tipo:"adub"});
     else if (appView==="cot_verao_ins") setCotContext({safra:"verao",tipo:"ins"});
+    else if (appView==="cot_verao_sem") setCotContext({safra:"verao",tipo:"sem"});
     else if (appView==="cot_inv_adub") setCotContext({safra:"inv",tipo:"adub"});
     else if (appView==="cot_inv_ins") setCotContext({safra:"inv",tipo:"ins"});
+    else if (appView==="cot_inv_sem") setCotContext({safra:"inv",tipo:"sem"});
     if (appView.startsWith("cot_")) { setCotScreen("login"); setCotRole(null); }
   }, [appView]);
 
@@ -1963,9 +2036,12 @@ function App() {
         const produtos = getProdutos(cotContext);
         const fornecedores = getFornecedores(cotContext);
         const categorias = [...new Set(produtos.map(p=>p.categoria))];
-        const tipoLabel = cotContext?.tipo==="adub" ? "Adubação" : "Insumos";
+        const tipoLabel = cotContext?.tipo==="adub" ? "Adubação" : cotContext?.tipo==="sem" ? "Sementes" : "Insumos";
         const safraLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
         const isAdub = cotContext?.tipo==="adub";
+        const isSem = cotContext?.tipo==="sem";
+        const isEditableList = isAdub || isSem;
+        const unitOptions = isAdub ? ["TN","KG"] : isSem ? ["bag","sc"] : [];
 
         if (cotScreen==="login") return (
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"calc(100vh - 52px)"}}>
@@ -2034,8 +2110,8 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:isAdub?"1fr 60px 100px 150px":"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
-                        {(isAdub?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels[vTab]})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels[vTab]})`]).map(h=>(
+                      <div style={{display:"grid",gridTemplateColumns:isEditableList?"1fr 60px 100px 150px":"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
+                        {(isEditableList?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels[vTab]})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels[vTab]})`]).map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
@@ -2048,7 +2124,7 @@ function App() {
                               <div style={{padding:"9px 10px",background:bg,fontSize:12,color:"#d0e8ff"}}>{p.nome}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
-                              {!isAdub && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
+                              {!isEditableList && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
                               <div style={{padding:"5px 7px",background:bg}}>
                                 <input type="number" step="0.01" min="0" value={val}
                                   onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),[vTab]:e.target.value===""?"":parseFloat(e.target.value)}}))}
@@ -2075,6 +2151,9 @@ function App() {
         if (cotScreen==="admin") {
           const vTabA = adminVencTab, setVTabA = setAdminVencTab;
           const vencLabels = getVencLabels(cotContext);
+          const updateEditableField = isSem ? updateSementeField : updateAduboField;
+          const deleteEditableRow = isSem ? deleteSementeRow : deleteAduboRow;
+          const recKeyPrefix = isSem ? "semente|" : "adubo|";
           const totalRef2 = produtos.reduce((s,p)=>s+p.qtd_total*p.preco_ref,0);
           const totalPorForn = fornecedores.map(f=>{
             const pr=allPrices[f]||{};let t=0;
@@ -2105,6 +2184,24 @@ function App() {
                     style={{padding:"6px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
                 ))}
               </div>
+
+              {/* Fornecedores de sementes (cadastro manual) */}
+              {isSem && (
+                <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <span style={{fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>Fornecedores:</span>
+                  {fornecedores.map(f=>(
+                    <span key={f} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 6px 4px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:20,color:"#e8f4fd",fontSize:12}}>
+                      {f}
+                      <button onClick={()=>removeSementeFornecedor(f)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:12,padding:0}}>✕</button>
+                    </span>
+                  ))}
+                  <input value={newSemFornecedor} onChange={e=>setNewSemFornecedor(e.target.value)}
+                    onKeyDown={e=>e.key==="Enter"&&addSementeFornecedor()}
+                    placeholder="Nome do fornecedor"
+                    style={{padding:"6px 10px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
+                  <button onClick={addSementeFornecedor} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                </div>
+              )}
 
               {/* Status */}
               <div style={{padding:"14px 20px 0",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
@@ -2150,14 +2247,14 @@ function App() {
                             <thead>
                               <tr>
                                 <th style={thS("left","#111d35")}>Produto</th>
-                                {!isAdub && <th style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
+                                {!isEditableList && <th style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
                                 <th style={thS("center","#111d35")}>Unid.</th>
                                 <th style={thS("right","#111d35")}>Qtd.</th>
                                 <th style={thS("right","#111d35")}>Ref.</th>
                                 {fornecedores.map((f,i)=>(<th key={f} style={thS("right",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.split(" ")[0]}</th>))}
                                 <th style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
                                 <th style={thS("center","#1a0d0d","#f87171")}>Economia</th>
-                                {isAdub && <th style={thS("center","#111d35")}></th>}
+                                {isEditableList && <th style={thS("center","#111d35")}></th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -2171,23 +2268,22 @@ function App() {
                                 return (
                                   <tr key={key}>
                                     <td style={tdS("left",bg)}>
-                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="nome" value={p.nome} onCommit={v=>updateAduboField(p.nome,"nome",v)}/> : p.nome}
+                                      {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="nome" value={p.nome} onCommit={v=>updateEditableField(p.nome,"nome",v)}/> : p.nome}
                                     </td>
-                                    {!isAdub && <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}>{p.ingrediente_ativo||"—"}</td>}
+                                    {!isEditableList && <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}>{p.ingrediente_ativo||"—"}</td>}
                                     <td style={tdS("center",bg,"#5a7a9a")}>
-                                      {isAdub ? (
-                                        <select value={p.unidade} onChange={e=>updateAduboField(p.nome,"unidade",e.target.value)}
+                                      {isEditableList ? (
+                                        <select value={p.unidade} onChange={e=>updateEditableField(p.nome,"unidade",e.target.value)}
                                           style={{background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:4,color:"#e8f4fd",fontSize:11,padding:"2px 4px"}}>
-                                          <option value="TN">TN</option>
-                                          <option value="KG">KG</option>
+                                          {unitOptions.map(u=><option key={u} value={u}>{u}</option>)}
                                         </select>
                                       ) : p.unidade}
                                     </td>
                                     <td style={tdS("right",bg,"#7a9ab8")}>
-                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="qtd_total" type="number" align="right" value={fmtQtd(p.qtd_total)} onCommit={v=>updateAduboField(p.nome,"qtd_total",v)}/> : fmtQtd(p.qtd_total)}
+                                      {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="qtd_total" type="number" align="right" value={fmtQtd(p.qtd_total)} onCommit={v=>updateEditableField(p.nome,"qtd_total",v)}/> : fmtQtd(p.qtd_total)}
                                     </td>
                                     <td style={tdS("right",bg,"#4a9eff",true)}>
-                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateAduboField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
+                                      {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateEditableField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
                                     </td>
                                     {fornPrecos.map((v,fi)=>{const isBest=v!==null&&v===melhor;return(
                                       <td key={fi} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":v!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{v!==null?fmtC(v):"—"}</td>
@@ -2196,7 +2292,7 @@ function App() {
                                     <td style={{...tdS("right","#1a0d0d"),color:economia>0?"#4ade80":economia<0?"#f87171":"#5a7a9a",fontWeight:700}}>
                                       {economia!==null?(economia>=0?"+":"")+`R$ ${Math.abs(economia).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}` :"—"}
                                     </td>
-                                    {isAdub && <td style={tdS("center",bg)}><button onClick={()=>deleteAduboRow(p.nome)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>✕</button></td>}
+                                    {isEditableList && <td style={tdS("center",bg)}><button onClick={()=>deleteEditableRow(p.nome)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>✕</button></td>}
                                   </tr>
                                 );
                               })}
@@ -2226,6 +2322,29 @@ function App() {
                         </div>
                       ) : (
                         <button onClick={()=>setAddingAdubo(true)} style={{background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>+ Adicionar adubo</button>
+                      )}
+                    </div>
+                  )}
+                  {isSem && (
+                    <div style={{padding:"4px 0"}}>
+                      {addingSemente ? (
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",background:"#0d1e36",padding:10,borderRadius:6,border:"1px solid #1e3a5f"}}>
+                          <input placeholder="Variedade/híbrido" value={newSemente.nome} onChange={e=>setNewSemente(p=>({...p,nome:e.target.value}))}
+                            style={{flex:2,minWidth:140,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}/>
+                          <select value={newSemente.unidade} onChange={e=>setNewSemente(p=>({...p,unidade:e.target.value}))}
+                            style={{padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12}}>
+                            <option value="bag">bag</option>
+                            <option value="sc">sc</option>
+                          </select>
+                          <input placeholder="Qtd. total" type="number" step="any" value={newSemente.qtd_total} onChange={e=>setNewSemente(p=>({...p,qtd_total:e.target.value}))}
+                            style={{width:110,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          <input placeholder="Preço ref. (R$)" type="number" step="any" value={newSemente.preco_ref} onChange={e=>setNewSemente(p=>({...p,preco_ref:e.target.value}))}
+                            style={{width:130,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          <button onClick={addSementeRow} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:5,color:"#fff",fontSize:12,cursor:"pointer"}}>✓ Adicionar</button>
+                          <button onClick={()=>setAddingSemente(false)} style={{padding:"7px 10px",background:"#1e3a5f",border:"none",borderRadius:5,color:"#7a9ab8",fontSize:12,cursor:"pointer"}}>✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={()=>setAddingSemente(true)} style={{background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>+ Adicionar semente</button>
                       )}
                     </div>
                   )}
@@ -2366,6 +2485,8 @@ function App() {
                         <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
                           <option value="KG">KG</option>
+                          <option value="bag">bag</option>
+                          <option value="sc">sc</option>
                         </select>
                       </td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"quantidade",v,true)}/></td>
@@ -2386,6 +2507,8 @@ function App() {
                         <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
                           <option value="KG">KG</option>
+                          <option value="bag">bag</option>
+                          <option value="sc">sc</option>
                         </select>
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
@@ -2477,6 +2600,8 @@ function App() {
         const produtos = getProdutos(cotContext);
         const fornecedores = getFornecedores(cotContext);
         const isAdubFechar = cotContext?.tipo==="adub";
+        const isSemFechar = cotContext?.tipo==="sem";
+        const isEditableFechar = isAdubFechar || isSemFechar;
         const decisions = fecharDecisions || {};
         const setDecisions = setFecharDecisions;
         const vencLabels = getVencLabels(cotContext);
@@ -2502,12 +2627,13 @@ function App() {
             const pm = calcPrecoMedio(dec.splits);
             const forns = dec.splits.filter(s=>s.nome&&s.preco>0);
             fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
-            if (isAdubFechar) {
+            if (isEditableFechar) {
               const prod = produtos.find(p=>p.nome.toLowerCase()===key);
               const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
+              const categoria = isAdubFechar ? "Adubação "+temporadaLabel : "Sementes";
               const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
               novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
-                categoria:"Adubação "+temporadaLabel, produto:dec.nomeReal, unidade:prod?.unidade||"TN", quantidade:prod?.qtd_total||0,
+                categoria, produto:dec.nomeReal, unidade:prod?.unidade||(isAdubFechar?"TN":"bag"), quantidade:prod?.qtd_total||0,
                 precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(fornLabel).join(" + "), obs:"" });
             }
           });
@@ -2542,7 +2668,7 @@ function App() {
                         <input value={dec.nomeReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],nomeReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
                       </div>
-                      {!isAdubFechar && <div style={{flex:2}}>
+                      {!isEditableFechar && <div style={{flex:2}}>
                         <div style={{fontSize:10,color:"#5a7a9a",marginBottom:3}}>INGREDIENTE ATIVO</div>
                         <input value={dec.iaReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],iaReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
