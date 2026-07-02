@@ -22,6 +22,7 @@ const KEY_SAFRAS     = "gcagro_safras_v2";
 const KEY_COLHEITA   = "gcagro_colheita_v2";
 const KEY_FINANCEIRO = "gcagro_financeiro_v1";
 const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
+const KEY_COMPRAS = "gcagro_compras_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -95,7 +96,7 @@ function derivarAdubacao(data) {
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
-        else { map[key] = { nome:p.produto.trim(), unidade:"tn", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
+        else { map[key] = { nome:p.produto.trim(), unidade:"TN", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
       });
     });
   });
@@ -816,6 +817,17 @@ function App() {
   const [cotInvAdub, setCotInvAdub]       = useState(() => loadLS(KEY_COTACAO+"_inv_adub", {}));
   const [cotInvIns, setCotInvIns]         = useState(() => loadLS(KEY_COTACAO+"_inv_ins", {}));
 
+  // ── Cotação Adubação: lista de produtos editável manualmente (desacoplada da Programação) ──
+  const [cotAdubProdVerao, setCotAdubProdVerao] = useState(() => loadLS(KEY_COTACAO+"_produtos_verao_adub", null) || derivarAdubacao(dataVerao));
+  const [cotAdubProdInv, setCotAdubProdInv]     = useState(() => loadLS(KEY_COTACAO+"_produtos_inv_adub", null) || derivarAdubacao(dataInverno));
+  const [addingAdubo, setAddingAdubo]     = useState(false);
+  const [newAdubo, setNewAdubo]           = useState({nome:"",unidade:"TN",qtd_total:"",preco_ref:""});
+
+  // ── Compras (histórico de compras fechadas na Cotação) ──
+  const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
+  const [addingCompra, setAddingCompra]     = useState(false);
+  const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
+
   // ── UI ──
   const [appView, setAppView]             = useState("dashboard");
   const [sidebarOpen, setSidebarOpen]     = useState(false);
@@ -836,9 +848,11 @@ function App() {
   const [cotSaved, setCotSaved]           = useState(false);
   const [adminTab, setAdminTab]           = useState("merit");
   const [filterCat, setFilterCat]         = useState("Todas");
+  const [fornCatFilter, setFornCatFilter] = useState("Todas");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
+  const [novaSafraNome, setNovaSafraNome] = useState("");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
-  const [fecharData, setFecharData]       = useState(null);
+  const [fecharDecisions, setFecharDecisions] = useState(null);
 
   // ── Planejamento de Campo ──
   const [planVerao, setPlanVerao]         = useState(() => loadLS(KEY_PLANEJAMENTO+"_verao", PLAN_VERAO_INICIAL));
@@ -861,6 +875,9 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_verao_ins", cotVeraoIns); }, [cotVeraoIns]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_adub", cotInvAdub); }, [cotInvAdub]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_ins", cotInvIns); }, [cotInvIns]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_adub", cotAdubProdVerao); }, [cotAdubProdVerao]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_adub", cotAdubProdInv); }, [cotAdubProdInv]);
+  useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
@@ -904,15 +921,39 @@ function App() {
   }
   function getProdutos(ctx) {
     if (!ctx) return [];
-    if (ctx.safra==="verao" && ctx.tipo==="adub") return prodVeraoAdub;
+    if (ctx.safra==="verao" && ctx.tipo==="adub") return cotAdubProdVerao;
     if (ctx.safra==="verao" && ctx.tipo==="ins")  return prodVeraoIns;
-    if (ctx.safra==="inv"   && ctx.tipo==="adub") return prodInvAdub;
+    if (ctx.safra==="inv"   && ctx.tipo==="adub") return cotAdubProdInv;
     if (ctx.safra==="inv"   && ctx.tipo==="ins")  return prodInvIns;
     return [];
   }
   function getFornecedores(ctx) {
     if (!ctx) return FORN_INSUMOS;
     return ctx.tipo==="adub" ? FORN_ADUBACAO : FORN_INSUMOS;
+  }
+
+  // ── Cotação Adubação: CRUD da lista editável ──
+  function setAduboProdutos(ctx, updater) {
+    if (!ctx || ctx.tipo!=="adub") return;
+    if (ctx.safra==="verao") setCotAdubProdVerao(updater); else setCotAdubProdInv(updater);
+  }
+  function addAduboRow() {
+    if (!newAdubo.nome.trim() || !cotContext) return;
+    setAduboProdutos(cotContext, list => [...list, { nome:newAdubo.nome.trim(), unidade:newAdubo.unidade,
+      qtd_total:parseFloat(newAdubo.qtd_total)||0, categoria:"Adubação", preco_ref:parseFloat(newAdubo.preco_ref)||0, ingrediente_ativo:"" }]);
+    setNewAdubo({nome:"",unidade:"TN",qtd_total:"",preco_ref:""});
+    setAddingAdubo(false);
+  }
+  function updateAduboField(nome, field, value) {
+    if (!cotContext) return;
+    setAduboProdutos(cotContext, list => list.map(p => p.nome===nome
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      : p));
+  }
+  function deleteAduboRow(nome) {
+    if (!cotContext) return;
+    if (!window.confirm(`Remover "${nome}" da lista de cotação?`)) return;
+    setAduboProdutos(cotContext, list => list.filter(p => p.nome!==nome));
   }
 
   // ── Programação helpers ──
@@ -1000,6 +1041,21 @@ function App() {
       return nd;
     });
   }
+  function abrirFecharCotacao() {
+    const allPrices = getCotData(cotContext);
+    const produtos = getProdutos(cotContext);
+    const fornecedores = getFornecedores(cotContext);
+    const d = {};
+    produtos.forEach(p => {
+      const key = p.nome.toLowerCase();
+      const vals = fornecedores.map(f=>({nome:f, preco:(allPrices[f]||{})[key]||0})).filter(x=>x.preco>0);
+      const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
+      d[key] = { nomeReal:p.nome, iaReal:p.ingrediente_ativo||"",
+        splits: melhor ? [{nome:melhor.nome, qtd:100, preco:melhor.preco}] : [{nome:"", qtd:100, preco:0}] };
+    });
+    setFecharDecisions(d);
+    setShowFecharCotModal(true);
+  }
 
   // ── Safras ──
   function arquivarSafra() {
@@ -1059,6 +1115,18 @@ function App() {
     return { orcado, realizado, saldo: orcado-realizado, porCategoria: Object.values(porCategoria) };
   }, [financeiroRecords]);
 
+  const comprasTotais = useMemo(() => {
+    const total = comprasRecords.reduce((s,r)=>s+r.valorTotal,0);
+    const totalSafraAtiva = comprasRecords.filter(r=>r.safra===safraAtiva).reduce((s,r)=>s+r.valorTotal,0);
+    const porSafra = {};
+    comprasRecords.forEach(r => {
+      if (!porSafra[r.safra]) porSafra[r.safra] = { safra:r.safra, total:0, quantidade:0 };
+      porSafra[r.safra].total += r.valorTotal;
+      porSafra[r.safra].quantidade += r.quantidade;
+    });
+    return { total, totalSafraAtiva, porSafra: Object.values(porSafra) };
+  }, [comprasRecords, safraAtiva]);
+
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
     const inverno = summaryInverno.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -1093,6 +1161,16 @@ function App() {
       orcado:parseFloat(newFinanceiro.orcado)||0, realizado:parseFloat(newFinanceiro.realizado)||0, obs:newFinanceiro.obs.trim() });
     setNewFinanceiro({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
     setAddingFinanceiro(false);
+  }
+  function submitCompra() {
+    if (!newCompra.produto.trim()) return;
+    const quantidade = parseFloat(newCompra.quantidade)||0;
+    const precoUnitario = parseFloat(newCompra.precoUnitario)||0;
+    addRecord(setComprasRecords, { safra:newCompra.safra.trim()||safraAtiva, categoria:newCompra.categoria.trim()||"Adubação",
+      produto:newCompra.produto.trim(), unidade:newCompra.unidade, quantidade, precoUnitario,
+      valorTotal:precoUnitario*quantidade, fornecedor:newCompra.fornecedor.trim(), data:newCompra.data.trim(), obs:newCompra.obs.trim() });
+    setNewCompra({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
+    setAddingCompra(false);
   }
 
   const ImportButton = ({label, onFile, color}) => {
@@ -1160,6 +1238,7 @@ function App() {
     { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
     { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
+    { id:"compras",        label:"Compras",               icon:"🛒", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
   ];
 
@@ -1263,6 +1342,7 @@ function App() {
           { id:"plan_inv",    label:"Planejamento Inverno",icon:"🗺️", color:"#1565C0" },
           { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
           { id:"financeiro",  label:"Financeiro",          icon:"💵", color:"#6a1b9a" },
+          { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
         ];
 
@@ -1809,6 +1889,7 @@ function App() {
         const categorias = [...new Set(produtos.map(p=>p.categoria))];
         const tipoLabel = cotContext?.tipo==="adub" ? "Adubação" : "Insumos";
         const safraLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
+        const isAdub = cotContext?.tipo==="adub";
 
         if (cotScreen==="login") return (
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"calc(100vh - 52px)"}}>
@@ -1838,7 +1919,7 @@ function App() {
 
         if (cotScreen==="fornecedor") {
           const color = FORN_COLORS[cotRole.idx%8];
-          const [fCat, setFCat] = useState("Todas");
+          const fCat = fornCatFilter, setFCat = setFornCatFilter;
           const filled = Object.values(myPrices).filter(v=>v>0).length;
           return (
             <div style={{color:"#e8f4fd"}}>
@@ -1870,8 +1951,8 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
-                        {["Produto","Unid.","Qtd. Total","I.A.","Preço Unit. (R$)"].map(h=>(
+                      <div style={{display:"grid",gridTemplateColumns:isAdub?"1fr 60px 100px 150px":"1fr 60px 100px 80px 150px",gap:1,background:"#1e3a5f22"}}>
+                        {(isAdub?["Produto","Unid.","Qtd. Total","Preço Unit. (R$)"]:["Produto","Unid.","Qtd. Total","I.A.","Preço Unit. (R$)"]).map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
@@ -1883,7 +1964,7 @@ function App() {
                               <div style={{padding:"9px 10px",background:bg,fontSize:12,color:"#d0e8ff"}}>{p.nome}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
-                              <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>
+                              {!isAdub && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
                               <div style={{padding:"5px 7px",background:bg}}>
                                 <input type="number" step="0.01" min="0" value={val}
                                   onChange={e=>setMyPrices(prev=>({...prev,[key]:e.target.value===""?"":parseFloat(e.target.value)}))}
@@ -1924,7 +2005,7 @@ function App() {
                   <div style={{fontSize:15,fontWeight:700,color:"#e8f4fd"}}>Painel de Mérito — {produtos.length} produtos</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setShowFecharCotModal(true)} style={{padding:"9px 16px",background:"#2e7d32",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
+                  <button onClick={abrirFecharCotacao} style={{padding:"9px 16px",background:"#2e7d32",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
                   <button onClick={()=>{const fresh=getCotData(cotContext);setCotData(cotContext,{...fresh});}} style={{padding:"9px 16px",background:"#1e3a5f",border:"1px solid #2a5080",borderRadius:7,color:"#7ab8ff",fontSize:12,cursor:"pointer"}}>↻</button>
                   <button onClick={handleCotLogout} style={{padding:"9px 14px",background:"transparent",border:"1px solid #1e3a5f",borderRadius:7,color:"#5a7a9a",fontSize:11,cursor:"pointer"}}>Sair</button>
                 </div>
@@ -1969,13 +2050,14 @@ function App() {
                             <thead>
                               <tr>
                                 <th style={thS("left","#111d35")}>Produto</th>
-                                <th style={thS("left","#111d35","#5a7a9a")}>I.A.</th>
+                                {!isAdub && <th style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
                                 <th style={thS("center","#111d35")}>Unid.</th>
                                 <th style={thS("right","#111d35")}>Qtd.</th>
                                 <th style={thS("right","#111d35")}>Ref.</th>
                                 {fornecedores.map((f,i)=>(<th key={f} style={thS("right",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.split(" ")[0]}</th>))}
                                 <th style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
                                 <th style={thS("center","#1a0d0d","#f87171")}>Economia</th>
+                                {isAdub && <th style={thS("center","#111d35")}></th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -1988,11 +2070,25 @@ function App() {
                                 const bg=ri%2===0?"#0d1e36":"#0f2240";
                                 return (
                                   <tr key={key}>
-                                    <td style={tdS("left",bg)}>{p.nome}</td>
-                                    <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}>{p.ingrediente_ativo||"—"}</td>
-                                    <td style={tdS("center",bg,"#5a7a9a")}>{p.unidade}</td>
-                                    <td style={tdS("right",bg,"#7a9ab8")}>{fmtQtd(p.qtd_total)}</td>
-                                    <td style={tdS("right",bg,"#4a9eff",true)}>{fmtC(p.preco_ref)}</td>
+                                    <td style={tdS("left",bg)}>
+                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="nome" value={p.nome} onCommit={v=>updateAduboField(p.nome,"nome",v)}/> : p.nome}
+                                    </td>
+                                    {!isAdub && <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}>{p.ingrediente_ativo||"—"}</td>}
+                                    <td style={tdS("center",bg,"#5a7a9a")}>
+                                      {isAdub ? (
+                                        <select value={p.unidade} onChange={e=>updateAduboField(p.nome,"unidade",e.target.value)}
+                                          style={{background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:4,color:"#e8f4fd",fontSize:11,padding:"2px 4px"}}>
+                                          <option value="TN">TN</option>
+                                          <option value="KG">KG</option>
+                                        </select>
+                                      ) : p.unidade}
+                                    </td>
+                                    <td style={tdS("right",bg,"#7a9ab8")}>
+                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="qtd_total" type="number" align="right" value={fmtQtd(p.qtd_total)} onCommit={v=>updateAduboField(p.nome,"qtd_total",v)}/> : fmtQtd(p.qtd_total)}
+                                    </td>
+                                    <td style={tdS("right",bg,"#4a9eff",true)}>
+                                      {isAdub ? <RecEditCell recKey={"adubo|"+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateAduboField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
+                                    </td>
                                     {fornPrecos.map((v,fi)=>{const isBest=v!==null&&v===melhor;return(
                                       <td key={fi} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":v!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{v!==null?fmtC(v):"—"}</td>
                                     );})}
@@ -2000,6 +2096,7 @@ function App() {
                                     <td style={{...tdS("right","#1a0d0d"),color:economia>0?"#4ade80":economia<0?"#f87171":"#5a7a9a",fontWeight:700}}>
                                       {economia!==null?(economia>=0?"+":"")+`R$ ${Math.abs(economia).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}` :"—"}
                                     </td>
+                                    {isAdub && <td style={tdS("center",bg)}><button onClick={()=>deleteAduboRow(p.nome)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:13}}>✕</button></td>}
                                   </tr>
                                 );
                               })}
@@ -2009,6 +2106,29 @@ function App() {
                       </div>
                     );
                   })}
+                  {isAdub && (
+                    <div style={{padding:"4px 0"}}>
+                      {addingAdubo ? (
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",background:"#0d1e36",padding:10,borderRadius:6,border:"1px solid #1e3a5f"}}>
+                          <input placeholder="Nome do adubo" value={newAdubo.nome} onChange={e=>setNewAdubo(p=>({...p,nome:e.target.value}))}
+                            style={{flex:2,minWidth:140,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}/>
+                          <select value={newAdubo.unidade} onChange={e=>setNewAdubo(p=>({...p,unidade:e.target.value}))}
+                            style={{padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12}}>
+                            <option value="TN">TN</option>
+                            <option value="KG">KG</option>
+                          </select>
+                          <input placeholder="Qtd. total" type="number" step="any" value={newAdubo.qtd_total} onChange={e=>setNewAdubo(p=>({...p,qtd_total:e.target.value}))}
+                            style={{width:110,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          <input placeholder="Preço ref. (R$)" type="number" step="any" value={newAdubo.preco_ref} onChange={e=>setNewAdubo(p=>({...p,preco_ref:e.target.value}))}
+                            style={{width:130,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          <button onClick={addAduboRow} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:5,color:"#fff",fontSize:12,cursor:"pointer"}}>✓ Adicionar</button>
+                          <button onClick={()=>setAddingAdubo(false)} style={{padding:"7px 10px",background:"#1e3a5f",border:"none",borderRadius:5,color:"#7a9ab8",fontSize:12,cursor:"pointer"}}>✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={()=>setAddingAdubo(true)} style={{background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>+ Adicionar adubo</button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2044,6 +2164,117 @@ function App() {
         }
         return null;
       })()}
+
+      {/* ══════════════════════════════════════════════════════
+          COMPRAS
+      ══════════════════════════════════════════════════════ */}
+      {appView==="compras" && (
+        <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
+            <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <div style={{fontSize:11,color:"#888"}}>Total comprado (histórico)</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#00695c"}}>{fmt(comprasTotais.total)}</div>
+            </div>
+            <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <div style={{fontSize:11,color:"#888"}}>Total nesta safra ({safraAtiva})</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#00695c"}}>{fmt(comprasTotais.totalSafraAtiva)}</div>
+            </div>
+          </div>
+
+          <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+            <button onClick={()=>setAddingCompra(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+          </div>
+          <div style={{fontSize:11,color:"#999",marginBottom:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação.</div>
+
+          {comprasTotais.porSafra.length>0 && (
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:14}}>
+              <div style={{background:"#00695c",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>📊 Comparativo por safra</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#e0f2f1"}}>
+                    {["Safra","Quantidade","Total gasto"].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Safra"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {comprasTotais.porSafra.map((s,i)=>(
+                    <tr key={s.safra} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",fontWeight:600}}>{s.safra}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}>{fmtQtd(s.quantidade)}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(s.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+            <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{background:"#e0f2f1"}}>
+                  {["Data","Safra","Produto","Categoria","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Obs",""].map(h=>(
+                    <th key={h} style={{padding:"7px 9px",textAlign:["Produto","Categoria","Fornecedor","Obs"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {comprasRecords.map((r,i)=>(
+                  <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
+                    <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"compra|"+r.id} field="safra" value={r.safra} onCommit={v=>updateRecordField(setComprasRecords,r.id,"safra",v)}/></td>
+                    <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
+                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setComprasRecords,r.id,"categoria",v)}/></td>
+                    <td style={{padding:"6px 9px",textAlign:"right"}}>
+                      <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="TN">TN</option>
+                        <option value="KG">KG</option>
+                      </select>
+                    </td>
+                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"quantidade",v,true)}/></td>
+                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="precoUnitario" type="number" align="right" value={fmt(r.precoUnitario)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"precoUnitario",v,true)}/></td>
+                    <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(r.valorTotal)}</td>
+                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="fornecedor" value={r.fornecedor} onCommit={v=>updateRecordField(setComprasRecords,r.id,"fornecedor",v)}/></td>
+                    <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"compra|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setComprasRecords,r.id,"obs",v)}/></td>
+                    <td style={{padding:"6px 4px",textAlign:"center"}}>
+                      <button onClick={()=>{if(window.confirm("Remover compra?"))deleteRecord(setComprasRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+                {addingCompra && (
+                  <tr style={{background:"#fffde7"}}>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}><input placeholder={safraAtiva} value={newCompra.safra} onChange={e=>setNewCompra(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Categoria" value={newCompra.categoria} onChange={e=>setNewCompra(p=>({...p,categoria:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}>
+                      <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                        <option value="TN">TN</option>
+                        <option value="KG">KG</option>
+                      </select>
+                    </td>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td/>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Fornecedor" value={newCompra.fornecedor} onChange={e=>setNewCompra(p=>({...p,fornecedor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                    <td style={{padding:"5px 6px"}}>
+                      <button onClick={submitCompra} style={{background:"#00695c",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                      <button onClick={()=>setAddingCompra(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                    </td>
+                  </tr>
+                )}
+                {comprasRecords.length===0 && !addingCompra && (
+                  <tr><td colSpan={11} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada ainda. Feche uma cotação de adubação ou lance manualmente.</td></tr>
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════
           SAFRAS
@@ -2084,7 +2315,7 @@ function App() {
           MODAL: NOVA SAFRA
       ══════════════════════════════════════════════════════ */}
       {showSafrasModal && (()=>{
-        const [nome, setNome] = useState("");
+        const nome = novaSafraNome, setNome = setNovaSafraNome;
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
             <div style={{background:"#fff",borderRadius:14,padding:"32px",width:400,boxShadow:"0 24px 80px rgba(0,0,0,0.3)"}}>
@@ -2093,11 +2324,11 @@ function App() {
               <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Verão 26/27"
                 style={{width:"100%",padding:"12px 14px",border:"2px solid #e0e0e0",borderRadius:8,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:16}}/>
               <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>{if(nome.trim())novaSafra(nome.trim());}} disabled={!nome.trim()}
+                <button onClick={()=>{if(nome.trim()){novaSafra(nome.trim());setNovaSafraNome("");}}} disabled={!nome.trim()}
                   style={{flex:1,padding:"12px",background:nome.trim()?"linear-gradient(135deg,#2e7d32,#1b5e20)":"#ccc",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:nome.trim()?"pointer":"not-allowed"}}>
                   Arquivar e Abrir Nova
                 </button>
-                <button onClick={()=>setShowSafrasModal(false)} style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:14,cursor:"pointer"}}>Cancelar</button>
+                <button onClick={()=>{setShowSafrasModal(false);setNovaSafraNome("");}} style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:14,cursor:"pointer"}}>Cancelar</button>
               </div>
             </div>
           </div>
@@ -2111,20 +2342,9 @@ function App() {
         const allPrices = getCotData(cotContext);
         const produtos = getProdutos(cotContext);
         const fornecedores = getFornecedores(cotContext);
-        const [decisions, setDecisions] = useState(() => {
-          const d = {};
-          produtos.forEach(p => {
-            const key = p.nome.toLowerCase();
-            const vals = fornecedores.map(f=>({nome:f, preco:(allPrices[f]||{})[key]||0})).filter(x=>x.preco>0);
-            const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
-            d[key] = { 
-              nomeReal: p.nome, 
-              iaReal: p.ingrediente_ativo||"",
-              splits: melhor ? [{nome:melhor.nome, qtd:100, preco:melhor.preco}] : [{nome:"", qtd:100, preco:0}]
-            };
-          });
-          return d;
-        });
+        const isAdubFechar = cotContext?.tipo==="adub";
+        const decisions = fecharDecisions || {};
+        const setDecisions = setFecharDecisions;
 
         function updateSplit(key, idx, field, val) {
           setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:nd[key].splits.map((s,i)=>i===idx?{...s,[field]:val}:s)}; return nd; });
@@ -2141,12 +2361,20 @@ function App() {
           return splits.reduce((s,x)=>s+(parseFloat(x.preco)||0)*(parseFloat(x.qtd)||0)/totalQtd,0);
         }
         function confirmar() {
+          const novasCompras = [];
           Object.entries(decisions).forEach(([key,dec])=>{
             if (!dec.splits.some(s=>s.nome&&s.preco>0)) return;
             const pm = calcPrecoMedio(dec.splits);
             const forns = dec.splits.filter(s=>s.nome&&s.preco>0);
             fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
+            if (isAdubFechar) {
+              const prod = produtos.find(p=>p.nome.toLowerCase()===key);
+              novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
+                categoria:"Adubação", produto:dec.nomeReal, unidade:prod?.unidade||"TN", quantidade:prod?.qtd_total||0,
+                precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(f=>f.nome).join(" + "), obs:"" });
+            }
           });
+          if (novasCompras.length) setComprasRecords(rs => [...rs, ...novasCompras]);
           setShowFecharCotModal(false);
         }
 
@@ -2170,11 +2398,11 @@ function App() {
                         <input value={dec.nomeReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],nomeReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
                       </div>
-                      <div style={{flex:2}}>
+                      {!isAdubFechar && <div style={{flex:2}}>
                         <div style={{fontSize:10,color:"#5a7a9a",marginBottom:3}}>INGREDIENTE ATIVO</div>
                         <input value={dec.iaReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],iaReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
-                      </div>
+                      </div>}
                       <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                         <div style={{fontSize:11,color:"#4ade80",fontWeight:700}}>Preço médio: {fmtC(pm)}</div>
                       </div>
