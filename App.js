@@ -56,6 +56,7 @@ const KEY_COLHEITA   = "gcagro_colheita_v2";
 const KEY_FINANCEIRO = "gcagro_financeiro_v1";
 const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
 const KEY_COMPRAS = "gcagro_compras_v1";
+const KEY_VENDAS = "gcagro_vendas_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -964,6 +965,13 @@ function App() {
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
   const [newFinanceiro, setNewFinanceiro] = useState({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
 
+  // ── Vendas (registro de vendas de grãos) ──
+  const [vendasRecords, setVendasRecords] = useState(() => loadLS(KEY_VENDAS, []));
+  const [addingVenda, setAddingVenda]     = useState(false);
+  const [vendaFiltroSafra, setVendaFiltroSafra] = useState("Todas");
+  const [vendaCulturaTab, setVendaCulturaTab]   = useState("Soja");
+  const [newVenda, setNewVenda] = useState({cultura:"Soja",safra:"",qtd:"",unidade:"sc",preco:"",comprador:"",dataEntrega:"",dataPagamento:"",obs:""});
+
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
   useEffect(() => { saveLS(KEY_PROG+"_inverno", dataInverno); }, [dataInverno]);
@@ -1002,6 +1010,7 @@ function App() {
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
+  useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
 
   const resolveLote = useMemo(() => makeLoteResolver(planVerao, planSafrinha), [planVerao, planSafrinha]);
   const lotesDisponiveis = newColheita.tipo === "verao" ? planVerao : planSafrinha;
@@ -1409,6 +1418,15 @@ function App() {
     setNewFinanceiro({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
     setAddingFinanceiro(false);
   }
+  function submitVenda() {
+    if (!newVenda.qtd || !newVenda.comprador.trim()) return;
+    addRecord(setVendasRecords, { cultura:newVenda.cultura, safra:newVenda.safra.trim()||safraAtiva,
+      qtd:parseFloat(newVenda.qtd)||0, unidade:newVenda.unidade, preco:parseFloat(newVenda.preco)||0,
+      comprador:newVenda.comprador.trim(), dataEntrega:newVenda.dataEntrega.trim(), dataPagamento:newVenda.dataPagamento.trim(),
+      obs:newVenda.obs.trim() });
+    setNewVenda({cultura:"Soja",safra:"",qtd:"",unidade:"sc",preco:"",comprador:"",dataEntrega:"",dataPagamento:"",obs:""});
+    setAddingVenda(false);
+  }
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -1486,6 +1504,7 @@ function App() {
     { id:"plan_verao",     label:"Plano Verão",           icon:"🗺️", group:"Planejamento" },
     { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
+    { id:"vendas",         label:"Vendas",                icon:"💰", group:null },
     { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
@@ -1601,6 +1620,7 @@ function App() {
           { id:"plan_verao",  label:"Planejamento Verão",  icon:"🗺️", color:"#1565C0" },
           { id:"plan_inv",    label:"Planejamento Inverno",icon:"🗺️", color:"#1565C0" },
           { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
+          { id:"vendas",      label:"Vendas",              icon:"💰", color:"#1565C0" },
           { id:"financeiro",  label:"Financeiro",          icon:"💵", color:"#6a1b9a" },
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
@@ -2031,6 +2051,110 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* ══════════════════════════════════════════════════════
+          VENDAS DE GRÃOS
+      ══════════════════════════════════════════════════════ */}
+      {appView==="vendas" && (()=>{
+        const CULTS = ["Soja","Milho","Feijão","Trigo","Sorgo"];
+        const porCultura = vendasRecords.filter(v=>v.cultura===vendaCulturaTab);
+        const filtradas = porCultura.filter(v=>vendaFiltroSafra==="Todas"||v.safra===vendaFiltroSafra);
+        const safrasDaCultura = ["Todas",...[...new Set(porCultura.map(v=>v.safra).filter(Boolean))].sort()];
+        const totalVendido = filtradas.reduce((s,v)=>s+(v.qtd||0)*(v.preco||0),0);
+        const totalQtd = filtradas.reduce((s,v)=>s+(v.qtd||0),0);
+        const cc = CULTURE_COLORS_VERAO[vendaCulturaTab] || CULTURE_COLORS_INVERNO[vendaCulturaTab] || {bg:"#1565C0"};
+        return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {CULTS.map(c=>(
+                <button key={c} onClick={()=>{setVendaCulturaTab(c);setVendaFiltroSafra("Todas");}}
+                  style={{padding:"7px 16px",background:vendaCulturaTab===c?cc.bg:"#fff",border:`1px solid ${vendaCulturaTab===c?cc.bg:"#ddd"}`,borderRadius:20,color:vendaCulturaTab===c?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:vendaCulturaTab===c?700:400}}>{c}</button>
+              ))}
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Total vendido ({vendaCulturaTab})</div>
+                <div style={{fontSize:18,fontWeight:800,color:cc.bg}}>{fmt(totalVendido)}</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Total quantidade</div>
+                <div style={{fontSize:18,fontWeight:800,color:cc.bg}}>{fmtN(totalQtd,0)}</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Preço médio</div>
+                <div style={{fontSize:18,fontWeight:800,color:cc.bg}}>{totalQtd>0?fmt(totalVendido/totalQtd):"—"}</div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+              <select value={vendaFiltroSafra} onChange={e=>setVendaFiltroSafra(e.target.value)} style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12}}>
+                {safrasDaCultura.map(s=><option key={s}>{s}</option>)}
+              </select>
+              <button onClick={()=>{setNewVenda(p=>({...p,cultura:vendaCulturaTab}));setAddingVenda(a=>!a);}}
+                style={{padding:"6px 14px",background:"none",border:`1px dashed ${cc.bg}`,color:cc.bg,borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Nova Venda</button>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:cc.light||"#e3f2fd"}}>
+                    {["Safra","Qtd","Unid.","R$/Unid.","Total","Comprador","Dt.Entrega","Dt.Pgto","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Comprador","Obs"].includes(h)?"left":"right",color:cc.accent||cc.bg,fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtradas.map((v,i)=>(
+                    <tr key={v.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="safra" value={v.safra} onCommit={val=>updateRecordField(setVendasRecords,v.id,"safra",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"venda|"+v.id} field="qtd" type="number" align="right" value={fmtN(v.qtd,0)} onCommit={val=>updateRecordField(setVendasRecords,v.id,"qtd",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"venda|"+v.id} field="unidade" value={v.unidade} onCommit={val=>updateRecordField(setVendasRecords,v.id,"unidade",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"venda|"+v.id} field="preco" type="number" align="right" value={fmt(v.preco)} onCommit={val=>updateRecordField(setVendasRecords,v.id,"preco",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:cc.bg}}>{fmt((v.qtd||0)*(v.preco||0))}</td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"venda|"+v.id} field="comprador" value={v.comprador} onCommit={val=>updateRecordField(setVendasRecords,v.id,"comprador",val)}/></td>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="dataEntrega" value={v.dataEntrega} onCommit={val=>updateRecordField(setVendasRecords,v.id,"dataEntrega",val)}/></td>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="dataPagamento" value={v.dataPagamento} onCommit={val=>updateRecordField(setVendasRecords,v.id,"dataPagamento",val)}/></td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="obs" value={v.obs} onCommit={val=>updateRecordField(setVendasRecords,v.id,"obs",val)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover venda?"))deleteRecord(setVendasRecords,v.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingVenda && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder={safraAtiva} value={newVenda.safra} onChange={e=>setNewVenda(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newVenda.qtd} onChange={e=>setNewVenda(p=>({...p,qtd:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <select value={newVenda.unidade} onChange={e=>setNewVenda(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          <option value="sc">sc</option>
+                          <option value="ton">ton</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="R$/Unid." type="number" step="any" value={newVenda.preco} onChange={e=>setNewVenda(p=>({...p,preco:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td/>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Comprador" value={newVenda.comprador} onChange={e=>setNewVenda(p=>({...p,comprador:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Dt. Entrega" value={newVenda.dataEntrega} onChange={e=>setNewVenda(p=>({...p,dataEntrega:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Dt. Pagamento" value={newVenda.dataPagamento} onChange={e=>setNewVenda(p=>({...p,dataPagamento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newVenda.obs} onChange={e=>setNewVenda(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitVenda} style={{background:cc.bg,color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>setAddingVenda(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {filtradas.length===0 && !addingVenda && (
+                    <tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma venda de {vendaCulturaTab} registrada ainda.</td></tr>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════
           FINANCEIRO / CUSTOS
