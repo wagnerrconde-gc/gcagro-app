@@ -808,7 +808,20 @@ const PLAN_SAFRINHA_INICIAL = [
   {id:"ps10",lote:"LOTE 11 MUTHEMA + BICO DIVISA",area:75,cultura:"Sorgo",variedade:"1G100",adubacaoPlantio:"MAP 52 kg",cobertura:"KCl 150 kg",nCobertura:"Ureia 150 kg",populacao:12.5,dataPlantio:"",previsaoColheita:"",obs:""},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao}) {
+const TS_VERAO_INICIAL = [
+  {id:"ts1",cultura:"Soja",variedade:"B 5830 CE",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:"SEM AVEO"},
+  {id:"ts2",cultura:"Soja",variedade:"Demais variedades",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:""},
+  {id:"ts3",cultura:"Milho",variedade:"Todas",dose100kg:"Endofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses + Torpeno 0,12 L/ha",obs:""},
+  {id:"ts4",cultura:"Feijão",variedade:"Todas",dose100kg:"Dermacor\nCerteza/Torino\nImpar/Adage\nEndofuse\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses + Tropic 5 doses + Torpeno 0,12 L/ha",obs:""},
+];
+const TS_SAFRINHA_INICIAL = [
+  {id:"tsi1",cultura:"Milho",variedade:"P40537 PWURR",dose100kg:"Nema Protection 75ml\nTrich Protection 300ml\nBioma Azum 200ml\nBioma Phos 150ml",kitSulco:"",obs:"TSI Completo"},
+  {id:"tsi2",cultura:"Feijão",variedade:"DAMA",dose100kg:"Dermacor 80ml\nAdage/Impar 300ml\nEndofuse 15ml\nCerteza 200ml\nAcrescent Raiz 200ml",kitSulco:"Vigorgeo Azos 200ml",obs:""},
+  {id:"tsi3",cultura:"Trigo",variedade:"BRS 264",dose100kg:"Enraize ZN 100ml\nVitavax 300ml\nStandak 150ml",kitSulco:"",obs:""},
+  {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
+];
+
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -918,6 +931,117 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao})
           </table>
         </div>
       </div>
+      <div style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
+        <textarea value={obs||""} onChange={e=>setObs(e.target.value)} rows={4}
+          placeholder="Anotações e testes realizados durante a safra..."
+          style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
+      </div>
+    </div>
+  );
+}
+
+function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
+  const culturas = [...new Set(data.map(r=>r.cultura))];
+  const grouped = {};
+  culturas.forEach(c=>{ grouped[c]=data.filter(r=>r.cultura===c); });
+
+  function upd(id, field, val) { setData(d => d.map(r => r.id===id ? {...r,[field]:val} : r)); }
+  function remover(id) { if (window.confirm("Remover este registro?")) setData(d => d.filter(r=>r.id!==id)); }
+  function adicionar() { setData(d => [...d, { id:newId(), cultura:"Soja", variedade:"", dose100kg:"", kitSulco:"", obs:"" }]); }
+  function exportarWord() {
+    let html = `<html><head><meta charset='utf-8'><style>
+      body{font-family:Arial,sans-serif;margin:40px;color:#222;}
+      h1{background:${cor||"#1a5c2e"};color:#fff;padding:8px 14px;border-radius:4px;font-size:16px;}
+      h2{color:${cor||"#1a5c2e"};font-size:13px;margin:18px 0 4px;}
+      ul{margin:4px 0 10px 20px;}
+      li{font-size:12px;line-height:1.8;}
+      .obs{font-size:11px;color:#666;}
+      hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
+    </style></head><body>
+    <h1 style='text-align:center'>GC Agro — ${titulo}</h1>`;
+    Object.entries(grouped).forEach(([cult,rows])=>{
+      html += `<h1>${cult.toUpperCase()}</h1>`;
+      rows.forEach(r=>{
+        html += `<h2>Variedade: ${r.variedade||"Todas"}</h2>`;
+        if (r.dose100kg) {
+          html += `<b style='font-size:12px'>Dose por 100 kg de Semente:</b><ul>`;
+          r.dose100kg.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
+          html += `</ul>`;
+        }
+        if (r.kitSulco) {
+          html += `<b style='font-size:12px'>Kit Sulco:</b><ul>`;
+          r.kitSulco.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
+          html += `</ul>`;
+        }
+        if (r.obs) html += `<p class='obs'>Obs: ${r.obs}</p>`;
+        html += `<hr>`;
+      });
+    });
+    html += `</body></html>`;
+    const blob = new Blob([html], {type:"application/msword"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = titulo.replace(/[^a-zA-Z0-9]+/g,"_")+".doc";
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:16,fontWeight:800,color:cor||"#1a3a1a"}}>{titulo}</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={exportarWord} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📄 Exportar Word</button>
+          <button onClick={adicionar} style={{padding:"7px 14px",background:cor||"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar</button>
+        </div>
+      </div>
+      {Object.entries(grouped).map(([cult,rows])=>{
+        const cc = cultureColors[cult] || {bg:"#37474f",light:"#f5f5f5",accent:"#546e7a"};
+        return (
+          <div key={cult} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:12}}>
+            <div style={{background:cc.bg,color:"#fff",padding:"10px 14px",fontWeight:700,fontSize:13}}>{cult}</div>
+            {rows.map((row,i)=>(
+              <div key={row.id} style={{padding:14,borderBottom:"1px solid #f0f0f0",background:i%2===0?"#fff":"#fafafa"}}>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Cultura</div>
+                  <select value={row.cultura} onChange={e=>upd(row.id,"cultura",e.target.value)}
+                    style={{padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12}}>
+                    {["Soja","Milho","Feijão","Feijão Irrigado","Trigo","Sorgo"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Variedade/Híbrido</div>
+                  <input value={row.variedade||""} onChange={e=>upd(row.id,"variedade",e.target.value)}
+                    style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente</div>
+                    <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5}
+                      placeholder={"80ml Dermacor\n200ml Torino\n300ml Cruiser\n200ml Raiz F Plus"}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha)</div>
+                    <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5}
+                      placeholder={"Azos 2 doses\nNodugran 10 doses\nTorpeno 0,12 L/ha"}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6}}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{flex:1,marginRight:10}}>
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Observações</div>
+                    <input value={row.obs||""} onChange={e=>upd(row.id,"obs",e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
+                  </div>
+                  <button onClick={()=>remover(row.id)} style={{background:"#ffebee",border:"none",borderRadius:5,color:"#c62828",padding:"6px 10px",cursor:"pointer",fontSize:12,marginTop:16}}>✕ Remover</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {data.length===0 && <div style={{background:"#fff",borderRadius:10,padding:30,textAlign:"center",color:"#aaa",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>Nenhum tratamento cadastrado ainda.</div>}
     </div>
   );
 }
@@ -998,6 +1122,10 @@ function App() {
   // ── Planejamento de Campo ──
   const [planVerao, setPlanVerao]         = useState(() => loadLS(KEY_PLANEJAMENTO+"_verao", PLAN_VERAO_INICIAL));
   const [planSafrinha, setPlanSafrinha]   = useState(() => loadLS(KEY_PLANEJAMENTO+"_safrinha", PLAN_SAFRINHA_INICIAL));
+  const [planObsVerao, setPlanObsVerao]       = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_verao", ""));
+  const [planObsSafrinha, setPlanObsSafrinha] = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_safrinha", ""));
+  const [tsVerao, setTsVerao]           = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_verao", TS_VERAO_INICIAL));
+  const [tsSafrinha, setTsSafrinha]     = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_safrinha", TS_SAFRINHA_INICIAL));
 
   // ── Colheita / Financeiro ──
   const [colheitaRecords, setColheitaRecords]     = useState(() => loadLS(KEY_COLHEITA, []));
@@ -1053,6 +1181,10 @@ function App() {
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao", planObsVerao); }, [planObsVerao]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_safrinha", planObsSafrinha); }, [planObsSafrinha]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_verao", tsVerao); }, [tsVerao]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_safrinha", tsSafrinha); }, [tsSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
@@ -1622,6 +1754,8 @@ function App() {
     { id:"cot_inv_ins",    label:"Cot. Insumos Inverno",  icon:"💰", group:"Cotação" },
     { id:"plan_verao",     label:"Plano Verão",           icon:"🗺️", group:"Planejamento" },
     { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
+    { id:"ts_verao",       label:"TS / Kit Sulco Verão",  icon:"🌾", group:"Planejamento" },
+    { id:"ts_inv",         label:"TS / Kit Sulco Inverno",icon:"🌾", group:"Planejamento" },
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
     { id:"vendas",         label:"Vendas",                icon:"💰", group:null },
     { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
@@ -2070,8 +2204,10 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
+      {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
+      {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
