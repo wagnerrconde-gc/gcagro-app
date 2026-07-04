@@ -1,17 +1,50 @@
 const { useState, useMemo, useEffect, useRef } = React;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIREBASE CONFIG — substitua pelos seus valores do Firebase Console
+// FIREBASE — sincroniza dados de cotação em tempo real entre dispositivos
 // ─────────────────────────────────────────────────────────────────────────────
 const FIREBASE_CONFIG = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  databaseURL: "https://SEU_PROJETO-default-rtdb.firebaseio.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyCGNQgHu045WiK7SvL-TgCY1hkrijMpzj4",
+  authDomain: "gc-agro-app.firebaseapp.com",
+  databaseURL: "https://gc-agro-app-default-rtdb.firebaseio.com",
+  projectId: "gc-agro-app",
+  storageBucket: "gc-agro-app.firebasestorage.app",
+  messagingSenderId: "79130236395",
+  appId: "1:79130236395:web:3619616a50ef448cb075ae"
 };
+let fbDb = null;
+try {
+  if (window.firebase && !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  if (window.firebase) fbDb = firebase.database();
+} catch (e) { console.error("Firebase init falhou:", e); }
+
+// Sincroniza um pedaço de estado com o Firebase Realtime Database.
+// Escuta mudanças remotas (outro dispositivo) e também envia mudanças locais.
+function useFirebaseSync(path, value, setValue) {
+  const ready = useRef(false);
+  const skipNext = useRef(false);
+  useEffect(() => {
+    if (!fbDb || !path) return;
+    const ref = fbDb.ref(path);
+    const cb = ref.on("value", snap => {
+      if (snap.exists()) {
+        skipNext.current = true;
+        setValue(snap.val());
+      } else if (!ready.current) {
+        ref.set(value).catch(err => console.error("Firebase seed falhou:", err));
+      }
+      ready.current = true;
+    }, err => console.error("Firebase listen falhou:", err));
+    return () => ref.off("value", cb);
+    // eslint-disable-next-line
+  }, [path]);
+  useEffect(() => {
+    if (!fbDb || !path || !ready.current) return;
+    if (skipNext.current) { skipNext.current = false; return; }
+    fbDb.ref(path).set(value).catch(err => console.error("Firebase set falhou:", err));
+    // eslint-disable-next-line
+  }, [value, path]);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STORAGE KEYS
@@ -934,6 +967,20 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_sem", cotSemProdVerao); }, [cotSemProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_sem", cotSemProdInv); }, [cotSemProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_sem_fornecedores", sementesFornecedores); }, [sementesFornecedores]);
+
+  // ── Sincronização em tempo real via Firebase (fornecedor cota de qualquer aparelho) ──
+  useFirebaseSync("gcagro/cotacao/verao_adub", cotVeraoAdub, setCotVeraoAdub);
+  useFirebaseSync("gcagro/cotacao/verao_ins", cotVeraoIns, setCotVeraoIns);
+  useFirebaseSync("gcagro/cotacao/verao_sem", cotVeraoSem, setCotVeraoSem);
+  useFirebaseSync("gcagro/cotacao/inv_adub", cotInvAdub, setCotInvAdub);
+  useFirebaseSync("gcagro/cotacao/inv_ins", cotInvIns, setCotInvIns);
+  useFirebaseSync("gcagro/cotacao/inv_sem", cotInvSem, setCotInvSem);
+  useFirebaseSync("gcagro/cotacao/venc_labels", cotVencLabels, setCotVencLabels);
+  useFirebaseSync("gcagro/cotacao/produtos_verao_adub", cotAdubProdVerao, setCotAdubProdVerao);
+  useFirebaseSync("gcagro/cotacao/produtos_inv_adub", cotAdubProdInv, setCotAdubProdInv);
+  useFirebaseSync("gcagro/cotacao/produtos_verao_sem", cotSemProdVerao, setCotSemProdVerao);
+  useFirebaseSync("gcagro/cotacao/produtos_inv_sem", cotSemProdInv, setCotSemProdInv);
+  useFirebaseSync("gcagro/cotacao/sementes_fornecedores", sementesFornecedores, setSementesFornecedores);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
@@ -2110,6 +2157,7 @@ function App() {
                   <div style={{fontSize:15,fontWeight:700,color:"#e8f4fd"}}>Fornecedor: <span style={{color}}>{cotRole.name}</span></div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <SyncBadge/>
                   <span style={{fontSize:11,color:"#5a7a9a"}}>{filled}/{produtos.length} preenchidos</span>
                   <button onClick={handleCotSave} style={{padding:"9px 20px",background:cotSaved?"#2e7d32":"linear-gradient(135deg,#1565C0,#0d47a1)",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                     {cotSaved?"✓ Salvo!":"Salvar"}
@@ -2198,7 +2246,8 @@ function App() {
                   <div style={{fontSize:10,color:"#f59e0b",letterSpacing:3,textTransform:"uppercase"}}>Admin · Cotação {tipoLabel} · {safraLabel}</div>
                   <div style={{fontSize:15,fontWeight:700,color:"#e8f4fd"}}>Painel de Mérito — {produtos.length} produtos</div>
                 </div>
-                <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <SyncBadge/>
                   <button onClick={abrirFecharCotacao} style={{padding:"9px 16px",background:"#2e7d32",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
                   <button onClick={()=>{const fresh=getCotData(cotContext);setCotData(cotContext,{...fresh});}} style={{padding:"9px 16px",background:"#1e3a5f",border:"1px solid #2a5080",borderRadius:7,color:"#7ab8ff",fontSize:12,cursor:"pointer"}}>↻</button>
                   <button onClick={handleCotLogout} style={{padding:"9px 14px",background:"transparent",border:"1px solid #1e3a5f",borderRadius:7,color:"#5a7a9a",fontSize:11,cursor:"pointer"}}>Sair</button>
@@ -2752,6 +2801,11 @@ function App() {
 }
 
 function StatC({label,value,color}){return <div style={{background:"#0d1e36",borderRadius:7,padding:"9px 11px"}}><div style={{fontSize:9,color:"#5a7a9a",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{label}</div><div style={{fontSize:12,fontWeight:700,color}}>{value}</div></div>;}
+function SyncBadge(){
+  return fbDb
+    ? <span title="Sincronizado em nuvem — outros aparelhos veem em tempo real" style={{fontSize:10,padding:"3px 9px",background:"#0d2a1a",border:"1px solid #2e7d3266",borderRadius:20,color:"#4ade80"}}>☁️ Sincronizado</span>
+    : <span title="Sem conexão com a nuvem — dados só neste aparelho/navegador" style={{fontSize:10,padding:"3px 9px",background:"#2a1a0d",border:"1px solid #f59e0b66",borderRadius:20,color:"#f59e0b"}}>⚠ Somente local</span>;
+}
 function thS(align,bg,color="#7a9ab8"){return {padding:"8px 10px",background:bg,color,textAlign:align,fontSize:10,letterSpacing:1,fontWeight:600,textTransform:"uppercase",whiteSpace:"nowrap",border:"1px solid #1e3a5f22"};}
 function tdS(align,bg,color="#c8dff0",bold=false){return {padding:"7px 10px",background:bg,color,textAlign:align,fontSize:11,fontWeight:bold?700:400,border:"1px solid #1e3a5f22",whiteSpace:"nowrap"};}
 
