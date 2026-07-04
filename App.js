@@ -116,6 +116,20 @@ const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:3,
 function calcProdTotal(p) {
   return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
 }
+// Quantidade de sementes (bags/sacos) a partir da população (sementes/metro) e área do lote.
+// Fórmula do usuário: sementes totais = população × 20000 × área; bag de soja = 5.000.000 sementes; saco de milho = 60.000 sementes.
+const SEMENTES_POR_UNIDADE = { bag: 5000000, saco: 60000 };
+function calcQtdSementes(row) {
+  const cultura = row.cultura || "";
+  const isSoja = cultura === "Soja";
+  const isMilho = cultura.startsWith("Milho");
+  if (!isSoja && !isMilho) return null; // fórmula só confirmada para Soja (bag) e Milho (saco)
+  const pop = parseFloat(row.populacao)||0;
+  const area = parseFloat(row.area)||0;
+  if (!pop || !area) return 0;
+  const unidade = row.unidadeQtd || (isSoja ? "bag" : "saco");
+  return (pop * 20000 * area) / SEMENTES_POR_UNIDADE[unidade];
+}
 function calcCultureTotals(culture) {
   const insumos = culture.categories.reduce((s,cat)=>s+cat.products.reduce((ss,p)=>ss+calcProdTotal(p),0),0);
   const opSum   = Object.values(culture.op_costs||{}).reduce((s,v)=>s+v,0);
@@ -794,38 +808,54 @@ const PLAN_SAFRINHA_INICIAL = [
   {id:"ps10",lote:"LOTE 11 MUTHEMA + BICO DIVISA",area:75,cultura:"Sorgo",variedade:"1G100",adubacaoPlantio:"MAP 52 kg",cobertura:"KCl 150 kg",nCobertura:"Ureia 150 kg",populacao:12.5,dataPlantio:"",previsaoColheita:"",obs:""},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
     ? ["Soja","Milho","Feijão","Trigo","Sorgo"]
     : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
   const total = data.reduce((s,r)=>s+(r.area||0),0);
+  const [genMsg, setGenMsg] = useState(null);
 
   function upd(i, field, val) {
     setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
   }
   function addLote() {
     setData(d => [...d, isVerao
-      ? { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacao:"", kcl:"", ciclo:0, populacao:0, dataPlantio:"", previsaoColheita:"", obs:"" }
-      : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", populacao:0, dataPlantio:"", previsaoColheita:"", obs:"" }
+      ? { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacao:"", kcl:"", ciclo:0, populacao:0, unidadeQtd:"bag", dataPlantio:"", previsaoColheita:"", obs:"" }
+      : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", populacao:0, unidadeQtd:"saco", dataPlantio:"", previsaoColheita:"", obs:"" }
     ]);
+  }
+  function gerarCotacao() {
+    const n = onGerarCotacao(data, isVerao);
+    setGenMsg(n);
+    setTimeout(()=>setGenMsg(null), 4000);
   }
 
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacao","Adubação Plantio","text",100],["kcl","KCl","text",80],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55],
+       ["quantidade","Quantidade (bags/sacos)","calc",70],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacaoPlantio","Adub. Plantio","text",90],["cobertura","Cobertura (KCl)","text",90],["nCobertura","N Cobertura (Ureia)","text",90],
-       ["populacao","Pop.(sem/m)","number",55],["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
+       ["populacao","Pop.(sem/m)","number",55],["quantidade","Quantidade (bags/sacos)","calc",70],["unidadeQtd","Unid.","unit",60],
+       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
 
   return (
     <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
-        <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
+          <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
+        </div>
       </div>
+      {genMsg!==null && (
+        <div style={{padding:"8px 14px",background:"#e8f5e9",color:"#2e7d32",borderRadius:6,fontSize:12,marginBottom:12}}>
+          ✓ Quantidades enviadas para a Cotação de Sementes: {genMsg} variedade(s) nova(s).
+        </div>
+      )}
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -849,6 +879,20 @@ function PlanejamentoTable({data, setData, tipo, cultureColors}) {
                             style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,background:cc.light,color:cc.bg,fontWeight:700}}>
                             {culturaOpts.map(c=><option key={c}>{c}</option>)}
                           </select>
+                        ) : type==="calc" ? (
+                          (()=>{ const qtd=calcQtdSementes(row); return (
+                            <div style={{padding:"3px 5px",textAlign:"right",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
+                              {qtd!=null?fmtN(qtd,1):"—"}
+                            </div>
+                          );})()
+                        ) : type==="unit" ? (
+                          calcQtdSementes(row)!=null ? (
+                            <select value={row.unidadeQtd||(row.cultura==="Soja"?"bag":"saco")} onChange={e=>upd(i,"unidadeQtd",e.target.value)}
+                              style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
+                              <option value="bag">bag</option>
+                              <option value="saco">saco</option>
+                            </select>
+                          ) : <span style={{color:"#ccc"}}>—</span>
                         ) : (
                           <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
@@ -1285,6 +1329,23 @@ function App() {
     (safra==="verao" ? setCotSemProdVerao : setCotSemProdInv)(semMerged);
     setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length });
     setTimeout(()=>setGerarCotMsg(null), 4000);
+  }
+  function gerarCotacaoSementesDoPlano(planData, isVerao) {
+    const map = {};
+    planData.forEach(row => {
+      if (!row.variedade || !row.variedade.trim()) return;
+      const qtd = calcQtdSementes(row);
+      if (!qtd || qtd<=0) return;
+      const key = row.variedade.trim().toLowerCase();
+      const unidade = row.unidadeQtd || (row.cultura==="Soja" ? "bag" : "saco");
+      if (map[key]) { map[key].qtd_total += qtd; }
+      else { map[key] = { nome:row.variedade.trim(), unidade, qtd_total:qtd, categoria:"Sementes", preco_ref:0, ingrediente_ativo:"" }; }
+    });
+    const derivados = Object.values(map);
+    const atual = isVerao ? cotSemProdVerao : cotSemProdInv;
+    const merged = mergeNovosProdutos(atual, derivados);
+    (isVerao ? setCotSemProdVerao : setCotSemProdInv)(merged);
+    return merged.length - atual.length;
   }
 
   // ── Safras ──
@@ -2009,8 +2070,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
