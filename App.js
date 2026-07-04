@@ -2844,6 +2844,9 @@ function App() {
                         <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
                           <option value="KG">KG</option>
+                          <option value="kg">kg</option>
+                          <option value="L">L</option>
+                          <option value="doses">doses</option>
                           <option value="bag">bag</option>
                           <option value="sc">sc</option>
                         </select>
@@ -2866,6 +2869,9 @@ function App() {
                         <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
                           <option value="KG">KG</option>
+                          <option value="kg">kg</option>
+                          <option value="L">L</option>
+                          <option value="doses">doses</option>
                           <option value="bag">bag</option>
                           <option value="sc">sc</option>
                         </select>
@@ -3069,20 +3075,19 @@ function App() {
         }
         function confirmar() {
           const novasCompras = [];
+          const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
+          const categoria = isAdubFechar ? "Adubação "+temporadaLabel : isSemFechar ? "Sementes" : "Químicos "+temporadaLabel;
+          const unidadePadrao = isAdubFechar ? "TN" : isSemFechar ? "bag" : "L";
           Object.entries(decisions).forEach(([key,dec])=>{
             if (!dec.splits.some(s=>s.nome&&s.preco>0)) return;
             const pm = calcPrecoMedio(dec.splits);
             const forns = dec.splits.filter(s=>s.nome&&s.preco>0);
             fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
-            if (isEditableFechar) {
-              const prod = produtos.find(p=>p.nome.toLowerCase()===key);
-              const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
-              const categoria = isAdubFechar ? "Adubação "+temporadaLabel : "Sementes";
-              const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
-              novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
-                categoria, produto:dec.nomeReal, unidade:prod?.unidade||(isAdubFechar?"TN":"bag"), quantidade:prod?.qtd_total||0,
-                precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(fornLabel).join(" + "), obs:"" });
-            }
+            const prod = produtos.find(p=>p.nome.toLowerCase()===key);
+            const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
+            novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
+              categoria, produto:dec.nomeReal, unidade:prod?.unidade||unidadePadrao, quantidade:prod?.qtd_total||0,
+              precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(fornLabel).join(" + "), obs:"" });
           });
           if (novasCompras.length) setComprasRecords(rs => [...rs, ...novasCompras]);
           setShowFecharCotModal(false);
