@@ -960,6 +960,7 @@ function App() {
   const [financeiroRecords, setFinanceiroRecords] = useState(() => loadLS(KEY_FINANCEIRO, []));
   const [editingRecordCell, setEditingRecordCell] = useState(null); // "module|id|field"
   const [importMsg, setImportMsg]         = useState(null); // {modulo, texto}
+  const [backupMsg, setBackupMsg]         = useState(null); // {ok, texto}
   const [addingColheita, setAddingColheita]     = useState(false);
   const [addingFinanceiro, setAddingFinanceiro] = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
@@ -1316,6 +1317,63 @@ function App() {
     setShowSafrasModal(false);
   }
 
+  // ── Backup (exportar/importar todos os dados) ──
+  function exportarBackup() {
+    const payload = {
+      versao: "gcagro_backup_v1", dataExportacao: new Date().toISOString(),
+      dataVerao, dataInverno, safraAtiva, safrasArquivadas,
+      cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels,
+      cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv,
+      fornecedoresAdub, fornecedoresIns, sementesFornecedores,
+      planVerao, planSafrinha, colheitaRecords, financeiroRecords, comprasRecords, vendasRecords,
+    };
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `gcagro_backup_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function importarBackup(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const b = JSON.parse(ev.target.result);
+        if (b.dataVerao) setDataVerao(b.dataVerao);
+        if (b.dataInverno) setDataInverno(b.dataInverno);
+        if (b.safraAtiva) setSafraAtiva(b.safraAtiva);
+        if (b.safrasArquivadas) setSafrasArquivadas(b.safrasArquivadas);
+        if (b.cotVeraoAdub) setCotVeraoAdub(b.cotVeraoAdub);
+        if (b.cotVeraoIns) setCotVeraoIns(b.cotVeraoIns);
+        if (b.cotVeraoSem) setCotVeraoSem(b.cotVeraoSem);
+        if (b.cotInvAdub) setCotInvAdub(b.cotInvAdub);
+        if (b.cotInvIns) setCotInvIns(b.cotInvIns);
+        if (b.cotInvSem) setCotInvSem(b.cotInvSem);
+        if (b.cotVencLabels) setCotVencLabels(b.cotVencLabels);
+        if (b.cotAdubProdVerao) setCotAdubProdVerao(b.cotAdubProdVerao);
+        if (b.cotAdubProdInv) setCotAdubProdInv(b.cotAdubProdInv);
+        if (b.cotSemProdVerao) setCotSemProdVerao(b.cotSemProdVerao);
+        if (b.cotSemProdInv) setCotSemProdInv(b.cotSemProdInv);
+        if (b.fornecedoresAdub) setFornecedoresAdub(migrateFornecedores(b.fornecedoresAdub));
+        if (b.fornecedoresIns) setFornecedoresIns(migrateFornecedores(b.fornecedoresIns));
+        if (b.sementesFornecedores) setSementesFornecedores(migrateFornecedores(b.sementesFornecedores));
+        if (b.planVerao) setPlanVerao(b.planVerao);
+        if (b.planSafrinha) setPlanSafrinha(b.planSafrinha);
+        if (b.colheitaRecords) setColheitaRecords(b.colheitaRecords);
+        if (b.financeiroRecords) setFinanceiroRecords(b.financeiroRecords);
+        if (b.comprasRecords) setComprasRecords(b.comprasRecords);
+        if (b.vendasRecords) setVendasRecords(b.vendasRecords);
+        setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
+      } catch {
+        setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
+      }
+      setTimeout(()=>setBackupMsg(null), 5000);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
   // ── Totais ──
   const catTotals = useMemo(()=>culture.categories.map(cat=>cat.products.reduce((s,p)=>s+calcProdTotal(p),0)),[culture]);
   const insumoTotal = catTotals.reduce((a,b)=>a+b,0);
@@ -1509,6 +1567,7 @@ function App() {
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
+    { id:"backup",         label:"Backup",                icon:"💾", group:null },
   ];
 
   // ── Set cotContext when entering cot views ──
@@ -1625,6 +1684,7 @@ function App() {
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
+          { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
         ];
 
         return (
@@ -2866,6 +2926,31 @@ function App() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
+          BACKUP
+      ══════════════════════════════════════════════════════ */}
+      {appView==="backup" && (
+        <div style={{maxWidth:600,margin:"0 auto",padding:"20px 16px"}}>
+          <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:16}}>💾 Backup dos Dados</div>
+          <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>📤 Exportar Backup</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:14}}>Salva todos os dados do app (programação, cotações, colheita, vendas, financeiro, compras, planejamento, safras) em um arquivo JSON. Guarde no Google Drive, OneDrive ou onde preferir.</div>
+            <button onClick={exportarBackup} style={{padding:"12px 24px",background:"linear-gradient(135deg,#2e7d32,#1b5e20)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              💾 Baixar Backup
+            </button>
+          </div>
+          <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>📥 Importar Backup</div>
+            <div style={{fontSize:12,color:"#e57373",marginBottom:14}}>⚠ Atenção: substituirá todos os dados atuais deste aparelho (e, se o Firebase estiver conectado, também os dados de cotação na nuvem).</div>
+            <label style={{padding:"12px 24px",background:"#1565C0",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",display:"inline-block"}}>
+              📂 Selecionar Arquivo
+              <input type="file" accept=".json" onChange={importarBackup} style={{display:"none"}}/>
+            </label>
+            {backupMsg && <div style={{marginTop:12,fontSize:12,color:backupMsg.ok?"#2e7d32":"#c62828",fontWeight:700}}>{backupMsg.texto}</div>}
+          </div>
         </div>
       )}
 
