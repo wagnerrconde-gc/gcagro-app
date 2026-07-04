@@ -60,8 +60,17 @@ const KEY_COMPRAS = "gcagro_compras_v1";
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
 // ─────────────────────────────────────────────────────────────────────────────
-const FORN_INSUMOS = ["Trisolo","Agrocerrado","Terrena","Tchê","AgroBrasil","Valoriza","Coagril","Protec"];
-const FORN_ADUBACAO = ["Yara","ADM","Calcário Noroeste","Agro Brasil","Plano Agronegócios","Valoriza","Produttiva","Nascente"];
+function genToken(nome) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let t = (nome||"XX").substring(0,2).toUpperCase()+"-";
+  for (let i=0;i<4;i++) t += chars[Math.floor(Math.random()*chars.length)];
+  return t;
+}
+function migrateFornecedores(list) {
+  return (list||[]).map(f => typeof f === "string" ? {nome:f, telefone:"", token:genToken(f)} : f);
+}
+const FORN_INSUMOS_INICIAL = ["Trisolo","Agrocerrado","Terrena","Tchê","AgroBrasil","Valoriza","Coagril","Protec"].map(nome=>({nome,telefone:"",token:genToken(nome)}));
+const FORN_ADUBACAO_INICIAL = ["Yara","ADM","Calcário Noroeste","Agro Brasil","Plano Agronegócios","Valoriza","Produttiva","Nascente"].map(nome=>({nome,telefone:"",token:genToken(nome)}));
 const FORN_COLORS  = ["#1565C0","#2E7D32","#B71C1C","#6A1B9A","#E65100","#00695C","#37474F","#4E342E"];
 
 const ADMIN_PASSWORD = "gcagro2526";
@@ -888,7 +897,9 @@ function App() {
   const [cotVeraoSem, setCotVeraoSem]     = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_sem", {})));
   const [cotInvSem, setCotInvSem]         = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_sem", {})));
   const [cotVencLabels, setCotVencLabels] = useState(() => loadLS(KEY_COTACAO+"_venc_labels", {}));
-  const [sementesFornecedores, setSementesFornecedores] = useState(() => loadLS(KEY_COTACAO+"_sem_fornecedores", []));
+  const [sementesFornecedores, setSementesFornecedores] = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_sem_fornecedores", [])));
+  const [fornecedoresAdub, setFornecedoresAdub] = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_forn_adub", FORN_ADUBACAO_INICIAL)));
+  const [fornecedoresIns, setFornecedoresIns]   = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_forn_ins", FORN_INSUMOS_INICIAL)));
   const [newSemFornecedor, setNewSemFornecedor] = useState("");
 
   // ── Cotação Adubação: lista de produtos editável manualmente (desacoplada da Programação) ──
@@ -932,6 +943,7 @@ function App() {
   const [adminTab, setAdminTab]           = useState("merit");
   const [filterCat, setFilterCat]         = useState("Todas");
   const [fornCatFilter, setFornCatFilter] = useState("Todas");
+  const [fornecedoresTab, setFornecedoresTab] = useState("adub");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
@@ -967,6 +979,8 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_sem", cotSemProdVerao); }, [cotSemProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_sem", cotSemProdInv); }, [cotSemProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_sem_fornecedores", sementesFornecedores); }, [sementesFornecedores]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_forn_adub", fornecedoresAdub); }, [fornecedoresAdub]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_forn_ins", fornecedoresIns); }, [fornecedoresIns]);
 
   // ── Sincronização em tempo real via Firebase (fornecedor cota de qualquer aparelho) ──
   useFirebaseSync("gcagro/cotacao/verao_adub", cotVeraoAdub, setCotVeraoAdub);
@@ -981,6 +995,8 @@ function App() {
   useFirebaseSync("gcagro/cotacao/produtos_verao_sem", cotSemProdVerao, setCotSemProdVerao);
   useFirebaseSync("gcagro/cotacao/produtos_inv_sem", cotSemProdInv, setCotSemProdInv);
   useFirebaseSync("gcagro/cotacao/sementes_fornecedores", sementesFornecedores, setSementesFornecedores);
+  useFirebaseSync("gcagro/cotacao/forn_adub", fornecedoresAdub, setFornecedoresAdub);
+  useFirebaseSync("gcagro/cotacao/forn_ins", fornecedoresIns, setFornecedoresIns);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
@@ -1037,20 +1053,38 @@ function App() {
     if (ctx.safra==="inv"   && ctx.tipo==="sem")  return cotSemProdInv;
     return [];
   }
+  function getFornecedorList(tipo) {
+    return tipo==="adub" ? fornecedoresAdub : tipo==="sem" ? sementesFornecedores : fornecedoresIns;
+  }
+  function setFornecedorList(tipo, updater) {
+    const setter = tipo==="adub" ? setFornecedoresAdub : tipo==="sem" ? setSementesFornecedores : setFornecedoresIns;
+    setter(updater);
+  }
   function getFornecedores(ctx) {
-    if (!ctx) return FORN_INSUMOS;
-    if (ctx.tipo==="adub") return FORN_ADUBACAO;
-    if (ctx.tipo==="sem")  return sementesFornecedores;
-    return FORN_INSUMOS;
+    if (!ctx) return fornecedoresIns;
+    return getFornecedorList(ctx.tipo);
+  }
+  function addFornecedor(tipo, nome) {
+    const n = (nome||"").trim();
+    if (!n) return;
+    setFornecedorList(tipo, list => list.some(f=>f.nome.toLowerCase()===n.toLowerCase()) ? list : [...list, {nome:n, telefone:"", token:genToken(n)}]);
+  }
+  function removeFornecedor(tipo, nome) {
+    if (!window.confirm(`Remover fornecedor "${nome}"?`)) return;
+    setFornecedorList(tipo, list => list.filter(f=>f.nome!==nome));
+  }
+  function updateFornecedor(tipo, nome, field, value) {
+    setFornecedorList(tipo, list => list.map(f => f.nome===nome ? {...f, [field]: value} : f));
+  }
+  function regenToken(tipo, nome) {
+    updateFornecedor(tipo, nome, "token", genToken(nome));
   }
   function addSementeFornecedor() {
-    const nome = newSemFornecedor.trim();
-    if (!nome || sementesFornecedores.some(f=>f.toLowerCase()===nome.toLowerCase())) return;
-    setSementesFornecedores(list => [...list, nome]);
+    addFornecedor("sem", newSemFornecedor);
     setNewSemFornecedor("");
   }
   function removeSementeFornecedor(nome) {
-    setSementesFornecedores(list => list.filter(f=>f!==nome));
+    removeFornecedor("sem", nome);
   }
   // ── Vencimentos de pagamento (duas datas manuais por cotação) ──
   function getVencLabels(ctx) {
@@ -1154,15 +1188,15 @@ function App() {
     const val = loginInput.trim();
     if (val === ADMIN_PASSWORD) { setCotRole({type:"admin"}); setCotScreen("admin"); return; }
     const fns = getFornecedores(cotContext);
-    const idx = fns.findIndex(f=>f.toLowerCase()===val.toLowerCase());
+    const idx = fns.findIndex(f=>f.nome.toLowerCase()===val.toLowerCase()||(f.token&&f.token.toLowerCase()===val.toLowerCase()));
     if (idx>=0) {
       const fresh = getCotData(cotContext);
-      setMyPrices(fresh[fns[idx]]||{});
-      setCotRole({type:"fornecedor",name:fns[idx],idx});
+      setMyPrices(fresh[fns[idx].nome]||{});
+      setCotRole({type:"fornecedor",name:fns[idx].nome,idx});
       setCotScreen("fornecedor");
       return;
     }
-    setLoginError("Nome não encontrado ou senha incorreta.");
+    setLoginError("Nome, token ou senha incorreta.");
   }
   function handleCotSave() {
     const fresh = {...getCotData(cotContext)};
@@ -1208,10 +1242,10 @@ function App() {
       const key = p.nome.toLowerCase();
       const vals = [];
       fornecedores.forEach(f => {
-        const precos = allPrices[f]||{};
+        const precos = allPrices[f.nome]||{};
         ["v1","v2"].forEach(vk => {
           const preco = (precos[key]||{})[vk];
-          if (preco>0) vals.push({nome:f, venc:vk, preco:Number(preco)});
+          if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco)});
         });
       });
       const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
@@ -1454,6 +1488,7 @@ function App() {
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
     { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
+    { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
   ];
 
@@ -1568,6 +1603,7 @@ function App() {
           { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
           { id:"financeiro",  label:"Financeiro",          icon:"💵", color:"#6a1b9a" },
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
+          { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
         ];
 
@@ -2135,8 +2171,8 @@ function App() {
                 <div style={{fontSize:10,color:"#5a7a9a",marginBottom:7,textTransform:"uppercase",letterSpacing:1}}>Fornecedores</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                   {fornecedores.map((f,i)=>(
-                    <span key={i} onClick={()=>{setLoginInput(f);setLoginError("");}}
-                      style={{padding:"3px 9px",background:FORN_COLORS[i%8]+"33",border:`1px solid ${FORN_COLORS[i%8]}66`,borderRadius:20,color:FORN_COLORS[i%8],fontSize:10,cursor:"pointer"}}>{f}</span>
+                    <span key={i} onClick={()=>{setLoginInput(f.nome);setLoginError("");}}
+                      style={{padding:"3px 9px",background:FORN_COLORS[i%8]+"33",border:`1px solid ${FORN_COLORS[i%8]}66`,borderRadius:20,color:FORN_COLORS[i%8],fontSize:10,cursor:"pointer"}}>{f.nome}</span>
                   ))}
                 </div>
               </div>
@@ -2229,7 +2265,7 @@ function App() {
           const recKeyPrefix = isSem ? "semente|" : "adubo|";
           const totalRef2 = produtos.reduce((s,p)=>s+p.qtd_total*p.preco_ref,0);
           const totalPorForn = fornecedores.map(f=>{
-            const pr=allPrices[f]||{};let t=0;
+            const pr=allPrices[f.nome]||{};let t=0;
             produtos.forEach(p=>{
               const entry=pr[p.nome.toLowerCase()]||{};
               const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0);
@@ -2263,32 +2299,31 @@ function App() {
                 ))}
               </div>
 
-              {/* Fornecedores de sementes (cadastro manual) */}
-              {isSem && (
-                <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <span style={{fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>Fornecedores:</span>
-                  {fornecedores.map(f=>(
-                    <span key={f} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 6px 4px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:20,color:"#e8f4fd",fontSize:12}}>
-                      {f}
-                      <button onClick={()=>removeSementeFornecedor(f)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:12,padding:0}}>✕</button>
-                    </span>
-                  ))}
-                  <input value={newSemFornecedor} onChange={e=>setNewSemFornecedor(e.target.value)}
-                    onKeyDown={e=>e.key==="Enter"&&addSementeFornecedor()}
-                    placeholder="Nome do fornecedor"
-                    style={{padding:"6px 10px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
-                  <button onClick={addSementeFornecedor} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
-                </div>
-              )}
+              {/* Gestão de fornecedores (cadastro rápido, use a aba Fornecedores para telefone/token/WhatsApp) */}
+              <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>Fornecedores ({tipoLabel}):</span>
+                {fornecedores.map(f=>(
+                  <span key={f.nome} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 6px 4px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:20,color:"#e8f4fd",fontSize:12}}>
+                    {f.nome}
+                    <button onClick={()=>removeFornecedor(cotContext.tipo,f.nome)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:12,padding:0}}>✕</button>
+                  </span>
+                ))}
+                <input value={newSemFornecedor} onChange={e=>setNewSemFornecedor(e.target.value)}
+                  onKeyDown={e=>{if(e.key==="Enter"){addFornecedor(cotContext.tipo,newSemFornecedor);setNewSemFornecedor("");}}}
+                  placeholder="Nome do fornecedor"
+                  style={{padding:"6px 10px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
+                <button onClick={()=>{addFornecedor(cotContext.tipo,newSemFornecedor);setNewSemFornecedor("");}} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                <span style={{fontSize:10,color:"#5a7a9a"}}>Para telefone/token/WhatsApp, veja a aba 👥 Fornecedores.</span>
+              </div>
 
               {/* Status */}
               <div style={{padding:"14px 20px 0",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
                 {fornecedores.map((f,i)=>{
-                  const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const done=count>0;
+                  const pr=allPrices[f.nome]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const done=count>0;
                   return (
-                    <div key={f} style={{padding:"10px 13px",background:"#111d35",borderRadius:9,border:`1px solid ${done?FORN_COLORS[i%8]+"88":"#1e3a5f"}`}}>
+                    <div key={f.nome} style={{padding:"10px 13px",background:"#111d35",borderRadius:9,border:`1px solid ${done?FORN_COLORS[i%8]+"88":"#1e3a5f"}`}}>
                       <div style={{fontSize:10,color:done?FORN_COLORS[i%8]:"#3a5a7a",marginBottom:3}}>{done?"✓":"⏳"}</div>
-                      <div style={{fontSize:12,fontWeight:700,color:done?"#e8f4fd":"#4a6a8a"}}>{f}</div>
+                      <div style={{fontSize:12,fontWeight:700,color:done?"#e8f4fd":"#4a6a8a"}}>{f.nome}</div>
                       <div style={{fontSize:10,color:"#5a7a9a"}}>{count}/{produtos.length}</div>
                     </div>
                   );
@@ -2324,21 +2359,21 @@ function App() {
                                 <th rowSpan={2} style={thS("center","#111d35")}>Unid.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Qtd.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Ref.</th>
-                                {fornecedores.map((f,i)=>(<th key={f} colSpan={2} style={thS("center",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.split(" ")[0]}</th>))}
+                                {fornecedores.map((f,i)=>(<th key={f.nome} colSpan={2} style={thS("center",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.nome.split(" ")[0]}</th>))}
                                 <th rowSpan={2} style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
                                 <th rowSpan={2} style={thS("center","#1a0d0d","#f87171")}>Economia</th>
                                 {isEditableList && <th rowSpan={2} style={thS("center","#111d35")}></th>}
                               </tr>
                               <tr>
                                 {fornecedores.map((f,i)=>["v1","v2"].map(vk=>(
-                                  <th key={f+vk} style={{...thS("right",FORN_COLORS[i%8]+"11",FORN_COLORS[i%8]),fontSize:9}}>{vencLabels[vk]}</th>
+                                  <th key={f.nome+vk} style={{...thS("right",FORN_COLORS[i%8]+"11",FORN_COLORS[i%8]),fontSize:9}}>{vencLabels[vk]}</th>
                                 )))}
                               </tr>
                             </thead>
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const v=(allPrices[f]||{})[key]?.[vk];return v>0?Number(v):null;}));
+                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const v=(allPrices[f.nome]||{})[key]?.[vk];return v>0?Number(v):null;}));
                                 const validos=fornPrecos.filter(v=>v!==null);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
@@ -2433,14 +2468,14 @@ function App() {
                 <div style={{padding:"16px 20px 40px"}}>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     {fornecedores.map((f,i)=>{
-                      const pr=allPrices[f]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const total=totalPorForn[i];
+                      const pr=allPrices[f.nome]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const total=totalPorForn[i];
                       const bestOf = (prices,key) => { const entry=(prices[key]||{}); const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0); return vals.length?Math.min(...vals):null; };
-                      const wins=produtos.filter(p=>{const v=bestOf(pr,p.nome.toLowerCase());if(!v)return false;const others=fornecedores.filter(x=>x!==f).map(x=>bestOf(allPrices[x]||{},p.nome.toLowerCase())).filter(v2=>v2!==null);return others.every(v2=>v<=v2);}).length;
+                      const wins=produtos.filter(p=>{const v=bestOf(pr,p.nome.toLowerCase());if(!v)return false;const others=fornecedores.filter(x=>x.nome!==f.nome).map(x=>bestOf(allPrices[x.nome]||{},p.nome.toLowerCase())).filter(v2=>v2!==null);return others.every(v2=>v<=v2);}).length;
                       return (
-                        <div key={f} style={{background:"#111d35",borderRadius:11,padding:"18px",border:`1px solid ${count>0?FORN_COLORS[i%8]+"66":"#1e3a5f"}`}}>
+                        <div key={f.nome} style={{background:"#111d35",borderRadius:11,padding:"18px",border:`1px solid ${count>0?FORN_COLORS[i%8]+"66":"#1e3a5f"}`}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                             <div>
-                              <div style={{fontSize:16,fontWeight:700,color:count>0?"#e8f4fd":"#4a6a8a"}}>{f}</div>
+                              <div style={{fontSize:16,fontWeight:700,color:count>0?"#e8f4fd":"#4a6a8a"}}>{f.nome}</div>
                               <div style={{fontSize:10,color:FORN_COLORS[i%8],marginTop:2}}>{count} produtos cotados</div>
                             </div>
                             <div style={{width:36,height:36,borderRadius:"50%",background:FORN_COLORS[i%8]+"33",border:`2px solid ${FORN_COLORS[i%8]}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:FORN_COLORS[i%8]}}>{i+1}</div>
@@ -2613,6 +2648,69 @@ function App() {
       )}
 
       {/* ══════════════════════════════════════════════════════
+          FORNECEDORES
+      ══════════════════════════════════════════════════════ */}
+      {appView==="fornecedores" && (()=>{
+        const APP_URL = "https://gcagro-app.vercel.app";
+        function whatsappLink(f, tipoLabel) {
+          const msg = encodeURIComponent(`Olá ${f.nome}! 🌿\n\nGC Agro — Cotação de ${tipoLabel}\n\nAcesse: ${APP_URL}\n\nSeu token de acesso: *${f.token}*`);
+          return `https://wa.me/55${(f.telefone||"").replace(/\D/g,"")}?text=${msg}`;
+        }
+        const TABS = [["adub","🌱 Adubação",fornecedoresAdub],["ins","💊 Insumos",fornecedoresIns],["sem","🌾 Sementes",sementesFornecedores]];
+        return (
+          <div style={{maxWidth:900,margin:"0 auto",padding:"16px"}}>
+            <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:4}}>👥 Cadastro de Fornecedores</div>
+            <div style={{fontSize:12,color:"#667",marginBottom:16}}>Gerencie os fornecedores de cada cotação. Cada um tem um token único para acessar sem precisar digitar o nome exato.</div>
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+              {TABS.map(([id,label])=>(
+                <button key={id} onClick={()=>setFornecedoresTab(id)} style={{padding:"7px 16px",background:fornecedoresTab===id?"#1565C0":"#fff",border:`1px solid ${fornecedoresTab===id?"#1565C0":"#ddd"}`,borderRadius:20,color:fornecedoresTab===id?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:fornecedoresTab===id?700:400}}>{label}</button>
+              ))}
+            </div>
+            {TABS.filter(([id])=>id===fornecedoresTab).map(([tipo,label,list])=>(
+              <div key={tipo} style={{display:"grid",gap:10}}>
+                {list.map(f=>(
+                  <div key={f.nome} style={{background:"#fff",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:2,minWidth:130}}>
+                      <div style={{fontSize:10,color:"#888",marginBottom:3}}>NOME</div>
+                      <input value={f.nome} onChange={e=>updateFornecedor(tipo,f.nome,"nome",e.target.value)}
+                        style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:13,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
+                    </div>
+                    <div style={{flex:2,minWidth:130}}>
+                      <div style={{fontSize:10,color:"#888",marginBottom:3}}>TELEFONE (WhatsApp)</div>
+                      <input value={f.telefone} onChange={e=>updateFornecedor(tipo,f.nome,"telefone",e.target.value)} placeholder="(xx) xxxxx-xxxx"
+                        style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+                    </div>
+                    <div style={{minWidth:110}}>
+                      <div style={{fontSize:10,color:"#888",marginBottom:3}}>TOKEN</div>
+                      <div style={{display:"flex",gap:4}}>
+                        <div style={{width:80,padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,fontFamily:"monospace",background:"#f9f9f9"}}>{f.token}</div>
+                        <button onClick={()=>regenToken(tipo,f.nome)} title="Novo token"
+                          style={{padding:"6px 8px",background:"#f0f0f0",border:"none",borderRadius:5,cursor:"pointer",fontSize:12}}>🔄</button>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                      {f.telefone&&(
+                        <a href={whatsappLink(f,label)} target="_blank" rel="noopener noreferrer"
+                          style={{padding:"8px 12px",background:"#25D366",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",marginTop:16,textDecoration:"none",display:"inline-block"}}>
+                          📱 WhatsApp
+                        </a>
+                      )}
+                      <button onClick={()=>removeFornecedor(tipo,f.nome)}
+                        style={{padding:"8px 10px",background:"#ffebee",border:"none",borderRadius:6,color:"#c62828",fontSize:12,cursor:"pointer",marginTop:16}}>✕</button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={()=>addFornecedor(tipo,`Novo Fornecedor ${list.length+1}`)}
+                  style={{padding:"10px",background:"none",border:"2px dashed #ddd",borderRadius:10,color:"#aaa",fontSize:13,cursor:"pointer"}}>
+                  + Adicionar Fornecedor
+                </button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
           SAFRAS
       ══════════════════════════════════════════════════════ */}
       {appView==="safras" && (
@@ -2733,10 +2831,10 @@ function App() {
                 const pm=calcPrecoMedio(dec.splits);
                 const allVals=[];
                 fornecedores.forEach(f=>{
-                  const precos=allPrices[f]||{};
+                  const precos=allPrices[f.nome]||{};
                   ["v1","v2"].forEach(vk=>{
                     const preco=(precos[key]||{})[vk];
-                    if (preco>0) allVals.push({nome:f, venc:vk, preco:Number(preco)});
+                    if (preco>0) allVals.push({nome:f.nome, venc:vk, preco:Number(preco)});
                   });
                 });
                 return (
@@ -2764,7 +2862,7 @@ function App() {
                         <select value={split.nome} onChange={e=>updateSplit(key,si,"nome",e.target.value)}
                           style={{flex:2,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}>
                           <option value="">-- Fornecedor --</option>
-                          {fornecedores.map(f=><option key={f} value={f}>{f}</option>)}
+                          {fornecedores.map(f=><option key={f.nome} value={f.nome}>{f.nome}</option>)}
                         </select>
                         <select value={split.venc||"v1"} onChange={e=>updateSplit(key,si,"venc",e.target.value)}
                           style={{flex:1,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}>
