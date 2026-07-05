@@ -1105,6 +1105,7 @@ function App() {
   const [addingTo, setAddingTo]           = useState(null);
   const [editingArea, setEditingArea]     = useState(false);
   const [editingKgSemente, setEditingKgSemente] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newProd, setNewProd]             = useState({produto:"",dose:"",kgHa:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
   const [cotScreen, setCotScreen]         = useState("login");
   const [cotRole, setCotRole]             = useState(null);
@@ -1337,6 +1338,31 @@ function App() {
   function deleteCultura(nome) {
     if (!window.confirm(`Remover cultura "${nome}"?`)) return;
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); delete nd[nome]; return nd; });
+  }
+  // Importa categorias/produtos de outra cultura da mesma safra (Verão ou Inverno) para
+  // abastecer uma cultura vazia/recém-ativada com uma base de produtos já usados. Faz merge:
+  // categorias que já existem no destino ganham só os produtos que ainda não têm (por nome);
+  // categorias novas são criadas. A área de cada produto importado é ajustada pra área da
+  // cultura destino, e preco_compra/fornecedor_compra são zerados (ainda não comprado).
+  function importarProdutosDeCultura(origemNome) {
+    if (!origemNome || !data[origemNome] || origemNome===activeCulture) return;
+    setData(d=>{
+      const nd = JSON.parse(JSON.stringify(d));
+      const origem = d[origemNome];
+      const alvo = nd[activeCulture];
+      const areaAlvo = alvo.area;
+      origem.categories.forEach(catOrigem=>{
+        let catAlvo = alvo.categories.find(c=>c.name===catOrigem.name);
+        if (!catAlvo) { catAlvo = { name:catOrigem.name, products:[] }; alvo.categories.push(catAlvo); }
+        const nomesExistentes = new Set(catAlvo.products.map(p=>p.produto.trim().toLowerCase()));
+        catOrigem.products.forEach(p=>{
+          if (nomesExistentes.has(p.produto.trim().toLowerCase())) return;
+          catAlvo.products.push({ ...p, area:areaAlvo, preco_compra:null, fornecedor_compra:null });
+        });
+      });
+      return nd;
+    });
+    setShowImportModal(false);
   }
   function updateField(catIdx, prodIdx, field, value) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); const p=nd[activeCulture].categories[catIdx].products[prodIdx];
@@ -2015,6 +2041,7 @@ function App() {
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Insumos/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(culture.area>0?insumoTotal/culture.area:0)}</div></div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Custo total/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(totalHa)}</div></div>
             <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+              <button onClick={()=>setShowImportModal(true)} style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
                 {culture.ativo?"⏸ Desativar":"▶ Ativar"}
               </button>
@@ -3073,6 +3100,36 @@ function App() {
                 </button>
                 <button onClick={()=>{setShowSafrasModal(false);setNovaSafraNome("");}} style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:14,cursor:"pointer"}}>Cancelar</button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL: IMPORTAR PRODUTOS DE OUTRA CULTURA
+      ══════════════════════════════════════════════════════ */}
+      {showImportModal && (()=>{
+        const outras = Object.keys(data).filter(nome=>nome!==activeCulture);
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+            <div style={{background:"#fff",borderRadius:14,padding:"32px",width:440,boxShadow:"0 24px 80px rgba(0,0,0,0.3)"}}>
+              <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:6}}>📥 Importar Produtos</div>
+              <div style={{fontSize:13,color:"#666",marginBottom:20}}>Escolha de qual cultura ({isVerao?"Verão":"Inverno"}) importar os produtos como base para <strong>{activeCulture}</strong>. Categorias e produtos que ainda não existem aqui são adicionados; o que já existe não é duplicado.</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:320,overflowY:"auto",marginBottom:16}}>
+                {outras.map(nome=>{
+                  const c = data[nome];
+                  const nProdutos = c.categories.reduce((s,cat)=>s+cat.products.length,0);
+                  return (
+                    <button key={nome} onClick={()=>importarProdutosDeCultura(nome)} disabled={!nProdutos}
+                      style={{textAlign:"left",padding:"10px 14px",background:nProdutos?"#f5f5f5":"#fafafa",border:"1px solid #e0e0e0",borderRadius:8,cursor:nProdutos?"pointer":"not-allowed",opacity:nProdutos?1:0.5}}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{nome} {!c.ativo && <span style={{fontWeight:400,color:"#999"}}>(inativo)</span>}</div>
+                      <div style={{fontSize:12,color:"#888"}}>{c.categories.length} categorias · {nProdutos} produtos</div>
+                    </button>
+                  );
+                })}
+                {outras.length===0 && <div style={{fontSize:13,color:"#999",textAlign:"center",padding:20}}>Nenhuma outra cultura disponível.</div>}
+              </div>
+              <button onClick={()=>setShowImportModal(false)} style={{width:"100%",padding:"12px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:14,cursor:"pointer"}}>Cancelar</button>
             </div>
           </div>
         );
