@@ -1201,6 +1201,7 @@ function App() {
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [viewingSafraIdx, setViewingSafraIdx] = useState(null);
+  const [expandedArqCulturas, setExpandedArqCulturas] = useState({});
   const [safraDetailTab, setSafraDetailTab] = useState("prog_verao");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
   const [fecharDecisions, setFecharDecisions] = useState(null);
@@ -3347,12 +3348,60 @@ function App() {
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
                     {Object.entries(progData).map(([nome,c])=>{
                       const t = calcCultureTotals(c);
+                      const key = safraDetailTab+"|"+nome;
+                      const open = !!expandedArqCulturas[key];
                       return (
                         <div key={nome} style={{border:"1px solid #eee",borderRadius:8,padding:"10px 14px",opacity:c.ativo?1:0.5}}>
-                          <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                            <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{nome} {!c.ativo && "(inativa)"}</div>
+                          <div onClick={()=>setExpandedArqCulturas(p=>({...p,[key]:!open}))} style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,cursor:"pointer"}}>
+                            <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{open?"▼":"▶"} {nome} {!c.ativo && "(inativa)"}</div>
                             <div style={{fontSize:12,color:"#666"}}>{fmtN(c.area)} ha · {c.categories.length} categorias · {fmt(t.total)}/ha</div>
                           </div>
+                          {open && (
+                            <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:10}}>
+                              {c.categories.map((cat,catIdx)=>{
+                                const isTSarq = cat.name==="TS";
+                                const showIAarq = CAT_IA.has(cat.name);
+                                return (
+                                  <div key={catIdx}>
+                                    <div style={{fontSize:11,fontWeight:700,color:"#555",marginBottom:4}}>{CAT_ICONS[cat.name]||"📦"} {cat.name}</div>
+                                    <div style={{overflowX:"auto"}}>
+                                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                                        <thead>
+                                          <tr style={{background:"#f5f5f5"}}>
+                                            {["Produto",...(showIAarq?["I.A."]:[]),"Dose",...(isTSarq?["Kg sem./ha"]:[]),"Área(ha)","Qtd","Fase","Ref.(R$)","Compra(R$)","Total","Revenda","Venc."].map(h=>(
+                                              <th key={h} style={{padding:"5px 7px",textAlign:h==="Produto"||h==="Fase"?"left":"right",color:"#888",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                                            ))}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {cat.products.map((p,pi)=>{
+                                            const qtd = isTSarq ? calcQtdTS(p,c) : (p.dose>0?p.dose*p.area:p.area);
+                                            const preco = p.preco_compra||p.preco_unit;
+                                            return (
+                                              <tr key={pi} style={{background:pi%2===0?"#fff":"#fafafa"}}>
+                                                <td style={{padding:"4px 7px",fontWeight:600}}>{p.produto}</td>
+                                                {showIAarq && <td style={{padding:"4px 7px",textAlign:"right",color:"#888"}}>{p.ingrediente_ativo||"—"}</td>}
+                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{fmtN(p.dose,3)}</td>
+                                                {isTSarq && <td style={{padding:"4px 7px",textAlign:"right"}}>{fmtN(p.kgHa||c.kgSemente||0,1)}</td>}
+                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{fmtN(p.area,1)}</td>
+                                                <td style={{padding:"4px 7px",textAlign:"right",color:"#666"}}>{fmtN(qtd,1)}</td>
+                                                <td style={{padding:"4px 7px",color:"#888"}}>{p.fase}</td>
+                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{fmt(p.preco_unit)}</td>
+                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{p.preco_compra!=null?fmt(p.preco_compra):"—"}</td>
+                                                <td style={{padding:"4px 7px",textAlign:"right",fontWeight:700}}>{fmt(qtd*preco)}</td>
+                                                <td style={{padding:"4px 7px",color:"#888"}}>{p.revenda}</td>
+                                                <td style={{padding:"4px 7px",color:"#888",fontSize:10}}>{p.vencimento}</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
