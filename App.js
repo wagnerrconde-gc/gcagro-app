@@ -53,7 +53,6 @@ const KEY_PROG       = "gcagro_prog_v2";
 const KEY_COTACAO    = "gcagro_cotacao_v2";
 const KEY_SAFRAS     = "gcagro_safras_v2";
 const KEY_COLHEITA   = "gcagro_colheita_v2";
-const KEY_FINANCEIRO = "gcagro_financeiro_v1";
 const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
 const KEY_COMPRAS = "gcagro_compras_v1";
 const KEY_VENDAS = "gcagro_vendas_v1";
@@ -152,7 +151,7 @@ function derivarProdutos(data, excluirAdubacao=false) {
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
-        else { map[key] = { nome:p.produto.trim(), unidade:p.fase&&p.fase.toLowerCase().includes("dose")?"doses":p.fase&&p.fase.toLowerCase().includes("kg")?"kg":"L", qtd_total:qtd, categoria:cat.name, preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
+        else { map[key] = { nome:p.produto.trim(), unidade:p.fase&&p.fase.toLowerCase().includes("dose")?"doses":p.fase&&p.fase.toLowerCase().includes("kg")?"kg":"L", qtd_total:qtd, categoria:cat.name, preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
   });
@@ -167,7 +166,7 @@ function derivarAdubacao(data) {
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
-        else { map[key] = { nome:p.produto.trim(), unidade:"TN", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
+        else { map[key] = { nome:p.produto.trim(), unidade:"TN", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
   });
@@ -237,7 +236,7 @@ function renameCategoria(cultureData, oldName, newName) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IMPORTAÇÃO DE PLANILHAS (Colheita, Financeiro)
+// IMPORTAÇÃO DE PLANILHAS (Colheita)
 // ─────────────────────────────────────────────────────────────────────────────
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
@@ -362,17 +361,6 @@ const ALIASES_COLHEITA = {
   pmg:      ["pmg","peso_mil_graos","peso_de_mil_graos","pmg_g"],
   obs:      ["obs","observacao","observacoes"],
 };
-const ALIASES_FINANCEIRO = {
-  safra:      ["safra"],
-  cultura:    ["cultura","culture"],
-  categoria:  ["categoria","categoria_custo","tipo_custo","grupo"],
-  descricao:  ["descricao","desc","item","descricao_custo"],
-  data:       ["data","dia"],
-  orcado:     ["orcado","valor_orcado","previsto","orcamento"],
-  realizado:  ["realizado","valor_realizado","pago","gasto"],
-  obs:        ["obs","observacao","observacoes"],
-};
-
 // Indexa os lotes do Planejamento de Campo (Verão + Safrinha) por nome, para a
 // Colheita resolver cultura/área/previsão automaticamente a partir do lote escolhido.
 function makeLoteResolver(planVerao, planSafrinha) {
@@ -393,12 +381,6 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
     cultura: String(m.cultura || (found ? found.cultura : "")).trim(),
     previsaoColheita: found ? found.previsaoColheita : "",
     data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), pmg:toNum(m.pmg), obs:String(m.obs||"").trim() };
-}
-function buildFinanceiroRecord(m, safraAtiva) {
-  if (!m.descricao && !m.categoria) return null;
-  return { id:newId(), safra:String(m.safra||safraAtiva).trim(), cultura:String(m.cultura||"Geral").trim(),
-    categoria:String(m.categoria||"Outros").trim(), descricao:String(m.descricao||"").trim(),
-    data:formatMaybeDate(m.data), orcado:toNum(m.orcado), realizado:toNum(m.realizado), obs:String(m.obs||"").trim() };
 }
 
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
@@ -828,7 +810,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onAtualizarCusto, obs, setObs}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -836,6 +818,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
   const total = data.reduce((s,r)=>s+(r.area||0),0);
   const [genMsg, setGenMsg] = useState(null);
+  const [custoMsg, setCustoMsg] = useState(null);
 
   function upd(i, field, val) {
     setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
@@ -850,6 +833,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     const n = onGerarCotacao(data, isVerao);
     setGenMsg(n);
     setTimeout(()=>setGenMsg(null), 4000);
+  }
+  function atualizarCusto() {
+    const relatorio = onAtualizarCusto(data, isVerao);
+    setCustoMsg(relatorio);
+    setTimeout(()=>setCustoMsg(null), 6000);
   }
 
   const cols = isVerao
@@ -866,14 +854,22 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
+          <button onClick={atualizarCusto} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo Sementes</button>
           <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
         </div>
       </div>
       {genMsg!==null && (
         <div style={{padding:"8px 14px",background:"#e8f5e9",color:"#2e7d32",borderRadius:6,fontSize:12,marginBottom:12}}>
           ✓ Quantidades enviadas para a Cotação de Sementes: {genMsg} variedade(s) nova(s).
+        </div>
+      )}
+      {custoMsg!==null && (
+        <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginBottom:12}}>
+          {custoMsg.length===0
+            ? "Nenhuma cultura com compras de sementes registradas em Compras ainda."
+            : custoMsg.map(r=>`✓ ${r.cultura}: ${fmt(r.precoMedio)}/ha (${fmt(r.totalPago)} ÷ ${fmtN(r.areaTotal,1)} ha)`).join("  •  ")}
         </div>
       )}
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
@@ -1135,16 +1131,13 @@ function App() {
   const [tsVerao, setTsVerao]           = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_verao", TS_VERAO_INICIAL));
   const [tsSafrinha, setTsSafrinha]     = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_safrinha", TS_SAFRINHA_INICIAL));
 
-  // ── Colheita / Financeiro ──
+  // ── Colheita ──
   const [colheitaRecords, setColheitaRecords]     = useState(() => loadLS(KEY_COLHEITA, []));
-  const [financeiroRecords, setFinanceiroRecords] = useState(() => loadLS(KEY_FINANCEIRO, []));
   const [editingRecordCell, setEditingRecordCell] = useState(null); // "module|id|field"
   const [importMsg, setImportMsg]         = useState(null); // {modulo, texto}
   const [backupMsg, setBackupMsg]         = useState(null); // {ok, texto}
   const [addingColheita, setAddingColheita]     = useState(false);
-  const [addingFinanceiro, setAddingFinanceiro] = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
-  const [newFinanceiro, setNewFinanceiro] = useState({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
 
   // ── Vendas (registro de vendas de grãos) ──
   const [vendasRecords, setVendasRecords] = useState(() => loadLS(KEY_VENDAS, []));
@@ -1194,7 +1187,6 @@ function App() {
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_verao", tsVerao); }, [tsVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_safrinha", tsSafrinha); }, [tsSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
-  useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
 
   const resolveLote = useMemo(() => makeLoteResolver(planVerao, planSafrinha), [planVerao, planSafrinha]);
@@ -1405,23 +1397,31 @@ function App() {
   function handleCotLogout() { setCotScreen("login"); setLoginInput(""); setLoginError(""); }
 
   // ── Fechar cotação (lançar na programação) ──
+  // Casa o produto da cotação com o da Programação pelo nome; se o nome comprado for
+  // diferente do que está na Programação, cai para o casamento por ingrediente ativo
+  // (mesmo princípio do sistema antigo). Em ambos os casos alimenta preco_unit, que é
+  // o valor usado para gerar os custos — preco_compra fica só como referência visual.
   function fecharCotacao(prodKey, fornecedores_qtds, precoMedio, nomeReal, iaReal) {
     // fornecedores_qtds: [{nome, qtd, preco, venc}]
     const setD = cotContext?.safra==="verao" ? setDataVerao : setDataInverno;
     const vencLabels = getVencLabels(cotContext);
     const fornecedorLabel = fornecedores_qtds.map(f=>f.nome).join(" + ");
     const vencimentoLabel = [...new Set(fornecedores_qtds.map(f=>vencLabels[f.venc||"v1"]))].join(" + ");
+    const iaKey = (iaReal||"").trim().toLowerCase();
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(culture => {
         culture.categories.forEach(cat => {
           cat.products.forEach(p => {
-            if (p.produto.trim().toLowerCase() === prodKey) {
+            const nomeMatch = p.produto.trim().toLowerCase() === prodKey;
+            const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
+            if (nomeMatch || iaMatch) {
+              p.preco_unit = precoMedio;
               p.preco_compra = precoMedio;
               p.fornecedor_compra = fornecedorLabel;
               p.revenda = fornecedorLabel;
               p.vencimento = vencimentoLabel;
-              if (nomeReal) p.produto = nomeReal;
+              if (nomeMatch && nomeReal) p.produto = nomeReal;
               if (iaReal) p.ingrediente_ativo = iaReal;
             }
           });
@@ -1491,6 +1491,43 @@ function App() {
     return merged.length - atual.length;
   }
 
+  // ── Custo médio de sementes: soma o valor pago em Compras e divide pela área plantada,
+  // alimentando o preço/ha da categoria "Sementes" na Programação (Verão ou Inverno) ──
+  function atualizarCustoSementesDoPlano(planData, isVerao) {
+    const culturas = [...new Set(planData.map(r=>r.cultura).filter(Boolean))];
+    const setD = isVerao ? setDataVerao : setDataInverno;
+    let atualizados = 0;
+    const relatorio = [];
+    culturas.forEach(cultura => {
+      const areaTotal = planData.filter(r=>r.cultura===cultura).reduce((s,r)=>s+(parseFloat(r.area)||0),0);
+      if (!areaTotal) return;
+      const variedades = new Set(planData.filter(r=>r.cultura===cultura && r.variedade)
+        .map(r=>r.variedade.trim().toLowerCase()));
+      if (!variedades.size) return;
+      const totalPago = comprasRecords.filter(r=>r.categoria==="Sementes" && variedades.has((r.produto||"").trim().toLowerCase()))
+        .reduce((s,r)=>s+(r.valorTotal||0),0);
+      if (!totalPago) return;
+      const precoMedio = totalPago/areaTotal;
+      relatorio.push({cultura, precoMedio, totalPago, areaTotal});
+      atualizados++;
+    });
+    if (atualizados) {
+      setD(d => {
+        const nd = JSON.parse(JSON.stringify(d));
+        relatorio.forEach(({cultura,precoMedio})=>{
+          const c = nd[cultura];
+          if (!c) return;
+          c.categories.forEach(cat=>{
+            if (cat.name!=="Sementes") return;
+            cat.products.forEach(p=>{ p.preco_unit = precoMedio; });
+          });
+        });
+        return nd;
+      });
+    }
+    return relatorio;
+  }
+
   // ── Safras ──
   function arquivarSafra() {
     const arquivo = {
@@ -1529,7 +1566,7 @@ function App() {
       cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels,
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
-      planVerao, planSafrinha, colheitaRecords, financeiroRecords, comprasRecords, vendasRecords,
+      planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1565,7 +1602,6 @@ function App() {
         if (b.planVerao) setPlanVerao(b.planVerao);
         if (b.planSafrinha) setPlanSafrinha(b.planSafrinha);
         if (b.colheitaRecords) setColheitaRecords(b.colheitaRecords);
-        if (b.financeiroRecords) setFinanceiroRecords(b.financeiroRecords);
         if (b.comprasRecords) setComprasRecords(b.comprasRecords);
         if (b.vendasRecords) setVendasRecords(b.vendasRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
@@ -1587,24 +1623,12 @@ function App() {
   const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataVerao]);
   const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataInverno]);
 
-  // ── Colheita / Financeiro: totais derivados ──
+  // ── Colheita: totais derivados ──
   const colheitaTotais = useMemo(() => {
     const totalArea = colheitaRecords.reduce((s,r)=>s+r.areaHa,0);
     const totalSacas = colheitaRecords.reduce((s,r)=>s+r.sacas,0);
     return { totalArea, totalSacas, media: totalArea>0 ? totalSacas/totalArea : 0 };
   }, [colheitaRecords]);
-
-  const financeiroTotais = useMemo(() => {
-    const orcado = financeiroRecords.reduce((s,r)=>s+r.orcado,0);
-    const realizado = financeiroRecords.reduce((s,r)=>s+r.realizado,0);
-    const porCategoria = {};
-    financeiroRecords.forEach(r => {
-      if (!porCategoria[r.categoria]) porCategoria[r.categoria] = { categoria:r.categoria, orcado:0, realizado:0 };
-      porCategoria[r.categoria].orcado += r.orcado;
-      porCategoria[r.categoria].realizado += r.realizado;
-    });
-    return { orcado, realizado, saldo: orcado-realizado, porCategoria: Object.values(porCategoria) };
-  }, [financeiroRecords]);
 
   const comprasTotais = useMemo(() => {
     const total = comprasRecords.reduce((s,r)=>s+r.valorTotal,0);
@@ -1656,10 +1680,6 @@ function App() {
     importSpreadsheet(file, ALIASES_COLHEITA, m=>buildColheitaRecord(m, safraAtiva, resolveLote), setColheitaRecords,
       txt=>{ setImportMsg({modulo:"colheita",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
   }
-  function handleImportFinanceiro(file) {
-    importSpreadsheet(file, ALIASES_FINANCEIRO, m=>buildFinanceiroRecord(m, safraAtiva), setFinanceiroRecords,
-      txt=>{ setImportMsg({modulo:"financeiro",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
-  }
 
   // ── Add/delete manuais ──
   function submitColheita() {
@@ -1671,14 +1691,6 @@ function App() {
       umidade:parseFloat(newColheita.umidade)||0, pmg:parseFloat(newColheita.pmg)||0, obs:newColheita.obs.trim() });
     setNewColheita({tipo:newColheita.tipo,loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
     setAddingColheita(false);
-  }
-  function submitFinanceiro() {
-    if (!newFinanceiro.descricao.trim() && !newFinanceiro.categoria.trim()) return;
-    addRecord(setFinanceiroRecords, { safra:newFinanceiro.safra.trim()||safraAtiva, cultura:newFinanceiro.cultura.trim()||"Geral",
-      categoria:newFinanceiro.categoria.trim()||"Outros", descricao:newFinanceiro.descricao.trim(), data:newFinanceiro.data.trim(),
-      orcado:parseFloat(newFinanceiro.orcado)||0, realizado:parseFloat(newFinanceiro.realizado)||0, obs:newFinanceiro.obs.trim() });
-    setNewFinanceiro({safra:"",cultura:"",categoria:"",descricao:"",data:"",orcado:"",realizado:"",obs:""});
-    setAddingFinanceiro(false);
   }
   function submitVenda() {
     if (!newVenda.qtd || !newVenda.comprador.trim()) return;
@@ -1769,7 +1781,6 @@ function App() {
     { id:"ts_inv",         label:"TS / Kit Sulco Inverno",icon:"🌾", group:"Planejamento" },
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
     { id:"vendas",         label:"Vendas",                icon:"💰", group:null },
-    { id:"financeiro",     label:"Financeiro",            icon:"💵", group:null },
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
@@ -1878,7 +1889,6 @@ function App() {
         const areaTotal = culturasVerao.reduce((s,c)=>s+c.area,0) + culturasInverno.reduce((s,c)=>s+c.area,0);
         const maxAreaVerao = Math.max(1, ...culturasVerao.map(c=>c.area), 0);
         const maxAreaInverno = Math.max(1, ...culturasInverno.map(c=>c.area), 0);
-        const maxFin = Math.max(1, ...financeiroTotais.porCategoria.map(c=>Math.max(c.orcado,c.realizado)), 0);
         const NAV_CARDS = [
           { id:"prog_verao",  label:"Programação Verão",   icon:"🌱", color:"#1a5c2e" },
           { id:"prog_inv",    label:"Programação Inverno", icon:"🌾", color:"#5c4a00" },
@@ -1886,7 +1896,6 @@ function App() {
           { id:"plan_inv",    label:"Planejamento Inverno",icon:"🗺️", color:"#1565C0" },
           { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
           { id:"vendas",      label:"Vendas",              icon:"💰", color:"#1565C0" },
-          { id:"financeiro",  label:"Financeiro",          icon:"💵", color:"#6a1b9a" },
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
@@ -1913,11 +1922,6 @@ function App() {
                 <div style={{fontSize:11,color:"#888"}}>Colhido</div>
                 <div style={{fontSize:22,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalSacas,0)} sc</div>
                 <div style={{fontSize:11,color:"#999"}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
-              </div>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:11,color:"#888"}}>Saldo financeiro</div>
-                <div style={{fontSize:22,fontWeight:800,color:financeiroTotais.saldo<0?"#c62828":"#2e7d32"}}>{fmt(financeiroTotais.saldo)}</div>
-                <div style={{fontSize:11,color:"#999"}}>Orçado {fmt(financeiroTotais.orcado)}</div>
               </div>
             </div>
 
@@ -1959,30 +1963,6 @@ function App() {
                 })}
               </div>
             </div>
-
-            {financeiroTotais.porCategoria.length>0 && (
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:20}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#6a1b9a",marginBottom:12}}>💵 Financeiro — Orçado x Realizado</div>
-                {financeiroTotais.porCategoria.map(c=>(
-                  <div key={c.categoria} style={{marginBottom:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                      <span style={{fontWeight:600,color:"#333"}}>{c.categoria}</span>
-                      <span style={{color:"#888"}}>{fmt(c.orcado)} / {fmt(c.realizado)}</span>
-                    </div>
-                    <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden",marginBottom:2}}>
-                      <div style={{height:"100%",width:`${(c.orcado/maxFin)*100}%`,background:"#ce93d8",borderRadius:4}}/>
-                    </div>
-                    <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${(c.realizado/maxFin)*100}%`,background:c.realizado>c.orcado?"#c62828":"#6a1b9a",borderRadius:4}}/>
-                    </div>
-                  </div>
-                ))}
-                <div style={{display:"flex",gap:14,fontSize:10,color:"#999",marginTop:8}}>
-                  <span><span style={{display:"inline-block",width:8,height:8,background:"#ce93d8",borderRadius:2,marginRight:4}}/>Orçado</span>
-                  <span><span style={{display:"inline-block",width:8,height:8,background:"#6a1b9a",borderRadius:2,marginRight:4}}/>Realizado</span>
-                </div>
-              </div>
-            )}
 
             <div style={{fontSize:13,fontWeight:700,color:"#1a3a1a",marginBottom:10}}>Acesso rápido</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
@@ -2228,8 +2208,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onAtualizarCusto={atualizarCustoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onAtualizarCusto={atualizarCustoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
@@ -2436,113 +2416,6 @@ function App() {
           </div>
         );
       })()}
-
-      {/* ══════════════════════════════════════════════════════
-          FINANCEIRO / CUSTOS
-      ══════════════════════════════════════════════════════ */}
-      {appView==="financeiro" && (
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{fontSize:11,color:"#888"}}>Orçado</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#6a1b9a"}}>{fmt(financeiroTotais.orcado)}</div>
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{fontSize:11,color:"#888"}}>Realizado</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#6a1b9a"}}>{fmt(financeiroTotais.realizado)}</div>
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{fontSize:11,color:"#888"}}>Saldo (orçado - realizado)</div>
-              <div style={{fontSize:18,fontWeight:800,color:financeiroTotais.saldo<0?"#c62828":"#2e7d32"}}>{fmt(financeiroTotais.saldo)}</div>
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{fontSize:11,color:"#888"}}>Ref. insumos programação (Verão + Inverno)</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#546e7a"}}>{fmt(refInsumosSafraAtiva)}</div>
-            </div>
-          </div>
-
-          <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <ImportButton label="Importar planilha" color="#6a1b9a" onFile={handleImportFinanceiro}/>
-            <button onClick={()=>setAddingFinanceiro(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #6a1b9a",color:"#6a1b9a",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento</button>
-          </div>
-          {importMsg?.modulo==="financeiro" && <div style={{background:"#fffde7",border:"1px solid #fbc02d",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:12,color:"#7a5c00"}}>{importMsg.texto}</div>}
-          <div style={{fontSize:11,color:"#999",marginBottom:8}}>Colunas reconhecidas: safra, cultura, categoria, descrição, data, orçado, realizado, obs.</div>
-
-          {financeiroTotais.porCategoria.length>0 && (
-            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:14}}>
-              <div style={{background:"#6a1b9a",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>📊 Por categoria</div>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead>
-                  <tr style={{background:"#f3e5f5"}}>
-                    {["Categoria","Orçado","Realizado","Saldo"].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Categoria"?"left":"right",color:"#6a1b9a",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #ce93d8"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {financeiroTotais.porCategoria.map((c,i)=>(
-                    <tr key={c.categoria} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                      <td style={{padding:"6px 9px",fontWeight:600}}>{c.categoria}</td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}>{fmt(c.orcado)}</td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}>{fmt(c.realizado)}</td>
-                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:c.orcado-c.realizado<0?"#c62828":"#2e7d32"}}>{fmt(c.orcado-c.realizado)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-            <div style={{background:"#4a148c",color:"#fff",padding:"10px 16px",fontWeight:700,fontSize:13}}>📋 Lançamentos</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-              <thead>
-                <tr style={{background:"#f3e5f5"}}>
-                  {["Safra","Cultura","Categoria","Descrição","Data","Orçado","Realizado","Obs",""].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:["Orçado","Realizado"].includes(h)?"right":"left",color:"#6a1b9a",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #ce93d8"}}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {financeiroRecords.map((r,i)=>(
-                  <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                    <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"fin|"+r.id} field="safra" value={r.safra} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"safra",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"fin|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"cultura",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"fin|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"categoria",v)}/></td>
-                    <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"fin|"+r.id} field="descricao" value={r.descricao} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"descricao",v)}/></td>
-                    <td style={{padding:"6px 9px"}}><RecEditCell recKey={"fin|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"data",v)}/></td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"fin|"+r.id} field="orcado" type="number" align="right" value={fmt(r.orcado)} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"orcado",v,true)}/></td>
-                    <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"fin|"+r.id} field="realizado" type="number" align="right" value={fmt(r.realizado)} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"realizado",v,true)}/></td>
-                    <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"fin|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setFinanceiroRecords,r.id,"obs",v)}/></td>
-                    <td style={{padding:"6px 4px",textAlign:"center"}}>
-                      <button onClick={()=>{if(window.confirm("Remover lançamento?"))deleteRecord(setFinanceiroRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
-                    </td>
-                  </tr>
-                ))}
-                {addingFinanceiro && (
-                  <tr style={{background:"#fffde7"}}>
-                    <td style={{padding:"5px 6px"}}><input placeholder={safraAtiva} value={newFinanceiro.safra} onChange={e=>setNewFinanceiro(p=>({...p,safra:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Cultura" value={newFinanceiro.cultura} onChange={e=>setNewFinanceiro(p=>({...p,cultura:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Categoria" value={newFinanceiro.categoria} onChange={e=>setNewFinanceiro(p=>({...p,categoria:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Descrição" value={newFinanceiro.descricao} onChange={e=>setNewFinanceiro(p=>({...p,descricao:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newFinanceiro.data} onChange={e=>setNewFinanceiro(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Orçado" type="number" step="any" value={newFinanceiro.orcado} onChange={e=>setNewFinanceiro(p=>({...p,orcado:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Realizado" type="number" step="any" value={newFinanceiro.realizado} onChange={e=>setNewFinanceiro(p=>({...p,realizado:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newFinanceiro.obs} onChange={e=>setNewFinanceiro(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                    <td style={{padding:"5px 6px"}}>
-                      <button onClick={submitFinanceiro} style={{background:"#6a1b9a",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
-                      <button onClick={()=>setAddingFinanceiro(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
-                    </td>
-                  </tr>
-                )}
-                {financeiroRecords.length===0 && !addingFinanceiro && (
-                  <tr><td colSpan={9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum lançamento ainda. Importe uma planilha ou adicione manualmente.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* ══════════════════════════════════════════════════════
           COTAÇÃO
@@ -3164,7 +3037,7 @@ function App() {
           <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:16}}>💾 Backup dos Dados</div>
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
             <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>📤 Exportar Backup</div>
-            <div style={{fontSize:12,color:"#666",marginBottom:14}}>Salva todos os dados do app (programação, cotações, colheita, vendas, financeiro, compras, planejamento, safras) em um arquivo JSON. Guarde no Google Drive, OneDrive ou onde preferir.</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:14}}>Salva todos os dados do app (programação, cotações, colheita, vendas, compras, planejamento, safras) em um arquivo JSON. Guarde no Google Drive, OneDrive ou onde preferir.</div>
             <button onClick={exportarBackup} style={{padding:"12px 24px",background:"linear-gradient(135deg,#2e7d32,#1b5e20)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
               💾 Baixar Backup
             </button>
