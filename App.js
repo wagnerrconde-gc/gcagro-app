@@ -108,9 +108,9 @@ const CATEGORIA_COMPRA_ICONS = {
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 const fmt    = (n) => isNaN(n)||n==null?"R$ 0,00":Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const fmtN   = (n,d=3) => Number(n).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtN   = (n,d=1) => Number(n).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtC   = (v) => v==null||v===""?"—":`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:3,maximumFractionDigits:3});
+const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
 
 // Quantidade de produto de Tratamento de Sementes (TS): dose é por 100kg de semente.
 // Fórmula recuperada do app antigo: qtd = dose × (kg de semente/ha, do produto ou da cultura) × área ÷ 100.
@@ -1950,7 +1950,7 @@ function App() {
               </div>
               <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Colhido</div>
-                <div style={{fontSize:22,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalSacas,0)} sc</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalSacas,1)} sc</div>
                 <div style={{fontSize:11,color:"#999"}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
               </div>
             </div>
@@ -2252,7 +2252,7 @@ function App() {
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Área colhida</div>
-              <div style={{fontSize:20,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalArea,2)} ha</div>
+              <div style={{fontSize:20,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalArea,1)} ha</div>
             </div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}>
               <div style={{fontSize:11,color:"#888"}}>Total colhido</div>
@@ -2290,7 +2290,7 @@ function App() {
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"col|"+r.id} field="lote" value={r.lote} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"lote",v)}/></td>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"col|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"cultura",v)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="data" align="right" value={r.data} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"data",v)}/></td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="areaHa" type="number" align="right" value={fmtN(r.areaHa,2)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"areaHa",v,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="areaHa" type="number" align="right" value={fmtN(r.areaHa,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"areaHa",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="sacas" type="number" align="right" value={fmtN(r.sacas,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"sacas",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#2e7d32"}}>{fmtN(prod,1)}</td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="pmg" type="number" align="right" value={fmtN(r.pmg||0,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"pmg",v,true)}/></td>
@@ -2371,7 +2371,7 @@ function App() {
               </div>
               <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Total quantidade</div>
-                <div style={{fontSize:18,fontWeight:800,color:cc.bg}}>{fmtN(totalQtd,0)}</div>
+                <div style={{fontSize:18,fontWeight:800,color:cc.bg}}>{fmtN(totalQtd,1)}</div>
               </div>
               <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Preço médio</div>
@@ -2401,7 +2401,7 @@ function App() {
                   {filtradas.map((v,i)=>(
                     <tr key={v.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="safra" value={v.safra} onCommit={val=>updateRecordField(setVendasRecords,v.id,"safra",val)}/></td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"venda|"+v.id} field="qtd" type="number" align="right" value={fmtN(v.qtd,0)} onCommit={val=>updateRecordField(setVendasRecords,v.id,"qtd",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"venda|"+v.id} field="qtd" type="number" align="right" value={fmtN(v.qtd,1)} onCommit={val=>updateRecordField(setVendasRecords,v.id,"qtd",val,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"venda|"+v.id} field="unidade" value={v.unidade} onCommit={val=>updateRecordField(setVendasRecords,v.id,"unidade",val)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"venda|"+v.id} field="preco" type="number" align="right" value={fmt(v.preco)} onCommit={val=>updateRecordField(setVendasRecords,v.id,"preco",val,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:cc.bg}}>{fmt((v.qtd||0)*(v.preco||0))}</td>
