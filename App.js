@@ -878,6 +878,20 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
       : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", populacao:0, unidadeQtd:"saco", dataPlantio:"", previsaoColheita:"", obs:"" }
     ]);
   }
+  // Divide um lote/pivô ao meio: usado quando duas variedades são plantadas na mesma área física
+  // (ex: metade de um pivô com uma variedade, metade com outra). Mantém o nome do lote e os demais
+  // dados como base nas duas linhas, com a área dividida — a segunda linha fica com variedade em
+  // branco pra preencher.
+  function dividirLote(i) {
+    setData(d => {
+      const row = d[i];
+      const metade = (row.area||0)/2;
+      const nd = [...d];
+      nd[i] = { ...row, area:metade };
+      nd.splice(i+1, 0, { ...row, id:newId(), area:metade, variedade:"" });
+      return nd;
+    });
+  }
   function gerarCotacao() {
     const n = onGerarCotacao(data, isVerao);
     setGenMsg(n);
@@ -965,7 +979,8 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                         )}
                       </td>
                     ))}
-                    <td style={{padding:"3px 4px",textAlign:"center"}}>
+                    <td style={{padding:"3px 4px",textAlign:"center",whiteSpace:"nowrap"}}>
+                      <button onClick={()=>dividirLote(i)} title="Dividir este lote/pivô ao meio (duas variedades na mesma área)" style={{background:"none",border:"none",color:cc.bg,cursor:"pointer",fontSize:13,marginRight:6}}>🔀</button>
                       <button onClick={()=>{if(window.confirm(`Remover lote "${row.lote||"sem nome"}"?`))setData(d=>d.filter((_,ri)=>ri!==i));}} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:13}}>✕</button>
                     </td>
                   </tr>
@@ -1551,13 +1566,16 @@ function App() {
       const vals = [];
       fornecedores.forEach(f => {
         const precos = allPrices[f.nome]||{};
+        const entry = precos[key]||{};
         ["v1","v2"].forEach(vk => {
-          const preco = (precos[key]||{})[vk];
-          if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco)});
+          const preco = entry[vk];
+          if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco), nomeComercial:entry.nomeComercial||""});
         });
       });
       const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
-      d[key] = { nomeReal:p.nome, iaReal:p.ingrediente_ativo||"",
+      // Se o fornecedor vencedor informou o nome comercial dele (útil quando o produto é
+      // genérico e cada fornecedor vende com um nome diferente), pré-preenche com ele.
+      d[key] = { nomeReal:(melhor&&melhor.nomeComercial) || p.nome, iaReal:p.ingrediente_ativo||"",
         splits: melhor ? [{nome:melhor.nome, venc:melhor.venc, qtd:100, preco:melhor.preco}] : [{nome:"", venc:"v1", qtd:100, preco:0}] };
     });
     setFecharDecisions(d);
@@ -2617,8 +2635,8 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:showIA?"1fr 60px 100px 80px 140px 140px":"1fr 60px 100px 140px 140px",gap:1,background:"#1e3a5f22"}}>
-                        {["Produto","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`].map(h=>(
+                      <div style={{display:"grid",gridTemplateColumns:showIA?"1fr 140px 60px 100px 80px 140px 140px":"1fr 140px 60px 100px 140px 140px",gap:1,background:"#1e3a5f22"}}>
+                        {["Produto","Seu produto (nome comercial)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`].map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
@@ -2628,6 +2646,11 @@ function App() {
                           return (
                             <React.Fragment key={key}>
                               <div style={{padding:"9px 10px",background:bg,fontSize:12,color:"#d0e8ff"}}>{p.nome}</div>
+                              <div style={{padding:"5px 7px",background:bg}}>
+                                <input value={entry.nomeComercial||""} placeholder="ex: nome que você vende"
+                                  onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),nomeComercial:e.target.value}}))}
+                                  style={{width:"100%",padding:"5px 9px",background:"#0a1628",border:`1px solid ${color}44`,borderRadius:5,color:"#e8f4fd",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+                              </div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
                               {showIA && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
@@ -2775,8 +2798,8 @@ function App() {
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const v=(allPrices[f.nome]||{})[key]?.[vk];return v>0?Number(v):null;}));
-                                const validos=fornPrecos.filter(v=>v!==null);
+                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const entry=(allPrices[f.nome]||{})[key]||{};const v=entry[vk];return v>0?{v:Number(v),nomeComercial:entry.nomeComercial||""}:null;}));
+                                const validos=fornPrecos.filter(x=>x!==null).map(x=>x.v);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
                                 const bg=ri%2===0?"#0d1e36":"#0f2240";
@@ -2800,8 +2823,8 @@ function App() {
                                     <td style={tdS("right",bg,"#4a9eff",true)}>
                                       {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateEditableField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
                                     </td>
-                                    {fornPrecos.map((v,fi)=>{const isBest=v!==null&&v===melhor;return(
-                                      <td key={fi} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":v!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{v!==null?fmtC(v):"—"}</td>
+                                    {fornPrecos.map((fp,fi)=>{const isBest=fp!==null&&fp.v===melhor;return(
+                                      <td key={fi} title={fp?.nomeComercial?`Nome do fornecedor: ${fp.nomeComercial}`:undefined} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":fp!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{fp!==null?fmtC(fp.v):"—"}</td>
                                     );})}
                                     <td style={tdS("center","#0d2a1a","#4ade80",true)}>{melhor!==null?fmtC(melhor):"—"}</td>
                                     <td style={{...tdS("right","#1a0d0d"),color:economia>0?"#4ade80":economia<0?"#f87171":"#5a7a9a",fontWeight:700}}>
