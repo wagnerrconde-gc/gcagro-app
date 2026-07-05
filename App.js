@@ -2058,7 +2058,7 @@ function App() {
           <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
             <div style={{marginBottom:16}}>
               <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>Olá! 👋</div>
-              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva}</div>
+              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva.replace(/^(Verão|Inverno)\s+/,"")}</div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
