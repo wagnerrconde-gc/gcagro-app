@@ -1478,7 +1478,7 @@ function App() {
   }
   function updateField(catIdx, prodIdx, field, value) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); const p=nd[activeCulture].categories[catIdx].products[prodIdx];
-      p[field]=["produto","fase","obs","revenda","vencimento","ingrediente_ativo"].includes(field)?value:parseNumBR(value); return nd; });
+      p[field]=["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value); return nd; });
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
@@ -2198,8 +2198,8 @@ function App() {
             const icon = CAT_ICONS[cat.name]||"📦";
             const showIA = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"].includes(cat.name);
             const isTS = cat.name === "TS";
-            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose", ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
-            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose", ...(isTS?["kgHa"]:[]), "area",null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
+            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose", ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
+            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose", ...(isTS?["kgHa"]:[]), "area",null,null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -2219,7 +2219,7 @@ function App() {
                       <thead>
                         <tr style={{background:colors.light}}>
                           {progHeaders.map(h=>(
-                            <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"||h==="I.A."||h==="Obs"?"left":"right",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
+                            <th key={h} style={{padding:"6px 8px",textAlign:["Produto","I.A.","Obs","Revenda","Venc."].includes(h)?"left":"right",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -2238,10 +2238,18 @@ function App() {
                               {isTS && <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(qtd,1)}</td>
+                              <td style={{padding:"6px 8px",textAlign:"right"}}>
+                                <select value={p.unidade||"kg"} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
+                                  style={{padding:"2px 4px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
+                                  <option value="kg">kg</option>
+                                  <option value="Lt">Lt</option>
+                                  <option value="Tn">Tn</option>
+                                </select>
+                              </td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#777"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
                               <td style={{padding:"6px 8px",color:"#888",maxWidth:120}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#888",textDecoration:comprado?"line-through":""}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"right",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb"}}>{comprado?fmt(p.preco_compra):"—"}</td>
+                              <td style={{padding:"6px 8px",textAlign:"right",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:comprado?"#2e7d32":colors.bg}}>{fmt(total)}</td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#666"}}>{culture.area>0?fmt(total/culture.area):"-"}</td>
                               <td style={{padding:"6px 8px"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
@@ -2551,7 +2559,7 @@ function App() {
                 <thead>
                   <tr style={{background:cc.light||"#e3f2fd"}}>
                     {["Safra","Qtd","Unid.","R$/Unid.","Total","Comprador","Dt.Entrega","Dt.Pgto","Obs",""].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:["Comprador","Obs"].includes(h)?"left":"right",color:cc.accent||cc.bg,fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Safra","Comprador","Dt.Entrega","Dt.Pgto","Obs"].includes(h)?"left":"right",color:cc.accent||cc.bg,fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3091,8 +3099,8 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {["Data","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Obs",""].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:["Produto","Fornecedor","Obs"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
+                    {["Data Compra","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3124,7 +3132,7 @@ function App() {
                   ))}
                   {addingCompra && (
                     <tr style={{background:"#fffde7"}}>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Data Compra" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
@@ -3139,9 +3147,9 @@ function App() {
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td/>
+                      <td style={{padding:"5px 6px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{(parseFloat(newCompra.quantidade)||0)*(parseFloat(newCompra.precoUnitario)||0) > 0 ? fmt((parseFloat(newCompra.quantidade)||0)*(parseFloat(newCompra.precoUnitario)||0)) : ""}</td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Fornecedor" value={newCompra.fornecedor} onChange={e=>setNewCompra(p=>({...p,fornecedor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Vencimento" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <button onClick={submitCompra} style={{background:"#00695c",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
                         <button onClick={()=>setAddingCompra(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
@@ -3369,7 +3377,7 @@ function App() {
                                         <thead>
                                           <tr style={{background:"#f5f5f5"}}>
                                             {["Produto",...(showIAarq?["I.A."]:[]),"Dose",...(isTSarq?["Kg sem./ha"]:[]),"Área(ha)","Qtd","Fase","Ref.(R$)","Compra(R$)","Total","Revenda","Venc."].map(h=>(
-                                              <th key={h} style={{padding:"5px 7px",textAlign:h==="Produto"||h==="Fase"?"left":"right",color:"#888",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                                              <th key={h} style={{padding:"5px 7px",textAlign:["Produto","Fase","Revenda","Venc."].includes(h)?"left":"right",color:"#888",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
                                             ))}
                                           </tr>
                                         </thead>
