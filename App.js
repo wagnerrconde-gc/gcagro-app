@@ -112,6 +112,51 @@ const fmtN   = (n,d=1) => Number(n).toLocaleString("pt-BR",{minimumFractionDigit
 const fmtC   = (v) => v==null||v===""?"—":`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
 
+// Aceita "dd/mm/aaaa" (padrão do app) e "aaaa-mm-dd" (ISO), pra gerar o lembrete de calendário.
+function parseDataFlexivel(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { let [,d,mo,y] = m; if (y.length===2) y = "20"+y; return { y:+y, m:+mo, d:+d }; }
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) { const [,y,mo,d] = m; return { y:+y, m:+mo, d:+d }; }
+  return null;
+}
+function pad2(n) { return String(n).padStart(2,"0"); }
+function escapeICS(s) { return String(s||"").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;"); }
+// Gera um evento de calendário (.ics) pro dia do pagamento de uma venda — o alarme roda no
+// próprio app de calendário do celular (Google Agenda/Apple Calendar), sem precisar de servidor.
+function gerarICSVenda(v) {
+  const dt = parseDataFlexivel(v.dataPagamento);
+  if (!dt) { window.alert("Preencha a Data de Pagamento num formato válido (ex: 30/07/2026) antes de gerar o lembrete."); return; }
+  const dtStart = `${dt.y}${pad2(dt.m)}${pad2(dt.d)}`;
+  const fimObj = new Date(dt.y, dt.m-1, dt.d+1);
+  const dtEnd = `${fimObj.getFullYear()}${pad2(fimObj.getMonth()+1)}${pad2(fimObj.getDate())}`;
+  const now = new Date();
+  const dtStamp = `${now.getUTCFullYear()}${pad2(now.getUTCMonth()+1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}${pad2(now.getUTCSeconds())}Z`;
+  const total = (v.qtd||0)*(v.preco||0);
+  const summary = `💰 Recebimento ${v.cultura||""} — ${v.comprador||"comprador"}`;
+  const desc = `Venda de ${fmtN(v.qtd,1)} ${v.unidade||""} de ${v.cultura||""} a ${fmt(v.preco)}/${v.unidade||"unid."}. Total: ${fmt(total)}.${v.obs?" Obs: "+v.obs:""}`;
+  const ics = [
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//GC Agro//Vendas//PT","CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${v.id}@gcagro`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART;VALUE=DATE:${dtStart}`,
+    `DTEND;VALUE=DATE:${dtEnd}`,
+    `SUMMARY:${escapeICS(summary)}`,
+    `DESCRIPTION:${escapeICS(desc)}`,
+    "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:Lembrete de pagamento — GC Agro","TRIGGER:-PT0M","END:VALARM",
+    "END:VEVENT","END:VCALENDAR",
+  ].join("\r\n");
+  const blob = new Blob([ics], { type:"text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `pagamento-${(v.comprador||"venda").replace(/[^a-z0-9]+/gi,"-")}-${dtStart}.ics`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
 // Quantidade de produto de Tratamento de Sementes (TS): dose é por 100kg de semente.
 // Fórmula recuperada do app antigo: qtd = dose × (kg de semente/ha, do produto ou da cultura) × área ÷ 100.
 function calcQtdTS(p, culture) {
@@ -2409,7 +2454,8 @@ function App() {
                       <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="dataEntrega" value={v.dataEntrega} onCommit={val=>updateRecordField(setVendasRecords,v.id,"dataEntrega",val)}/></td>
                       <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="dataPagamento" value={v.dataPagamento} onCommit={val=>updateRecordField(setVendasRecords,v.id,"dataPagamento",val)}/></td>
                       <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"venda|"+v.id} field="obs" value={v.obs} onCommit={val=>updateRecordField(setVendasRecords,v.id,"obs",val)}/></td>
-                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                      <td style={{padding:"6px 4px",textAlign:"center",whiteSpace:"nowrap"}}>
+                        <button onClick={()=>gerarICSVenda(v)} title="Adicionar lembrete de pagamento ao calendário" style={{background:"none",border:"none",cursor:"pointer",color:v.dataPagamento?cc.bg:"#ccc",fontSize:14,marginRight:6}}>📅</button>
                         <button onClick={()=>{if(window.confirm("Remover venda?"))deleteRecord(setVendasRecords,v.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                       </td>
                     </tr>
