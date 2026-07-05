@@ -201,6 +201,14 @@ function calcCultureTotals(culture) {
   const opSum   = Object.values(culture.op_costs||{}).reduce((s,v)=>s+v,0);
   return { insumos, opTotal:opSum, total: culture.area>0 ? insumos/culture.area + opSum : 0 };
 }
+// Produto já resolvido não precisa ser cotado de novo: já tem em estoque (marcado na obs)
+// ou já tem uma compra real registrada (preco_compra, o mesmo campo que já vem preenchido
+// quando uma cotação é fechada ou uma compra manual atualiza o custo — não usar preco_unit,
+// que é só a referência de planejamento e normalmente já vem preenchida em todo produto).
+function produtoJaResolvido(p) {
+  const obs = (p.obs||"").trim().toLowerCase();
+  return obs.includes("estoque") || p.preco_compra!=null;
+}
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
   Object.values(data).forEach(culture => {
@@ -208,6 +216,7 @@ function derivarProdutos(data, excluirAdubacao=false) {
       // Adubação e Sementes têm cotações próprias e dedicadas — não entram na de Insumos.
       if (excluirAdubacao && (cat.name === "Adubação" || cat.name === "Sementes")) return;
       cat.products.forEach(p => {
+        if (produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -223,6 +232,7 @@ function derivarAdubacao(data) {
     culture.categories.forEach(cat => {
       if (cat.name !== "Adubação") return;
       cat.products.forEach(p => {
+        if (produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -238,6 +248,7 @@ function derivarSementes(data) {
     culture.categories.forEach(cat => {
       if (cat.name !== "Sementes") return;
       cat.products.forEach(p => {
+        if (produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -1587,7 +1598,7 @@ function App() {
         const entry = precos[key]||{};
         ["v1","v2"].filter(vk=>vencAtivos[vk]).forEach(vk => {
           const preco = entry[vk];
-          if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco), nomeComercial:entry.nomeComercial||""});
+          if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco), nomeComercial:entry.nomeComercial||"", obs:entry.obs||""});
         });
       });
       const melhor = vals.length ? vals.reduce((a,b)=>a.preco<b.preco?a:b) : null;
@@ -1621,7 +1632,11 @@ function App() {
     (safra==="verao" ? setCotAdubProdVerao : setCotAdubProdInv)(adubMerged);
     (safra==="verao" ? setCotSemProdVerao : setCotSemProdInv)(semMerged);
     (safra==="verao" ? setCotInsumoProdVerao : setCotInsumoProdInv)(insMerged);
-    setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length, ins: insMerged.length-insAtual.length });
+    let jaResolvidos = 0;
+    Object.values(d).forEach(culture => culture.categories.forEach(cat => cat.products.forEach(p => {
+      if (produtoJaResolvido(p)) jaResolvidos++;
+    })));
+    setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length, ins: insMerged.length-insAtual.length, jaResolvidos });
     setTimeout(()=>setGerarCotMsg(null), 4000);
   }
   function gerarCotacaoSementesDoPlano(planData, isVerao) {
@@ -1670,7 +1685,7 @@ function App() {
           if (!c) return;
           c.categories.forEach(cat=>{
             if (cat.name!=="Sementes") return;
-            cat.products.forEach(p=>{ p.preco_unit = precoMedio; });
+            cat.products.forEach(p=>{ p.preco_unit = precoMedio; p.preco_compra = precoMedio; p.fornecedor_compra = "Compra manual"; });
           });
         });
         return nd;
@@ -1691,9 +1706,10 @@ function App() {
     recs.forEach(r=>{
       const key = (r.produto||"").trim().toLowerCase();
       if (!key || !r.quantidade) return;
-      if (!grupos[key]) grupos[key] = { produto:r.produto.trim(), totalPago:0, totalQtd:0 };
+      if (!grupos[key]) grupos[key] = { produto:r.produto.trim(), totalPago:0, totalQtd:0, fornecedores:new Set() };
       grupos[key].totalPago += r.valorTotal||0;
       grupos[key].totalQtd += r.quantidade||0;
+      if (r.fornecedor) grupos[key].fornecedores.add(r.fornecedor);
     });
     const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
     if (!medias.length) return [];
@@ -1708,7 +1724,13 @@ function App() {
             const nomeKey = p.produto.trim().toLowerCase();
             const iaKey = (p.ingrediente_ativo||"").trim().toLowerCase();
             const match = medias.find(m => m.produto.toLowerCase()===nomeKey || (iaKey && m.produto.toLowerCase()===iaKey));
-            if (match) { p.preco_unit = match.precoMedio; atingidos.add(match.produto); }
+            if (match) {
+              p.preco_unit = match.precoMedio;
+              p.preco_compra = match.precoMedio;
+              p.fornecedor_compra = "Compra manual";
+              if (match.fornecedores && match.fornecedores.size) p.revenda = [...match.fornecedores].join(" + ");
+              atingidos.add(match.produto);
+            }
           });
         });
       });
@@ -2053,6 +2075,7 @@ function App() {
         {gerarCotMsg && (
           <div style={{padding:"6px 16px",background:"rgba(46,125,50,0.9)",color:"#fff",fontSize:11,textAlign:"center"}}>
             ✓ Cotação atualizada: {gerarCotMsg.adub} adubo(s), {gerarCotMsg.sem} semente(s) e {gerarCotMsg.ins} insumo(s) novos enviados para a cotação.
+            {gerarCotMsg.jaResolvidos>0 && ` ${gerarCotMsg.jaResolvidos} produto(s) com obs. "estoque" ou preço já preenchido não foram enviados.`}
           </div>
         )}
         {/* Culture sub-tabs for prog views */}
@@ -2753,8 +2776,8 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:`1fr 140px 60px 100px ${showIA?"80px ":""}${vencsAtivos.map(()=>"140px").join(" ")}`,gap:1,background:"#1e3a5f22"}}>
-                        {["Produto","Seu produto (nome comercial)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),...vencsAtivos.map(vk=>`Preço (${vencLabels[vk]})`)].map((h,hi)=>(
+                      <div style={{display:"grid",gridTemplateColumns:`1fr 130px 150px 60px 100px ${showIA?"80px ":""}${vencsAtivos.map(()=>"140px").join(" ")}`,gap:1,background:"#1e3a5f22"}}>
+                        {["Produto","Seu produto (nome comercial)","Observação (ex: dose do seu produto)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),...vencsAtivos.map(vk=>`Preço (${vencLabels[vk]})`)].map((h,hi)=>(
                           <div key={hi} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
@@ -2767,6 +2790,11 @@ function App() {
                               <div style={{padding:"5px 7px",background:bg}}>
                                 <input value={entry.nomeComercial||""} placeholder="ex: nome que você vende"
                                   onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),nomeComercial:e.target.value}}))}
+                                  style={{width:"100%",padding:"5px 9px",background:"#0a1628",border:`1px solid ${color}44`,borderRadius:5,color:"#e8f4fd",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+                              </div>
+                              <div style={{padding:"5px 7px",background:bg}}>
+                                <input value={entry.obs||""} placeholder="ex: dose 0,5 L/ha"
+                                  onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),obs:e.target.value}}))}
                                   style={{width:"100%",padding:"5px 9px",background:"#0a1628",border:`1px solid ${color}44`,borderRadius:5,color:"#e8f4fd",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
                               </div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
@@ -2928,7 +2956,7 @@ function App() {
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.flatMap(f=>vencsAtivos.map(vk=>{const entry=(allPrices[f.nome]||{})[key]||{};const v=entry[vk];return v>0?{v:Number(v),nomeComercial:entry.nomeComercial||""}:null;}));
+                                const fornPrecos=fornecedores.flatMap(f=>vencsAtivos.map(vk=>{const entry=(allPrices[f.nome]||{})[key]||{};const v=entry[vk];return v>0?{v:Number(v),nomeComercial:entry.nomeComercial||"",obs:entry.obs||""}:null;}));
                                 const validos=fornPrecos.filter(x=>x!==null).map(x=>x.v);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
@@ -2953,8 +2981,10 @@ function App() {
                                     <td style={tdS("right",bg,"#4a9eff",true)}>
                                       {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateEditableField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
                                     </td>
-                                    {fornPrecos.map((fp,fi)=>{const isBest=fp!==null&&fp.v===melhor;return(
-                                      <td key={fi} title={fp?.nomeComercial?`Nome do fornecedor: ${fp.nomeComercial}`:undefined} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":fp!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{fp!==null?fmtC(fp.v):"—"}</td>
+                                    {fornPrecos.map((fp,fi)=>{const isBest=fp!==null&&fp.v===melhor;
+                                      const tip=[fp?.nomeComercial?`Produto: ${fp.nomeComercial}`:null,fp?.obs?`Obs: ${fp.obs}`:null].filter(Boolean).join(" · ")||undefined;
+                                      return(
+                                      <td key={fi} title={tip} style={{...tdS("right",isBest?"#0d2a1a":bg,isBest?"#4ade80":fp!==null?"#e8f4fd":"#2a3a4a"),fontWeight:isBest?700:400}}>{fp!==null?fmtC(fp.v):"—"}</td>
                                     );})}
                                     <td style={tdS("center","#0d2a1a","#4ade80",true)}>{melhor!==null?fmtC(melhor):"—"}</td>
                                     <td style={{...tdS("right","#1a0d0d"),color:economia>0?"#4ade80":economia<0?"#f87171":"#5a7a9a",fontWeight:700}}>
@@ -3719,8 +3749,9 @@ function App() {
                 fornecedores.forEach(f=>{
                   const precos=allPrices[f.nome]||{};
                   vencsAtivos.forEach(vk=>{
-                    const preco=(precos[key]||{})[vk];
-                    if (preco>0) allVals.push({nome:f.nome, venc:vk, preco:Number(preco)});
+                    const entry=precos[key]||{};
+                    const preco=entry[vk];
+                    if (preco>0) allVals.push({nome:f.nome, venc:vk, preco:Number(preco), nomeComercial:entry.nomeComercial||"", obs:entry.obs||""});
                   });
                 });
                 return (
@@ -3741,7 +3772,10 @@ function App() {
                       </div>
                     </div>
                     {allVals.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                      {allVals.map((v,vi)=><span key={v.nome+v.venc+vi} style={{fontSize:10,padding:"2px 8px",background:"#1e3a5f",borderRadius:10,color:"#7ab8ff"}}>{v.nome} ({vencLabels[v.venc]}): {fmtC(v.preco)}</span>)}
+                      {allVals.map((v,vi)=>{
+                      const tip=[v.nomeComercial?`Produto: ${v.nomeComercial}`:null,v.obs?`Obs: ${v.obs}`:null].filter(Boolean).join(" · ")||undefined;
+                      return <span key={v.nome+v.venc+vi} title={tip} style={{fontSize:10,padding:"2px 8px",background:"#1e3a5f",borderRadius:10,color:"#7ab8ff",cursor:tip?"help":undefined}}>{v.nome}{v.nomeComercial?` (${v.nomeComercial})`:""} ({vencLabels[v.venc]}): {fmtC(v.preco)}</span>;
+                    })}
                     </div>}
                     {dec.splits.map((split,si)=>(
                       <div key={si} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
