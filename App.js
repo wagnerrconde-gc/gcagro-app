@@ -1819,6 +1819,22 @@ function App() {
       txt=>{ setImportMsg({modulo:"colheita",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
   }
 
+  // Importa de uma vez todos os lotes do Planejamento (Verão + Safrinha) que ainda não têm
+  // registro de colheita nesta safra — sem precisar selecionar lote por lote. Fica só faltando
+  // preencher Data, Sacas, PMG e Umidade em cada linha já criada.
+  function importarTodosLotesPlanejamento() {
+    const jaTem = new Set(colheitaRecords.filter(r=>r.safra===safraAtiva).map(r=>r.loteId));
+    const todos = [
+      ...planVerao.map(l=>({...l, tipo:"verao"})),
+      ...planSafrinha.map(l=>({...l, tipo:"inv"})),
+    ].filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
+    if (!todos.length) return;
+    const novos = todos.map(lote => ({ id:newId(), safra:safraAtiva, tipo:lote.tipo, loteId:lote.id, lote:lote.lote,
+      cultura:lote.cultura, variedade:lote.variedade||"", populacao:lote.populacao||0, dataPlantio:lote.dataPlantio||"", previsaoColheita:lote.previsaoColheita,
+      data:"", areaHa:lote.area||0, sacas:0, umidade:0, pmg:0, obs:"" }));
+    setColheitaRecords(rs => [...rs, ...novos]);
+  }
+
   // ── Add/delete manuais ──
   function submitColheita() {
     const lote = lotesDisponiveis.find(l => l.id === newColheita.loteId);
@@ -2355,7 +2371,13 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
       ══════════════════════════════════════════════════════ */}
-      {appView==="colheita" && (
+      {appView==="colheita" && (()=>{
+        const jaTem = new Set(colheitaRecords.filter(r=>r.safra===safraAtiva).map(r=>r.loteId));
+        const faltantes = [
+          ...planVerao.map(l=>({...l, tipo:"verao"})),
+          ...planSafrinha.map(l=>({...l, tipo:"inv"})),
+        ].filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
+        return (
         <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div>
@@ -2375,6 +2397,12 @@ function App() {
               <button onClick={()=>setAddingColheita(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #2e7d32",color:"#2e7d32",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Registro</button>
             </div>
           </div>
+          {faltantes.length>0 && (
+            <div style={{background:"#e3f2fd",border:"1px solid #90caf9",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:12,color:"#1565C0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              📋 {faltantes.length} lote(s) do Planejamento desta safra ainda sem registro de colheita.
+              <button onClick={importarTodosLotesPlanejamento} style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar todos os lotes</button>
+            </div>
+          )}
           {importMsg?.modulo==="colheita" && <div style={{background:"#fffde7",border:"1px solid #fbc02d",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:12,color:"#7a5c00"}}>{importMsg.texto}</div>}
           <div style={{fontSize:11,color:"#999",marginBottom:8}}>O lote é resolvido pelo nome cadastrado no Planejamento de Campo (Verão/Inverno), de onde vêm cultura, área e previsão de colheita. Colunas reconhecidas na importação: lote, cultura (opcional, sobrepõe o plano), data, área_ha (opcional), sacas (ou kg), umidade, pmg, obs.</div>
 
@@ -2458,7 +2486,8 @@ function App() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════
           VENDAS DE GRÃOS
