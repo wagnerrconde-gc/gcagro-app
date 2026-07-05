@@ -115,6 +115,17 @@ const fmt    = (n) => isNaN(n)||n==null?"R$ 0,00":Number(n).toLocaleString("pt-B
 const fmtN   = (n,d=1) => Number(n).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtC   = (v) => v==null||v===""?"—":`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
+// Converte texto no padrão pt-BR (ex: "0,5", "R$ 4.530,00", "1.234,5") de volta pra número.
+// Sem isso, parseFloat("0,5") retorna 0 — a vírgula corta o número, e o campo "volta a ser 0".
+function parseNumBR(v) {
+  if (v==null) return 0;
+  let s = String(v).trim().replace(/R\$\s?/g,"").replace(/\s/g,"");
+  if (!s) return 0;
+  if (s.includes(",") && s.includes(".")) s = s.replace(/\./g,"").replace(",",".");
+  else if (s.includes(",")) s = s.replace(",",".");
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
 
 // Aceita "dd/mm/aaaa" (padrão do app) e "aaaa-mm-dd" (ISO), pra gerar o lembrete de calendário.
 function parseDataFlexivel(str) {
@@ -436,7 +447,7 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
 function deleteRecord(setRecords, id) { setRecords(rs => rs.filter(r => r.id !== id)); }
 function updateRecordField(setRecords, id, field, value, numeric=false) {
-  setRecords(rs => rs.map(r => r.id === id ? { ...r, [field]: numeric ? (parseFloat(value)||0) : value } : r));
+  setRecords(rs => rs.map(r => r.id === id ? { ...r, [field]: numeric ? parseNumBR(value) : value } : r));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -907,11 +918,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacao","Adubação Plantio","text",100],["kcl","KCl","text",80],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55],
-       ["quantidade","Quantidade (bags/sacos)","calc",70],["unidadeQtd","Unid.","unit",60],
+       ["quantidade","Quantidade","calc",70],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacaoPlantio","Adub. Plantio","text",90],["cobertura","Cobertura (KCl)","text",90],["nCobertura","N Cobertura (Ureia)","text",90],
-       ["populacao","Pop.(sem/m)","number",55],["quantidade","Quantidade (bags/sacos)","calc",70],["unidadeQtd","Unid.","unit",60],
+       ["populacao","Pop.(sem/m)","number",55],["quantidade","Quantidade","calc",70],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
 
   return (
@@ -1466,7 +1477,7 @@ function App() {
   }
   function updateField(catIdx, prodIdx, field, value) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); const p=nd[activeCulture].categories[catIdx].products[prodIdx];
-      p[field]=["produto","fase","obs","revenda","vencimento","ingrediente_ativo"].includes(field)?value:parseFloat(value)||0; return nd; });
+      p[field]=["produto","fase","obs","revenda","vencimento","ingrediente_ativo"].includes(field)?value:parseNumBR(value); return nd; });
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
@@ -1882,7 +1893,9 @@ function App() {
     const editKey = recKey+"|"+field;
     const isEd = editingRecordCell===editKey;
     if (isEd) return (
-      <input autoFocus type={type} defaultValue={value} step={type==="number"?"any":undefined}
+      // type="text" (não "number") porque o valor exibido vem formatado em pt-BR (vírgula
+      // decimal), e um <input type="number"> nativo rejeita vírgula e zera o campo.
+      <input autoFocus type={type==="number"?"text":type} inputMode={type==="number"?"decimal":undefined} defaultValue={value}
         style={{width:"100%",padding:"3px 6px",fontSize:12,border:"2px solid #90a4ae",borderRadius:4}}
         onBlur={e=>{onCommit(e.target.value);setEditingRecordCell(null);}}
         onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingRecordCell(null);}}/>
@@ -1898,7 +1911,9 @@ function App() {
   const EditCell = ({catIdx,prodIdx,field,type="number",value}) => {
     const isEd = editingCell?.catIdx===catIdx&&editingCell?.prodIdx===prodIdx&&editingCell?.field===field;
     if (isEd) return (
-      <input autoFocus type={type} defaultValue={value} step="any"
+      // type="text" (não "number") porque o valor exibido vem formatado em pt-BR (vírgula
+      // decimal, ex: "0,5"), e um <input type="number"> nativo rejeita vírgula e zera o campo.
+      <input autoFocus type={type==="number"?"text":type} inputMode={type==="number"?"decimal":undefined} defaultValue={value}
         style={{width:"100%",padding:"3px 6px",fontSize:12,border:"2px solid "+colors.badge,borderRadius:4,background:colors.light}}
         onBlur={e=>{updateField(catIdx,prodIdx,field,e.target.value);setEditingCell(null);}}
         onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingCell(null);}}/>
@@ -2218,7 +2233,7 @@ function App() {
                             <tr key={prodIdx} style={{background:bg}}>
                               <td style={{padding:"6px 8px",fontWeight:600}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
                               {showIA && <td style={{padding:"6px 8px",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
-                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,1)}/></td>
+                              <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>
                               {isTS && <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(qtd,1)}</td>
