@@ -1170,6 +1170,7 @@ function App() {
   // ── Compras (histórico de compras fechadas na Cotação) ──
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
   const [addingCompra, setAddingCompra]     = useState(false);
+  const [custoCompraMsg, setCustoCompraMsg] = useState(null);
   const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
   const [comprasSafraSel, setComprasSafraSel] = useState(null);
   const [comprasCatSel, setComprasCatSel]     = useState(null);
@@ -1691,6 +1692,44 @@ function App() {
       });
     }
     return relatorio;
+  }
+  // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
+  // Compras — soma o valor pago por produto e divide pela quantidade comprada (não pela área,
+  // já que Adubação/Químicos usam dose × área × preço, diferente de Sementes que é só área).
+  // categoriaCompra: "Adubação Verão", "Adubação Inverno", "Químicos Verão" ou "Químicos Inverno".
+  function atualizarCustoPorCategoria(categoriaCompra) {
+    const isVerao = categoriaCompra.includes("Verão");
+    const isAdub = categoriaCompra.startsWith("Adubação");
+    const setD = isVerao ? setDataVerao : setDataInverno;
+    const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra);
+    const grupos = {};
+    recs.forEach(r=>{
+      const key = (r.produto||"").trim().toLowerCase();
+      if (!key || !r.quantidade) return;
+      if (!grupos[key]) grupos[key] = { produto:r.produto.trim(), totalPago:0, totalQtd:0 };
+      grupos[key].totalPago += r.valorTotal||0;
+      grupos[key].totalQtd += r.quantidade||0;
+    });
+    const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
+    if (!medias.length) return [];
+    const atingidos = new Set();
+    setD(d => {
+      const nd = JSON.parse(JSON.stringify(d));
+      Object.values(nd).forEach(cultura => {
+        cultura.categories.forEach(cat => {
+          const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
+          if (!relevante) return;
+          cat.products.forEach(p => {
+            const nomeKey = p.produto.trim().toLowerCase();
+            const iaKey = (p.ingrediente_ativo||"").trim().toLowerCase();
+            const match = medias.find(m => m.produto.toLowerCase()===nomeKey || (iaKey && m.produto.toLowerCase()===iaKey));
+            if (match) { p.preco_unit = match.precoMedio; atingidos.add(match.produto); }
+          });
+        });
+      });
+      return nd;
+    });
+    return medias.filter(m=>atingidos.has(m.produto));
   }
 
   // ── Safras ──
@@ -3136,9 +3175,28 @@ function App() {
           {/* NÍVEL 2: registros da safra + categoria selecionadas */}
           {comprasSafraSel && comprasCatSel && (<>
             <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
-                style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
+                  style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+                {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
+                  <button onClick={()=>{
+                      const relatorio = comprasCatSel==="Sementes"
+                        ? [...atualizarCustoSementesDoPlano(planVerao,true), ...atualizarCustoSementesDoPlano(planSafrinha,false)]
+                        : atualizarCustoPorCategoria(comprasCatSel);
+                      setCustoCompraMsg({categoria:comprasCatSel, relatorio});
+                      setTimeout(()=>setCustoCompraMsg(null), 8000);
+                    }}
+                    style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
+                )}
+              </div>
               <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
+              {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
+                <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
+                  {custoCompraMsg.relatorio.length===0
+                    ? "Nenhum produto com compras suficientes nesta categoria pra calcular o custo médio."
+                    : custoCompraMsg.relatorio.map((r,i)=>`✓ ${r.produto||r.cultura}: ${fmt(r.precoMedio)}${r.produto?"/unid.":"/ha"}`).join("  •  ")}
+                </div>
+              )}
             </div>
 
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
