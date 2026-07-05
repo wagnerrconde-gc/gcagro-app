@@ -1179,6 +1179,7 @@ function App() {
   const [safraDetailTab, setSafraDetailTab] = useState("prog_verao");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
   const [fecharDecisions, setFecharDecisions] = useState(null);
+  const [pedidoCompra, setPedidoCompra] = useState(null);
   const [gerarCotMsg, setGerarCotMsg] = useState(null);
 
   // ── Planejamento de Campo ──
@@ -3418,6 +3419,7 @@ function App() {
         const isAdubFechar = cotContext?.tipo==="adub";
         const isSemFechar = cotContext?.tipo==="sem";
         const isInsFechar = cotContext?.tipo==="ins";
+        const tipoLabel = isAdubFechar ? "Adubação" : isSemFechar ? "Sementes" : "Insumos";
         const decisions = fecharDecisions || {};
         const setDecisions = setFecharDecisions;
         const vencLabels = getVencLabels(cotContext);
@@ -3438,6 +3440,7 @@ function App() {
         }
         function confirmar() {
           const novasCompras = [];
+          const pedidoPorFornecedor = {};
           const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
           const categoria = isAdubFechar ? "Adubação "+temporadaLabel : isSemFechar ? "Sementes" : "Químicos "+temporadaLabel;
           const unidadePadrao = isAdubFechar ? "TN" : isSemFechar ? "bag" : "L";
@@ -3447,12 +3450,26 @@ function App() {
             const forns = dec.splits.filter(s=>s.nome&&s.preco>0);
             fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
             const prod = produtos.find(p=>p.nome.toLowerCase()===key);
+            const unidade = prod?.unidade||unidadePadrao;
             const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
             novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
-              categoria, produto:dec.nomeReal, unidade:prod?.unidade||unidadePadrao, quantidade:prod?.qtd_total||0,
+              categoria, produto:dec.nomeReal, unidade, quantidade:prod?.qtd_total||0,
               precoUnitario:pm, valorTotal:pm*(prod?.qtd_total||0), fornecedor:forns.map(fornLabel).join(" + "), obs:"" });
+            // Pedido de compra: agrupa os itens vencidos por fornecedor, pra gerar a lista de envio.
+            const totalPct = forns.reduce((s,f)=>s+(parseFloat(f.qtd)||0),0) || 100;
+            forns.forEach(f=>{
+              const qtd = (prod?.qtd_total||0) * ((parseFloat(f.qtd)||0)/totalPct);
+              if (!pedidoPorFornecedor[f.nome]) {
+                const fObj = fornecedores.find(x=>x.nome===f.nome);
+                pedidoPorFornecedor[f.nome] = { telefone: fObj?.telefone||"", itens:[] };
+              }
+              pedidoPorFornecedor[f.nome].itens.push({ produto:dec.nomeReal, unidade, qtd, preco:f.preco, venc:vencLabels[f.venc||"v1"] });
+            });
           });
           if (novasCompras.length) setComprasRecords(rs => [...rs, ...novasCompras]);
+          if (Object.keys(pedidoPorFornecedor).length) {
+            setPedidoCompra({ tipoLabel, safraLabel:temporadaLabel, fornecedores:pedidoPorFornecedor });
+          }
           setShowFecharCotModal(false);
         }
 
@@ -3525,6 +3542,74 @@ function App() {
                   ✅ Confirmar e Lançar na Programação
                 </button>
                 <button onClick={()=>setShowFecharCotModal(false)} style={{padding:"13px 20px",background:"#1e3a5f",border:"none",borderRadius:8,color:"#7a9ab8",fontSize:13,cursor:"pointer"}}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL: PEDIDO DE COMPRA (pós Fechar Cotação, agrupado por fornecedor)
+      ══════════════════════════════════════════════════════ */}
+      {pedidoCompra && (()=>{
+        function textoFornecedor(nome, dados) {
+          const linhas = dados.itens.map(it=>`• ${it.produto}: ${fmtN(it.qtd,1)} ${it.unidade} × ${fmt(it.preco)} = ${fmt(it.qtd*it.preco)} (${it.venc})`);
+          const total = dados.itens.reduce((s,it)=>s+it.qtd*it.preco,0);
+          return `🌿 GC Agro — Pedido de Compra\nCotação de ${pedidoCompra.tipoLabel} — ${pedidoCompra.safraLabel}\nFornecedor: ${nome}\n\n${linhas.join("\n")}\n\nTotal: ${fmt(total)}`;
+        }
+        function whatsappPedidoLink(nome, dados) {
+          const msg = encodeURIComponent(textoFornecedor(nome, dados));
+          return `https://wa.me/55${(dados.telefone||"").replace(/\D/g,"")}?text=${msg}`;
+        }
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,overflowY:"auto",padding:"20px"}}>
+            <div style={{background:"#fff",borderRadius:14,padding:"24px",width:"min(800px,95vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.3)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div>
+                  <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>📋 Pedido de Compra</div>
+                  <div style={{fontSize:12,color:"#888"}}>Cotação de {pedidoCompra.tipoLabel} — {pedidoCompra.safraLabel}. Cotação fechada e já lançada na Programação — envie a lista abaixo pra cada fornecedor.</div>
+                </div>
+                <button onClick={()=>setPedidoCompra(null)} style={{padding:"8px 14px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,cursor:"pointer"}}>Fechar ✕</button>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:14}}>
+                {Object.entries(pedidoCompra.fornecedores).map(([nome,dados])=>{
+                  const total = dados.itens.reduce((s,it)=>s+it.qtd*it.preco,0);
+                  return (
+                    <div key={nome} style={{border:"1px solid #e0e0e0",borderRadius:10,padding:"14px 16px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+                        <div style={{fontWeight:800,fontSize:15,color:"#1a3a1a"}}>{nome}</div>
+                        <div style={{display:"flex",gap:8}}>
+                          <button onClick={()=>navigator.clipboard.writeText(textoFornecedor(nome,dados))} style={{padding:"6px 12px",background:"#f0f0f0",border:"none",borderRadius:6,fontSize:11,cursor:"pointer"}}>📋 Copiar texto</button>
+                          {dados.telefone && <a href={whatsappPedidoLink(nome,dados)} target="_blank" rel="noopener noreferrer" style={{padding:"6px 12px",background:"#25D366",color:"#fff",borderRadius:6,fontSize:11,textDecoration:"none",fontWeight:700}}>📱 WhatsApp</a>}
+                        </div>
+                      </div>
+                      <div style={{overflowX:"auto"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <thead>
+                            <tr style={{background:"#f5f5f5"}}>
+                              {["Produto","Qtd.","Unid.","Preço","Total","Vencimento"].map(h=>(
+                                <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:10,color:"#888",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dados.itens.map((it,i)=>(
+                              <tr key={i}>
+                                <td style={{padding:"5px 8px",fontWeight:600}}>{it.produto}</td>
+                                <td style={{padding:"5px 8px"}}>{fmtN(it.qtd,1)}</td>
+                                <td style={{padding:"5px 8px"}}>{it.unidade}</td>
+                                <td style={{padding:"5px 8px"}}>{fmt(it.preco)}</td>
+                                <td style={{padding:"5px 8px",fontWeight:700,color:"#2e7d32"}}>{fmt(it.qtd*it.preco)}</td>
+                                <td style={{padding:"5px 8px",color:"#888"}}>{it.venc}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{textAlign:"right",marginTop:8,fontWeight:800,color:"#2e7d32"}}>Total: {fmt(total)}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
