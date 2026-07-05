@@ -966,13 +966,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                             </div>
                           );})()
                         ) : type==="unit" ? (
-                          calcQtdSementes(row)!=null ? (
-                            <select value={row.unidadeQtd||(row.cultura==="Soja"?"bag":"saco")} onChange={e=>upd(i,"unidadeQtd",e.target.value)}
-                              style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
-                              <option value="bag">bag</option>
-                              <option value="saco">saco</option>
-                            </select>
-                          ) : <span style={{color:"#ccc"}}>—</span>
+                          <select value={row.unidadeQtd||(row.cultura==="Soja"?"bag":"saco")} onChange={e=>upd(i,"unidadeQtd",e.target.value)}
+                            style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
+                            <option value="bag">bag</option>
+                            <option value="saco">saco</option>
+                          </select>
                         ) : (
                           <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
