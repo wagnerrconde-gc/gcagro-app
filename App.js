@@ -1143,6 +1143,7 @@ function App() {
   const [cotVeraoSem, setCotVeraoSem]     = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_verao_sem", {})));
   const [cotInvSem, setCotInvSem]         = useState(() => migrateVencPrecos(loadLS(KEY_COTACAO+"_inv_sem", {})));
   const [cotVencLabels, setCotVencLabels] = useState(() => loadLS(KEY_COTACAO+"_venc_labels", {}));
+  const [cotVencAtivos, setCotVencAtivos] = useState(() => loadLS(KEY_COTACAO+"_venc_ativos", {}));
   const [sementesFornecedores, setSementesFornecedores] = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_sem_fornecedores", [])));
   const [fornecedoresAdub, setFornecedoresAdub] = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_forn_adub", FORN_ADUBACAO_INICIAL)));
   const [fornecedoresIns, setFornecedoresIns]   = useState(() => migrateFornecedores(loadLS(KEY_COTACAO+"_forn_ins", FORN_INSUMOS_INICIAL)));
@@ -1240,6 +1241,7 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_adub", cotInvAdub); }, [cotInvAdub]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_ins", cotInvIns); }, [cotInvIns]);
   useEffect(() => { saveLS(KEY_COTACAO+"_venc_labels", cotVencLabels); }, [cotVencLabels]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_venc_ativos", cotVencAtivos); }, [cotVencAtivos]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_adub", cotAdubProdVerao); }, [cotAdubProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_adub", cotAdubProdInv); }, [cotAdubProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_verao_sem", cotVeraoSem); }, [cotVeraoSem]);
@@ -1260,6 +1262,7 @@ function App() {
   useFirebaseSync("gcagro/cotacao/inv_ins", cotInvIns, setCotInvIns);
   useFirebaseSync("gcagro/cotacao/inv_sem", cotInvSem, setCotInvSem);
   useFirebaseSync("gcagro/cotacao/venc_labels", cotVencLabels, setCotVencLabels);
+  useFirebaseSync("gcagro/cotacao/venc_ativos", cotVencAtivos, setCotVencAtivos);
   useFirebaseSync("gcagro/cotacao/produtos_verao_adub", cotAdubProdVerao, setCotAdubProdVerao);
   useFirebaseSync("gcagro/cotacao/produtos_inv_adub", cotAdubProdInv, setCotAdubProdInv);
   useFirebaseSync("gcagro/cotacao/produtos_verao_ins", cotInsumoProdVerao, setCotInsumoProdVerao);
@@ -1371,6 +1374,21 @@ function App() {
     if (!ctx) return;
     const k = ctx.safra+"_"+ctx.tipo;
     setCotVencLabels(prev => ({...prev, [k]: {...(prev[k]||{v1:"Pagamento 1",v2:"Pagamento 2"}), [vk]: label}}));
+  }
+  // Permite excluir uma das duas datas de pagamento quando a cotação não precisa das duas
+  // opções — ex: só faz sentido pagar no vencimento mais distante. Não deixa remover as duas.
+  function getVencAtivos(ctx) {
+    const k = ctx ? ctx.safra+"_"+ctx.tipo : null;
+    return (k && cotVencAtivos[k]) || {v1:true, v2:true};
+  }
+  function setVencAtivo(ctx, vk, ativo) {
+    if (!ctx) return;
+    const k = ctx.safra+"_"+ctx.tipo;
+    setCotVencAtivos(prev => {
+      const atual = prev[k] || {v1:true, v2:true};
+      if (!ativo && !Object.entries(atual).some(([ovk,v])=>ovk!==vk&&v)) return prev; // não deixa remover a última ativa
+      return {...prev, [k]: {...atual, [vk]: ativo}};
+    });
   }
 
   // ── Cotação Adubação/Sementes: CRUD das listas editáveis ──
@@ -1572,6 +1590,7 @@ function App() {
     const allPrices = getCotData(cotContext);
     const produtos = getProdutos(cotContext);
     const fornecedores = getFornecedores(cotContext);
+    const vencAtivos = getVencAtivos(cotContext);
     const d = {};
     produtos.forEach(p => {
       const key = p.nome.toLowerCase();
@@ -1579,7 +1598,7 @@ function App() {
       fornecedores.forEach(f => {
         const precos = allPrices[f.nome]||{};
         const entry = precos[key]||{};
-        ["v1","v2"].forEach(vk => {
+        ["v1","v2"].filter(vk=>vencAtivos[vk]).forEach(vk => {
           const preco = entry[vk];
           if (preco>0) vals.push({nome:f.nome, venc:vk, preco:Number(preco), nomeComercial:entry.nomeComercial||""});
         });
@@ -1710,7 +1729,7 @@ function App() {
     const payload = {
       versao: "gcagro_backup_v1", dataExportacao: new Date().toISOString(),
       dataVerao, dataInverno, safraAtiva, safrasArquivadas,
-      cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels,
+      cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels, cotVencAtivos,
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords,
@@ -1739,6 +1758,7 @@ function App() {
         if (b.cotInvIns) setCotInvIns(b.cotInvIns);
         if (b.cotInvSem) setCotInvSem(b.cotInvSem);
         if (b.cotVencLabels) setCotVencLabels(b.cotVencLabels);
+        if (b.cotVencAtivos) setCotVencAtivos(b.cotVencAtivos);
         if (b.cotAdubProdVerao) setCotAdubProdVerao(b.cotAdubProdVerao);
         if (b.cotAdubProdInv) setCotAdubProdInv(b.cotAdubProdInv);
         if (b.cotSemProdVerao) setCotSemProdVerao(b.cotSemProdVerao);
@@ -2661,6 +2681,8 @@ function App() {
           const color = FORN_COLORS[cotRole.idx%8];
           const fCat = fornCatFilter, setFCat = setFornCatFilter;
           const vencLabels = getVencLabels(cotContext);
+          const vencAtivos = getVencAtivos(cotContext);
+          const vencsAtivos = ["v1","v2"].filter(vk=>vencAtivos[vk]);
           const filled = Object.values(myPrices).filter(v=>v&&(v.v1>0||v.v2>0)).length;
           return (
             <div style={{color:"#e8f4fd"}}>
@@ -2694,9 +2716,9 @@ function App() {
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:showIA?"1fr 140px 60px 100px 80px 140px 140px":"1fr 140px 60px 100px 140px 140px",gap:1,background:"#1e3a5f22"}}>
-                        {["Produto","Seu produto (nome comercial)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`].map(h=>(
-                          <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
+                      <div style={{display:"grid",gridTemplateColumns:`1fr 140px 60px 100px ${showIA?"80px ":""}${vencsAtivos.map(()=>"140px").join(" ")}`,gap:1,background:"#1e3a5f22"}}>
+                        {["Produto","Seu produto (nome comercial)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),...vencsAtivos.map(vk=>`Preço (${vencLabels[vk]})`)].map((h,hi)=>(
+                          <div key={hi} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
                           const key=p.nome.toLowerCase();
@@ -2713,7 +2735,7 @@ function App() {
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
                               {showIA && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
-                              {["v1","v2"].map(vk=>{
+                              {vencsAtivos.map(vk=>{
                                 const val = entry[vk]!==undefined?entry[vk]:"";
                                 return (
                                   <div key={vk} style={{padding:"5px 7px",background:bg}}>
@@ -2743,6 +2765,8 @@ function App() {
 
         if (cotScreen==="admin") {
           const vencLabels = getVencLabels(cotContext);
+          const vencAtivos = getVencAtivos(cotContext);
+          const vencsAtivos = ["v1","v2"].filter(vk=>vencAtivos[vk]);
           const updateEditableField = isIns ? updateInsumoField : isSem ? updateSementeField : updateAduboField;
           const deleteEditableRow = isIns ? deleteInsumoRow : isSem ? deleteSementeRow : deleteAduboRow;
           const recKeyPrefix = isIns ? "insumo|" : isSem ? "semente|" : "adubo|";
@@ -2751,7 +2775,7 @@ function App() {
             const pr=allPrices[f.nome]||{};let t=0;
             produtos.forEach(p=>{
               const entry=pr[p.nome.toLowerCase()]||{};
-              const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0);
+              const vals=vencsAtivos.map(vk=>entry[vk]).filter(v=>v>0);
               if (vals.length) t += Math.min(...vals)*p.qtd_total;
             });
             return t;
@@ -2773,13 +2797,23 @@ function App() {
                 </div>
               </div>
 
-              {/* Vencimentos de pagamento (labels manuais) */}
+              {/* Vencimentos de pagamento (labels manuais, cada um pode ser removido se não for usado nesta cotação) */}
               <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                 <span style={{fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>Datas de pagamento:</span>
-                {["v1","v2"].map(vk=>(
-                  <input key={vk} value={vencLabels[vk]} onChange={e=>setVencLabel(cotContext,vk,e.target.value)}
-                    style={{padding:"6px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
+                {vencsAtivos.map(vk=>(
+                  <div key={vk} style={{display:"flex",alignItems:"center",gap:4}}>
+                    <input value={vencLabels[vk]} onChange={e=>setVencLabel(cotContext,vk,e.target.value)}
+                      style={{padding:"6px 10px",background:"#111d35",border:"1px solid #1e3a5f",borderRadius:6,color:"#e8f4fd",fontSize:12,outline:"none",width:160}}/>
+                    {vencsAtivos.length>1 && (
+                      <button onClick={()=>setVencAtivo(cotContext,vk,false)} title="Remover esta opção de pagamento desta cotação"
+                        style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:14}}>✕</button>
+                    )}
+                  </div>
                 ))}
+                {vencsAtivos.length<2 && (
+                  <button onClick={()=>setVencAtivo(cotContext,["v1","v2"].find(vk=>!vencAtivos[vk]),true)}
+                    style={{padding:"6px 12px",background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Adicionar pagamento</button>
+                )}
               </div>
 
               {/* Gestão de fornecedores (cadastro rápido, use a aba Fornecedores para telefone/token/WhatsApp) */}
@@ -2843,13 +2877,13 @@ function App() {
                                 <th rowSpan={2} style={thS("center","#111d35")}>Unid.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Qtd.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Ref.</th>
-                                {fornecedores.map((f,i)=>(<th key={f.nome} colSpan={2} style={thS("center",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.nome.split(" ")[0]}</th>))}
+                                {fornecedores.map((f,i)=>(<th key={f.nome} colSpan={vencsAtivos.length} style={thS("center",FORN_COLORS[i%8]+"22",FORN_COLORS[i%8])}>{f.nome.split(" ")[0]}</th>))}
                                 <th rowSpan={2} style={thS("center","#0d2a1a","#4ade80")}>✔ Melhor</th>
                                 <th rowSpan={2} style={thS("center","#1a0d0d","#f87171")}>Economia</th>
                                 {isEditableList && <th rowSpan={2} style={thS("center","#111d35")}></th>}
                               </tr>
                               <tr>
-                                {fornecedores.map((f,i)=>["v1","v2"].map(vk=>(
+                                {fornecedores.map((f,i)=>vencsAtivos.map(vk=>(
                                   <th key={f.nome+vk} style={{...thS("right",FORN_COLORS[i%8]+"11",FORN_COLORS[i%8]),fontSize:9}}>{vencLabels[vk]}</th>
                                 )))}
                               </tr>
@@ -2857,7 +2891,7 @@ function App() {
                             <tbody>
                               {prods.map((p,ri)=>{
                                 const key=p.nome.toLowerCase();
-                                const fornPrecos=fornecedores.flatMap(f=>["v1","v2"].map(vk=>{const entry=(allPrices[f.nome]||{})[key]||{};const v=entry[vk];return v>0?{v:Number(v),nomeComercial:entry.nomeComercial||""}:null;}));
+                                const fornPrecos=fornecedores.flatMap(f=>vencsAtivos.map(vk=>{const entry=(allPrices[f.nome]||{})[key]||{};const v=entry[vk];return v>0?{v:Number(v),nomeComercial:entry.nomeComercial||""}:null;}));
                                 const validos=fornPrecos.filter(x=>x!==null).map(x=>x.v);
                                 const melhor=validos.length>0?Math.min(...validos):null;
                                 const economia=melhor!==null?(p.preco_ref-melhor)*p.qtd_total:null;
@@ -2983,7 +3017,7 @@ function App() {
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
                     {fornecedores.map((f,i)=>{
                       const pr=allPrices[f.nome]||{};const count=Object.values(pr).filter(v=>v&&(v.v1>0||v.v2>0)).length;const total=totalPorForn[i];
-                      const bestOf = (prices,key) => { const entry=(prices[key]||{}); const vals=["v1","v2"].map(vk=>entry[vk]).filter(v=>v>0); return vals.length?Math.min(...vals):null; };
+                      const bestOf = (prices,key) => { const entry=(prices[key]||{}); const vals=vencsAtivos.map(vk=>entry[vk]).filter(v=>v>0); return vals.length?Math.min(...vals):null; };
                       const wins=produtos.filter(p=>{const v=bestOf(pr,p.nome.toLowerCase());if(!v)return false;const others=fornecedores.filter(x=>x.nome!==f.nome).map(x=>bestOf(allPrices[x.nome]||{},p.nome.toLowerCase())).filter(v2=>v2!==null);return others.every(v2=>v<=v2);}).length;
                       return (
                         <div key={f.nome} style={{background:"#111d35",borderRadius:11,padding:"18px",border:`1px solid ${count>0?FORN_COLORS[i%8]+"66":"#1e3a5f"}`}}>
@@ -3553,6 +3587,8 @@ function App() {
         const decisions = fecharDecisions || {};
         const setDecisions = setFecharDecisions;
         const vencLabels = getVencLabels(cotContext);
+        const vencAtivos = getVencAtivos(cotContext);
+        const vencsAtivos = ["v1","v2"].filter(vk=>vencAtivos[vk]);
 
         function updateSplit(key, idx, field, val) {
           setDecisions(d=>{ const nd={...d}; nd[key]={...nd[key],splits:nd[key].splits.map((s,i)=>i===idx?{...s,[field]:val}:s)}; return nd; });
@@ -3617,7 +3653,7 @@ function App() {
                 const allVals=[];
                 fornecedores.forEach(f=>{
                   const precos=allPrices[f.nome]||{};
-                  ["v1","v2"].forEach(vk=>{
+                  vencsAtivos.forEach(vk=>{
                     const preco=(precos[key]||{})[vk];
                     if (preco>0) allVals.push({nome:f.nome, venc:vk, preco:Number(preco)});
                   });
@@ -3649,10 +3685,9 @@ function App() {
                           <option value="">-- Fornecedor --</option>
                           {fornecedores.map(f=><option key={f.nome} value={f.nome}>{f.nome}</option>)}
                         </select>
-                        <select value={split.venc||"v1"} onChange={e=>updateSplit(key,si,"venc",e.target.value)}
+                        <select value={split.venc||vencsAtivos[0]} onChange={e=>updateSplit(key,si,"venc",e.target.value)}
                           style={{flex:1,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}>
-                          <option value="v1">{vencLabels.v1}</option>
-                          <option value="v2">{vencLabels.v2}</option>
+                          {vencsAtivos.map(vk=><option key={vk} value={vk}>{vencLabels[vk]}</option>)}
                         </select>
                         <input type="number" placeholder="%" value={split.qtd} onChange={e=>updateSplit(key,si,"qtd",e.target.value)}
                           style={{width:70,padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
