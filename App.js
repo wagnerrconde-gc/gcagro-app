@@ -871,7 +871,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onAtualizarCusto, obs, setObs}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -879,7 +879,6 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
   const total = data.reduce((s,r)=>s+(r.area||0),0);
   const [genMsg, setGenMsg] = useState(null);
-  const [custoMsg, setCustoMsg] = useState(null);
 
   function upd(i, field, val) {
     setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
@@ -909,12 +908,6 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     setGenMsg(n);
     setTimeout(()=>setGenMsg(null), 4000);
   }
-  function atualizarCusto() {
-    const relatorio = onAtualizarCusto(data, isVerao);
-    setCustoMsg(relatorio);
-    setTimeout(()=>setCustoMsg(null), 6000);
-  }
-
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacao","Adubação Plantio","text",100],["kcl","KCl","text",80],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55],
@@ -931,20 +924,12 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
-          <button onClick={atualizarCusto} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo Sementes</button>
           <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
         </div>
       </div>
       {genMsg!==null && (
         <div style={{padding:"8px 14px",background:"#e8f5e9",color:"#2e7d32",borderRadius:6,fontSize:12,marginBottom:12}}>
           ✓ Quantidades enviadas para a Cotação de Sementes: {genMsg} variedade(s) nova(s).
-        </div>
-      )}
-      {custoMsg!==null && (
-        <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginBottom:12}}>
-          {custoMsg.length===0
-            ? "Nenhuma cultura com compras de sementes registradas em Compras ainda."
-            : custoMsg.map(r=>`✓ ${r.cultura}: ${fmt(r.precoMedio)}/ha (${fmt(r.totalPago)} ÷ ${fmtN(r.areaTotal,1)} ha)`).join("  •  ")}
         </div>
       )}
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
@@ -2457,8 +2442,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onAtualizarCusto={atualizarCustoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onAtualizarCusto={atualizarCustoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
