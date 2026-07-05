@@ -97,6 +97,10 @@ const CAT_ICONS = {
   "Herbicidas - Dessecação e Pós":"💧","Foliares":"🍃","Fungicidas":"🔬",
   "Inseticidas":"🛡️","Óleos / Adjuvantes":"🧴",
 };
+// Categorias de Insumos/Defensivos (tudo que não é Adubação nem Sementes) e as que mostram
+// coluna de Ingrediente Ativo na Cotação — só faz sentido pra defensivos de verdade.
+const CATEGORIAS_INSUMOS = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas","Foliares","TS","Kit Sulco","Óleos / Adjuvantes"];
+const CAT_IA = new Set(["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"]);
 
 const CATEGORIAS_COMPRA_PADRAO = ["Sementes","Adubação Verão","Adubação Inverno","Químicos Verão","Químicos Inverno"];
 const CATEGORIA_COMPRA_ICONS = {
@@ -1131,6 +1135,12 @@ function App() {
   const [addingSemente, setAddingSemente] = useState(false);
   const [newSemente, setNewSemente]       = useState({nome:"",unidade:"bag",qtd_total:"",preco_ref:""});
 
+  // ── Cotação Insumos/Defensivos: lista de produtos editável manualmente (mesmo fluxo de Adubação/Sementes) ──
+  const [cotInsumoProdVerao, setCotInsumoProdVerao] = useState(() => loadLS(KEY_COTACAO+"_produtos_verao_ins", null) || derivarProdutos(dataVerao, true));
+  const [cotInsumoProdInv, setCotInsumoProdInv]     = useState(() => loadLS(KEY_COTACAO+"_produtos_inv_ins", null) || derivarProdutos(dataInverno, true));
+  const [addingInsumo, setAddingInsumo]   = useState(false);
+  const [newInsumo, setNewInsumo]         = useState({nome:"",unidade:"L",qtd_total:"",preco_ref:"",categoria:CATEGORIAS_INSUMOS[0],ingrediente_ativo:""});
+
   // ── Compras (histórico de compras fechadas na Cotação) ──
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
   const [addingCompra, setAddingCompra]     = useState(false);
@@ -1206,6 +1216,8 @@ function App() {
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_adub", cotAdubProdInv); }, [cotAdubProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_verao_sem", cotVeraoSem); }, [cotVeraoSem]);
   useEffect(() => { saveLS(KEY_COTACAO+"_inv_sem", cotInvSem); }, [cotInvSem]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_ins", cotInsumoProdVerao); }, [cotInsumoProdVerao]);
+  useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_ins", cotInsumoProdInv); }, [cotInsumoProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_verao_sem", cotSemProdVerao); }, [cotSemProdVerao]);
   useEffect(() => { saveLS(KEY_COTACAO+"_produtos_inv_sem", cotSemProdInv); }, [cotSemProdInv]);
   useEffect(() => { saveLS(KEY_COTACAO+"_sem_fornecedores", sementesFornecedores); }, [sementesFornecedores]);
@@ -1222,6 +1234,8 @@ function App() {
   useFirebaseSync("gcagro/cotacao/venc_labels", cotVencLabels, setCotVencLabels);
   useFirebaseSync("gcagro/cotacao/produtos_verao_adub", cotAdubProdVerao, setCotAdubProdVerao);
   useFirebaseSync("gcagro/cotacao/produtos_inv_adub", cotAdubProdInv, setCotAdubProdInv);
+  useFirebaseSync("gcagro/cotacao/produtos_verao_ins", cotInsumoProdVerao, setCotInsumoProdVerao);
+  useFirebaseSync("gcagro/cotacao/produtos_inv_ins", cotInsumoProdInv, setCotInsumoProdInv);
   useFirebaseSync("gcagro/cotacao/produtos_verao_sem", cotSemProdVerao, setCotSemProdVerao);
   useFirebaseSync("gcagro/cotacao/produtos_inv_sem", cotSemProdInv, setCotSemProdInv);
   useFirebaseSync("gcagro/cotacao/sementes_fornecedores", sementesFornecedores, setSementesFornecedores);
@@ -1280,10 +1294,10 @@ function App() {
   function getProdutos(ctx) {
     if (!ctx) return [];
     if (ctx.safra==="verao" && ctx.tipo==="adub") return cotAdubProdVerao;
-    if (ctx.safra==="verao" && ctx.tipo==="ins")  return prodVeraoIns;
+    if (ctx.safra==="verao" && ctx.tipo==="ins")  return cotInsumoProdVerao;
     if (ctx.safra==="verao" && ctx.tipo==="sem")  return cotSemProdVerao;
     if (ctx.safra==="inv"   && ctx.tipo==="adub") return cotAdubProdInv;
-    if (ctx.safra==="inv"   && ctx.tipo==="ins")  return prodInvIns;
+    if (ctx.safra==="inv"   && ctx.tipo==="ins")  return cotInsumoProdInv;
     if (ctx.safra==="inv"   && ctx.tipo==="sem")  return cotSemProdInv;
     return [];
   }
@@ -1375,6 +1389,29 @@ function App() {
     if (!cotContext) return;
     if (!window.confirm(`Remover "${nome}" da lista de cotação?`)) return;
     setSementeProdutos(cotContext, list => list.filter(p => p.nome!==nome));
+  }
+  function setInsumoProdutos(ctx, updater) {
+    if (!ctx || ctx.tipo!=="ins") return;
+    if (ctx.safra==="verao") setCotInsumoProdVerao(updater); else setCotInsumoProdInv(updater);
+  }
+  function addInsumoRow() {
+    if (!newInsumo.nome.trim() || !cotContext) return;
+    setInsumoProdutos(cotContext, list => [...list, { nome:newInsumo.nome.trim(), unidade:newInsumo.unidade,
+      qtd_total:parseFloat(newInsumo.qtd_total)||0, categoria:newInsumo.categoria, preco_ref:parseFloat(newInsumo.preco_ref)||0,
+      ingrediente_ativo:newInsumo.ingrediente_ativo.trim() }]);
+    setNewInsumo({nome:"",unidade:"L",qtd_total:"",preco_ref:"",categoria:CATEGORIAS_INSUMOS[0],ingrediente_ativo:""});
+    setAddingInsumo(false);
+  }
+  function updateInsumoField(nome, field, value) {
+    if (!cotContext) return;
+    setInsumoProdutos(cotContext, list => list.map(p => p.nome===nome
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      : p));
+  }
+  function deleteInsumoRow(nome) {
+    if (!cotContext) return;
+    if (!window.confirm(`Remover "${nome}" da lista de cotação?`)) return;
+    setInsumoProdutos(cotContext, list => list.filter(p => p.nome!==nome));
   }
 
   // ── Programação helpers ──
@@ -1537,13 +1574,17 @@ function App() {
     const d = safra==="verao" ? dataVerao : dataInverno;
     const adubDerivado = derivarAdubacao(d);
     const semDerivado = derivarSementes(d);
+    const insDerivado = derivarProdutos(d, true);
     const adubAtual = safra==="verao" ? cotAdubProdVerao : cotAdubProdInv;
     const semAtual = safra==="verao" ? cotSemProdVerao : cotSemProdInv;
+    const insAtual = safra==="verao" ? cotInsumoProdVerao : cotInsumoProdInv;
     const adubMerged = mergeNovosProdutos(adubAtual, adubDerivado);
     const semMerged = mergeNovosProdutos(semAtual, semDerivado);
+    const insMerged = mergeNovosProdutos(insAtual, insDerivado);
     (safra==="verao" ? setCotAdubProdVerao : setCotAdubProdInv)(adubMerged);
     (safra==="verao" ? setCotSemProdVerao : setCotSemProdInv)(semMerged);
-    setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length });
+    (safra==="verao" ? setCotInsumoProdVerao : setCotInsumoProdInv)(insMerged);
+    setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length, ins: insMerged.length-insAtual.length });
     setTimeout(()=>setGerarCotMsg(null), 4000);
   }
   function gerarCotacaoSementesDoPlano(planData, isVerao) {
@@ -1639,7 +1680,7 @@ function App() {
       versao: "gcagro_backup_v1", dataExportacao: new Date().toISOString(),
       dataVerao, dataInverno, safraAtiva, safrasArquivadas,
       cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels,
-      cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv,
+      cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords,
     };
@@ -1671,6 +1712,8 @@ function App() {
         if (b.cotAdubProdInv) setCotAdubProdInv(b.cotAdubProdInv);
         if (b.cotSemProdVerao) setCotSemProdVerao(b.cotSemProdVerao);
         if (b.cotSemProdInv) setCotSemProdInv(b.cotSemProdInv);
+        if (b.cotInsumoProdVerao) setCotInsumoProdVerao(b.cotInsumoProdVerao);
+        if (b.cotInsumoProdInv) setCotInsumoProdInv(b.cotInsumoProdInv);
         if (b.fornecedoresAdub) setFornecedoresAdub(migrateFornecedores(b.fornecedoresAdub));
         if (b.fornecedoresIns) setFornecedoresIns(migrateFornecedores(b.fornecedoresIns));
         if (b.sementesFornecedores) setSementesFornecedores(migrateFornecedores(b.sementesFornecedores));
@@ -1902,7 +1945,7 @@ function App() {
         </div>
         {gerarCotMsg && (
           <div style={{padding:"6px 16px",background:"rgba(46,125,50,0.9)",color:"#fff",fontSize:11,textAlign:"center"}}>
-            ✓ Cotação atualizada: {gerarCotMsg.adub} adubo(s) e {gerarCotMsg.sem} semente(s) novos enviados para a cotação.
+            ✓ Cotação atualizada: {gerarCotMsg.adub} adubo(s), {gerarCotMsg.sem} semente(s) e {gerarCotMsg.ins} insumo(s) novos enviados para a cotação.
           </div>
         )}
         {/* Culture sub-tabs for prog views */}
@@ -2506,8 +2549,9 @@ function App() {
         const safraLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
         const isAdub = cotContext?.tipo==="adub";
         const isSem = cotContext?.tipo==="sem";
-        const isEditableList = isAdub || isSem;
-        const unitOptions = isAdub ? ["TN","KG"] : isSem ? ["bag","sc"] : [];
+        const isIns = cotContext?.tipo==="ins";
+        const isEditableList = isAdub || isSem || isIns;
+        const unitOptions = isAdub ? ["TN","KG"] : isSem ? ["bag","sc"] : isIns ? ["L","KG","doses"] : [];
 
         if (cotScreen==="login") return (
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"calc(100vh - 52px)"}}>
@@ -2568,11 +2612,12 @@ function App() {
                 {categorias.filter(cat=>fCat==="Todas"||cat===fCat).map(cat=>{
                   const prods = produtos.filter(p=>p.categoria===cat);
                   if (!prods.length) return null;
+                  const showIA = isIns && CAT_IA.has(cat);
                   return (
                     <div key={cat} style={{marginBottom:20}}>
                       <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
-                      <div style={{display:"grid",gridTemplateColumns:isEditableList?"1fr 60px 100px 140px 140px":"1fr 60px 100px 80px 140px 140px",gap:1,background:"#1e3a5f22"}}>
-                        {(isEditableList?["Produto","Unid.","Qtd. Total",`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`]:["Produto","Unid.","Qtd. Total","I.A.",`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`]).map(h=>(
+                      <div style={{display:"grid",gridTemplateColumns:showIA?"1fr 60px 100px 80px 140px 140px":"1fr 60px 100px 140px 140px",gap:1,background:"#1e3a5f22"}}>
+                        {["Produto","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),`Preço (${vencLabels.v1})`,`Preço (${vencLabels.v2})`].map(h=>(
                           <div key={h} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
                         ))}
                         {prods.map((p,i)=>{
@@ -2584,7 +2629,7 @@ function App() {
                               <div style={{padding:"9px 10px",background:bg,fontSize:12,color:"#d0e8ff"}}>{p.nome}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
                               <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
-                              {!isEditableList && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
+                              {showIA && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
                               {["v1","v2"].map(vk=>{
                                 const val = entry[vk]!==undefined?entry[vk]:"";
                                 return (
@@ -2615,9 +2660,9 @@ function App() {
 
         if (cotScreen==="admin") {
           const vencLabels = getVencLabels(cotContext);
-          const updateEditableField = isSem ? updateSementeField : updateAduboField;
-          const deleteEditableRow = isSem ? deleteSementeRow : deleteAduboRow;
-          const recKeyPrefix = isSem ? "semente|" : "adubo|";
+          const updateEditableField = isIns ? updateInsumoField : isSem ? updateSementeField : updateAduboField;
+          const deleteEditableRow = isIns ? deleteInsumoRow : isSem ? deleteSementeRow : deleteAduboRow;
+          const recKeyPrefix = isIns ? "insumo|" : isSem ? "semente|" : "adubo|";
           const totalRef2 = produtos.reduce((s,p)=>s+p.qtd_total*p.preco_ref,0);
           const totalPorForn = fornecedores.map(f=>{
             const pr=allPrices[f.nome]||{};let t=0;
@@ -2702,6 +2747,7 @@ function App() {
                   {categorias.filter(cat=>filterCat==="Todas"||cat===filterCat).map(cat=>{
                     const prods=filtProds.filter(p=>p.categoria===cat);
                     if(!prods.length) return null;
+                    const showIA = isIns && CAT_IA.has(cat);
                     return (
                       <div key={cat} style={{marginBottom:24}}>
                         <div style={{fontSize:10,letterSpacing:3,color:"#f59e0b",textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:"1px solid #f59e0b33"}}>{cat}</div>
@@ -2710,7 +2756,7 @@ function App() {
                             <thead>
                               <tr>
                                 <th rowSpan={2} style={thS("left","#111d35")}>Produto</th>
-                                {!isEditableList && <th rowSpan={2} style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
+                                {showIA && <th rowSpan={2} style={thS("left","#111d35","#5a7a9a")}>I.A.</th>}
                                 <th rowSpan={2} style={thS("center","#111d35")}>Unid.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Qtd.</th>
                                 <th rowSpan={2} style={thS("right","#111d35")}>Ref.</th>
@@ -2738,7 +2784,7 @@ function App() {
                                     <td style={tdS("left",bg)}>
                                       {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="nome" value={p.nome} onCommit={v=>updateEditableField(p.nome,"nome",v)}/> : p.nome}
                                     </td>
-                                    {!isEditableList && <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}>{p.ingrediente_ativo||"—"}</td>}
+                                    {showIA && <td style={{...tdS("left",bg,"#5a7a9a"),fontSize:10}}><RecEditCell recKey={recKeyPrefix+p.nome+"|ia"} field="ingrediente_ativo" value={p.ingrediente_ativo} onCommit={v=>updateEditableField(p.nome,"ingrediente_ativo",v)}/></td>}
                                     <td style={tdS("center",bg,"#5a7a9a")}>
                                       {isEditableList ? (
                                         <select value={p.unidade} onChange={e=>updateEditableField(p.nome,"unidade",e.target.value)}
@@ -2813,6 +2859,36 @@ function App() {
                         </div>
                       ) : (
                         <button onClick={()=>setAddingSemente(true)} style={{background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>+ Adicionar semente</button>
+                      )}
+                    </div>
+                  )}
+                  {isIns && (
+                    <div style={{padding:"4px 0"}}>
+                      {addingInsumo ? (
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",background:"#0d1e36",padding:10,borderRadius:6,border:"1px solid #1e3a5f"}}>
+                          <input placeholder="Nome do insumo" value={newInsumo.nome} onChange={e=>setNewInsumo(p=>({...p,nome:e.target.value}))}
+                            style={{flex:2,minWidth:140,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}/>
+                          <select value={newInsumo.categoria} onChange={e=>setNewInsumo(p=>({...p,categoria:e.target.value}))}
+                            style={{padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12}}>
+                            {CATEGORIAS_INSUMOS.map(c=><option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <select value={newInsumo.unidade} onChange={e=>setNewInsumo(p=>({...p,unidade:e.target.value}))}
+                            style={{padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12}}>
+                            {["L","KG","doses"].map(u=><option key={u} value={u}>{u}</option>)}
+                          </select>
+                          <input placeholder="Qtd. total" type="number" step="any" value={newInsumo.qtd_total} onChange={e=>setNewInsumo(p=>({...p,qtd_total:e.target.value}))}
+                            style={{width:100,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          <input placeholder="Preço ref. (R$)" type="number" step="any" value={newInsumo.preco_ref} onChange={e=>setNewInsumo(p=>({...p,preco_ref:e.target.value}))}
+                            style={{width:120,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
+                          {CAT_IA.has(newInsumo.categoria) && (
+                            <input placeholder="Ingrediente ativo" value={newInsumo.ingrediente_ativo} onChange={e=>setNewInsumo(p=>({...p,ingrediente_ativo:e.target.value}))}
+                              style={{width:130,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}/>
+                          )}
+                          <button onClick={addInsumoRow} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:5,color:"#fff",fontSize:12,cursor:"pointer"}}>✓ Adicionar</button>
+                          <button onClick={()=>setAddingInsumo(false)} style={{padding:"7px 10px",background:"#1e3a5f",border:"none",borderRadius:5,color:"#7a9ab8",fontSize:12,cursor:"pointer"}}>✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={()=>setAddingInsumo(true)} style={{background:"none",border:"1px dashed #1e3a5f",color:"#7ab8ff",borderRadius:6,padding:"6px 14px",fontSize:12,cursor:"pointer"}}>+ Adicionar insumo</button>
                       )}
                     </div>
                   )}
@@ -3341,7 +3417,7 @@ function App() {
         const fornecedores = getFornecedores(cotContext);
         const isAdubFechar = cotContext?.tipo==="adub";
         const isSemFechar = cotContext?.tipo==="sem";
-        const isEditableFechar = isAdubFechar || isSemFechar;
+        const isInsFechar = cotContext?.tipo==="ins";
         const decisions = fecharDecisions || {};
         const setDecisions = setFecharDecisions;
         const vencLabels = getVencLabels(cotContext);
@@ -3407,7 +3483,7 @@ function App() {
                         <input value={dec.nomeReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],nomeReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
                       </div>
-                      {!isEditableFechar && <div style={{flex:2}}>
+                      {isInsFechar && <div style={{flex:2}}>
                         <div style={{fontSize:10,color:"#5a7a9a",marginBottom:3}}>INGREDIENTE ATIVO</div>
                         <input value={dec.iaReal} onChange={e=>setDecisions(d=>({...d,[key]:{...d[key],iaReal:e.target.value}}))}
                           style={{width:"100%",padding:"6px 9px",background:"#0d1e36",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
