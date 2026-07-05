@@ -414,8 +414,8 @@ const ALIASES_COLHEITA = {
 // Colheita resolver cultura/área/previsão automaticamente a partir do lote escolhido.
 function makeLoteResolver(planVerao, planSafrinha) {
   const index = {};
-  planVerao.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"verao", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita }; });
-  planSafrinha.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"inv", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita }; });
+  planVerao.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"verao", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita, variedade:r.variedade, populacao:r.populacao, dataPlantio:r.dataPlantio }; });
+  planSafrinha.forEach(r => { if (r.lote) index[r.lote.trim().toLowerCase()] = { loteId:r.id, tipo:"inv", lote:r.lote, cultura:r.cultura, areaHa:r.area, previsaoColheita:r.previsaoColheita, variedade:r.variedade, populacao:r.populacao, dataPlantio:r.dataPlantio }; });
   return (loteNome) => index[String(loteNome||"").trim().toLowerCase()] || null;
 }
 
@@ -428,6 +428,7 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
   return { id:newId(), safra:safraAtiva, tipo: found ? found.tipo : "verao",
     loteId: found ? found.loteId : null, lote: loteNome || (found ? found.lote : ""),
     cultura: String(m.cultura || (found ? found.cultura : "")).trim(),
+    variedade: found ? found.variedade||"" : "", populacao: found ? found.populacao||0 : 0, dataPlantio: found ? found.dataPlantio||"" : "",
     previsaoColheita: found ? found.previsaoColheita : "",
     data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), pmg:toNum(m.pmg), obs:String(m.obs||"").trim() };
 }
@@ -1823,7 +1824,7 @@ function App() {
     const lote = lotesDisponiveis.find(l => l.id === newColheita.loteId);
     if (!lote) return;
     addRecord(setColheitaRecords, { safra:safraAtiva, tipo:newColheita.tipo, loteId:lote.id, lote:lote.lote,
-      cultura:lote.cultura, previsaoColheita:lote.previsaoColheita,
+      cultura:lote.cultura, variedade:lote.variedade||"", populacao:lote.populacao||0, dataPlantio:lote.dataPlantio||"", previsaoColheita:lote.previsaoColheita,
       data:newColheita.data.trim(), areaHa:parseFloat(newColheita.areaHa)||lote.area, sacas:parseFloat(newColheita.sacas)||0,
       umidade:parseFloat(newColheita.umidade)||0, pmg:parseFloat(newColheita.pmg)||0, obs:newColheita.obs.trim() });
     setNewColheita({tipo:newColheita.tipo,loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
@@ -2382,8 +2383,8 @@ function App() {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#e8f5e9"}}>
-                  {["Temporada","Lote","Cultura","Data","Área(ha)","Sacas","Sc/ha","PMG(g)","Umid.(%)","Prev. Colheita","Obs",""].map(h=>(
-                    <th key={h} style={{padding:"7px 9px",textAlign:["Lote","Cultura","Obs"].includes(h)?"left":"right",color:"#2e7d32",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #a5d6a7",whiteSpace:"nowrap"}}>{h}</th>
+                  {["Temporada","Lote","Cultura","Variedade","População","Data Plantio","Data","Área(ha)","Sacas","Sc/ha","PMG(g)","Umid.(%)","Prev. Colheita","Obs",""].map(h=>(
+                    <th key={h} style={{padding:"7px 9px",textAlign:["Lote","Cultura","Variedade","Obs"].includes(h)?"left":"right",color:"#2e7d32",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #a5d6a7",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -2396,6 +2397,9 @@ function App() {
                       <td style={{padding:"6px 9px",fontSize:11,color:r.tipo==="inv"?"#5c4a00":"#1a5c2e",fontWeight:600}}>{r.tipo==="inv"?"Inverno":"Verão"}</td>
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"col|"+r.id} field="lote" value={r.lote} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"lote",v)}/></td>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"col|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"cultura",v)}/></td>
+                      <td style={{padding:"6px 9px",color:"#555"}}>{r.variedade||"—"}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888",fontSize:11}}>{r.populacao||"—"}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888",fontSize:11}}>{r.dataPlantio||"—"}</td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="data" align="right" value={r.data} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"data",v)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="areaHa" type="number" align="right" value={fmtN(r.areaHa,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"areaHa",v,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"col|"+r.id} field="sacas" type="number" align="right" value={fmtN(r.sacas,1)} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"sacas",v,true)}/></td>
@@ -2427,6 +2431,11 @@ function App() {
                         {lotesDisponiveis.map(l=><option key={l.id} value={l.id}>{l.lote} — {l.cultura}</option>)}
                       </select>
                     </td>
+                    {(()=>{ const loteSel = lotesDisponiveis.find(l=>l.id===newColheita.loteId); return (<>
+                      <td style={{padding:"5px 6px",fontSize:11,color:"#888"}}>{loteSel?.variedade||"—"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",fontSize:11,color:"#888"}}>{loteSel?.populacao||"—"}</td>
+                      <td style={{padding:"5px 6px",textAlign:"right",fontSize:11,color:"#888"}}>{loteSel?.dataPlantio||"—"}</td>
+                    </>); })()}
                     <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newColheita.data} onChange={e=>setNewColheita(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Área" type="number" step="any" value={newColheita.areaHa} onChange={e=>setNewColheita(p=>({...p,areaHa:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                     <td style={{padding:"5px 6px"}}><input placeholder="Sacas" type="number" step="any" value={newColheita.sacas} onChange={e=>setNewColheita(p=>({...p,sacas:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
@@ -2442,7 +2451,7 @@ function App() {
                   </tr>
                 )}
                 {colheitaRecords.length===0 && !addingColheita && (
-                  <tr><td colSpan={12} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita ainda. Importe uma planilha ou adicione manualmente.</td></tr>
+                  <tr><td colSpan={15} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita ainda. Importe uma planilha ou adicione manualmente.</td></tr>
                 )}
               </tbody>
             </table>
