@@ -1270,6 +1270,23 @@ function App() {
   useFirebaseSync("gcagro/cotacao/sementes_fornecedores", sementesFornecedores, setSementesFornecedores);
   useFirebaseSync("gcagro/cotacao/forn_adub", fornecedoresAdub, setFornecedoresAdub);
   useFirebaseSync("gcagro/cotacao/forn_ins", fornecedoresIns, setFornecedoresIns);
+  // ── Sincronização em tempo real via Firebase — demais abas (Programação, Planejamento,
+  // Compras, Vendas, Colheita, Safras), pra tudo ficar igual entre PC e celular ──
+  useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
+  useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
+  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords);
+  useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
+  useFirebaseSync("gcagro/colheita", colheitaRecords, setColheitaRecords);
+  useFirebaseSync("gcagro/planejamento/verao", planVerao, setPlanVerao);
+  useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
+  useFirebaseSync("gcagro/planejamento/obs_verao", planObsVerao, setPlanObsVerao);
+  useFirebaseSync("gcagro/planejamento/obs_safrinha", planObsSafrinha, setPlanObsSafrinha);
+  useFirebaseSync("gcagro/planejamento/ts_verao", tsVerao, setTsVerao);
+  useFirebaseSync("gcagro/planejamento/ts_safrinha", tsSafrinha, setTsSafrinha);
+  useFirebaseSync("gcagro/safras/ativa", safraAtiva, setSafraAtiva);
+  useFirebaseSync("gcagro/safras/arquivo", safrasArquivadas, setSafrasArquivadas);
+  useEffect(() => { saveLS(KEY_SAFRAS+"_ativa", safraAtiva); }, [safraAtiva]);
+  useEffect(() => { saveLS(KEY_SAFRAS+"_arquivo", safrasArquivadas); }, [safrasArquivadas]);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
@@ -1766,6 +1783,7 @@ function App() {
     });
     setDataVerao(copiaVerao); setDataInverno(copiaInverno);
     setCotVeraoAdub({}); setCotVeraoIns({}); setCotInvAdub({}); setCotInvIns({});
+    setCotVeraoSem({}); setCotInvSem({});
     setSafraAtiva(nomeSafra);
     saveLS(KEY_SAFRAS+"_ativa", nomeSafra);
     setShowSafrasModal(false);
@@ -2066,6 +2084,7 @@ function App() {
             <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10}}>{safraAtiva}</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <SyncBadge/>
             {(appView==="prog_verao"||appView==="prog_inv") && (
               <button onClick={gerarCotacao} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
             )}
@@ -3384,13 +3403,15 @@ function App() {
                   <div style={{fontSize:16,fontWeight:700,color:"#333"}}>📁 {s.nome}</div>
                   <div style={{fontSize:12,color:"#888"}}>Arquivada em {s.dataArquivamento}</div>
                 </div>
-                <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{fontSize:11,padding:"4px 10px",background:"#e8f5e9",color:"#2e7d32",borderRadius:12}}>
                     {Object.keys(s.dataVerao||{}).length} cult. verão / {Object.keys(s.dataInverno||{}).length} cult. inverno
                   </span>
                   <span style={{fontSize:11,padding:"4px 10px",background:"#e3f2fd",color:"#1565C0",borderRadius:12}}>
                     {(s.planVerao||[]).length} lotes verão / {(s.planSafrinha||[]).length} lotes inverno
                   </span>
+                  <button onClick={e=>{e.stopPropagation();if(window.confirm(`Apagar definitivamente a safra arquivada "${s.nome}"? Essa ação não pode ser desfeita.`))setSafrasArquivadas(prev=>prev.filter((_,pi)=>pi!==i));}}
+                    style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:16,padding:"2px 4px"}} title="Apagar safra arquivada">✕</button>
                 </div>
               </div>
             </div>
