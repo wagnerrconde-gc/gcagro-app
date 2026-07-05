@@ -1201,6 +1201,7 @@ function App() {
   const [fornecedoresTab, setFornecedoresTab] = useState("adub");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
+  const [editingSafraNome, setEditingSafraNome] = useState(false);
   const [viewingSafraIdx, setViewingSafraIdx] = useState(null);
   const [expandedArqCulturas, setExpandedArqCulturas] = useState({});
   const [safraDetailTab, setSafraDetailTab] = useState("prog_verao");
@@ -1723,6 +1724,18 @@ function App() {
     saveLS(KEY_SAFRAS+"_ativa", nomeSafra);
     setShowSafrasModal(false);
   }
+  // Corrige o nome da safra ativa (ex: erro de digitação) sem arquivar nada — atualiza também
+  // a safra gravada nos lançamentos já feitos em Compras/Vendas/Colheita, pra não ficarem órfãos.
+  function renomearSafraAtiva(novoNome) {
+    const nome = novoNome.trim();
+    if (!nome || nome===safraAtiva) return;
+    const nomeAntigo = safraAtiva;
+    setComprasRecords(rs => rs.map(r => r.safra===nomeAntigo ? {...r, safra:nome} : r));
+    setVendasRecords(rs => rs.map(r => r.safra===nomeAntigo ? {...r, safra:nome} : r));
+    setColheitaRecords(rs => rs.map(r => r.safra===nomeAntigo ? {...r, safra:nome} : r));
+    setSafraAtiva(nome);
+    saveLS(KEY_SAFRAS+"_ativa", nome);
+  }
 
   // ── Backup (exportar/importar todos os dados) ──
   function exportarBackup() {
@@ -2094,7 +2107,7 @@ function App() {
           <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
             <div style={{marginBottom:16}}>
               <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>Olá! 👋</div>
-              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva.replace(/^(Verão|Inverno)\s+/,"")}</div>
+              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva.replace(/\b(Safra|Verão|Inverno)\b/gi,"").replace(/\s+/g," ").trim()}</div>
             </div>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
@@ -3271,7 +3284,16 @@ function App() {
         <div style={{maxWidth:900,margin:"0 auto",padding:"20px 16px"}}>
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20}}>
             <div style={{fontSize:18,fontWeight:800,color:"#1a3a1a",marginBottom:4}}>Safra Ativa</div>
-            <div style={{fontSize:28,fontWeight:800,color:"#2e7d32",marginBottom:16}}>{safraAtiva}</div>
+            {editingSafraNome ? (
+              <input autoFocus defaultValue={safraAtiva}
+                onBlur={e=>{renomearSafraAtiva(e.target.value);setEditingSafraNome(false);}}
+                onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingSafraNome(false);}}
+                style={{fontSize:28,fontWeight:800,color:"#2e7d32",marginBottom:16,border:"2px solid #2e7d32",borderRadius:8,padding:"4px 8px",width:"100%",boxSizing:"border-box",outline:"none"}}/>
+            ) : (
+              <div onClick={()=>setEditingSafraNome(true)} style={{fontSize:28,fontWeight:800,color:"#2e7d32",marginBottom:16,cursor:"pointer"}} title="Clique para corrigir o nome">
+                {safraAtiva} <span style={{fontSize:14,color:"#999"}}>✏</span>
+              </div>
+            )}
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
               <button onClick={()=>setShowSafrasModal(true)} style={{padding:"12px 24px",background:"linear-gradient(135deg,#2e7d32,#1b5e20)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
                 🌱 Abrir Nova Safra
