@@ -113,7 +113,14 @@ const fmtN   = (n,d=3) => Number(n).toLocaleString("pt-BR",{minimumFractionDigit
 const fmtC   = (v) => v==null||v===""?"—":`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:3,maximumFractionDigits:3});
 
-function calcProdTotal(p) {
+// Quantidade de produto de Tratamento de Sementes (TS): dose é por 100kg de semente.
+// Fórmula recuperada do app antigo: qtd = dose × (kg de semente/ha, do produto ou da cultura) × área ÷ 100.
+function calcQtdTS(p, culture) {
+  const kgHaVal = parseFloat(p.kgHa || (culture&&culture.kgSemente) || 0);
+  return p.dose > 0 ? p.dose * kgHaVal * p.area / 100 : kgHaVal * p.area / 100;
+}
+function calcProdTotal(p, cat, culture) {
+  if (cat && cat.name === "TS") return calcQtdTS(p, culture) * p.preco_unit;
   return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
 }
 // Quantidade de sementes (bags/sacos) a partir da população (sementes/metro) e área do lote.
@@ -131,7 +138,7 @@ function calcQtdSementes(row) {
   return (pop * 20000 * area) / SEMENTES_POR_UNIDADE[unidade];
 }
 function calcCultureTotals(culture) {
-  const insumos = culture.categories.reduce((s,cat)=>s+cat.products.reduce((ss,p)=>ss+calcProdTotal(p),0),0);
+  const insumos = culture.categories.reduce((s,cat)=>s+cat.products.reduce((ss,p)=>ss+calcProdTotal(p,cat,culture),0),0);
   const opSum   = Object.values(culture.op_costs||{}).reduce((s,v)=>s+v,0);
   return { insumos, opTotal:opSum, total: culture.area>0 ? insumos/culture.area + opSum : 0 };
 }
@@ -1101,7 +1108,8 @@ function App() {
   const [editingOp, setEditingOp]         = useState(null);
   const [addingTo, setAddingTo]           = useState(null);
   const [editingArea, setEditingArea]     = useState(false);
-  const [newProd, setNewProd]             = useState({produto:"",dose:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
+  const [editingKgSemente, setEditingKgSemente] = useState(false);
+  const [newProd, setNewProd]             = useState({produto:"",dose:"",kgHa:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
   const [cotScreen, setCotScreen]         = useState("login");
   const [cotRole, setCotRole]             = useState(null);
   const [cotContext, setCotContext]        = useState(null); // {safra, tipo}
@@ -1349,10 +1357,10 @@ function App() {
     if (!newProd.produto.trim()) return;
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d));
       nd[activeCulture].categories[catIdx].products.push({...newProd,
-        dose:parseFloat(newProd.dose)||0, area:parseFloat(newProd.area)||nd[activeCulture].area,
+        dose:parseFloat(newProd.dose)||0, kgHa:parseFloat(newProd.kgHa)||0, area:parseFloat(newProd.area)||nd[activeCulture].area,
         preco_unit:parseFloat(newProd.preco_unit)||0, preco_compra:null, fornecedor_compra:null});
       return nd; });
-    setNewProd({produto:"",dose:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
+    setNewProd({produto:"",dose:"",kgHa:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
     setAddingTo(null);
   }
   function addCategoria(nome) {
@@ -1367,6 +1375,9 @@ function App() {
   }
   function updateArea(value) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].area=parseFloat(value)||0; return nd; });
+  }
+  function updateKgSemente(value) {
+    setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].kgSemente=parseFloat(value)||0; return nd; });
   }
 
   // ── Cotação helpers ──
@@ -1568,13 +1579,13 @@ function App() {
   }
 
   // ── Totais ──
-  const catTotals = useMemo(()=>culture.categories.map(cat=>cat.products.reduce((s,p)=>s+calcProdTotal(p),0)),[culture]);
+  const catTotals = useMemo(()=>culture.categories.map(cat=>cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,culture),0)),[culture]);
   const insumoTotal = catTotals.reduce((a,b)=>a+b,0);
   const opTotal = Object.values(culture.op_costs||{}).reduce((a,b)=>a+b,0);
   const totalHa = culture.area>0 ? insumoTotal/culture.area + opTotal : 0;
 
-  const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p),0)}))}; }),[dataVerao]);
-  const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p),0)}))}; }),[dataInverno]);
+  const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataVerao]);
+  const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataInverno]);
 
   // ── Colheita / Financeiro: totais derivados ──
   const colheitaTotais = useMemo(() => {
@@ -2011,6 +2022,16 @@ function App() {
                 : <div style={{fontSize:18,fontWeight:700,color:colors.bg,cursor:"pointer"}} onClick={()=>setEditingArea(true)}>{fmtN(culture.area)} ha ✏</div>
               }
             </div>
+            <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}>
+              <div style={{fontSize:11,color:"#888"}}>Kg semente/ha</div>
+              {editingKgSemente
+                ? <input autoFocus type="number" defaultValue={culture.kgSemente||0} step="0.5"
+                    style={{fontSize:17,fontWeight:700,color:colors.bg,border:"2px solid "+colors.badge,borderRadius:4,width:70,padding:"2px 6px"}}
+                    onBlur={e=>{updateKgSemente(e.target.value);setEditingKgSemente(false);}}
+                    onKeyDown={e=>{if(e.key==="Enter")e.target.blur();}}/>
+                : <div style={{fontSize:18,fontWeight:700,color:colors.bg,cursor:"pointer"}} onClick={()=>setEditingKgSemente(true)} title="Usado no cálculo de quantidade do Tratamento de Sementes (TS)">{fmtN(culture.kgSemente||0)} ✏</div>
+              }
+            </div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Insumos/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(culture.area>0?insumoTotal/culture.area:0)}</div></div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Custo total/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(totalHa)}</div></div>
             <div style={{marginLeft:"auto",display:"flex",gap:8}}>
@@ -2027,8 +2048,9 @@ function App() {
             const catTotal = catTotals[catIdx]||0;
             const icon = CAT_ICONS[cat.name]||"📦";
             const showIA = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"].includes(cat.name);
-            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose","Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
-            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose","area",null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
+            const isTS = cat.name === "TS";
+            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose", ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
+            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose", ...(isTS?["kgHa"]:[]), "area",null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -2055,7 +2077,8 @@ function App() {
                       <tbody>
                         {cat.products.map((p,prodIdx)=>{
                           const preco = p.preco_compra||p.preco_unit;
-                          const total = p.dose>0?p.dose*p.area*preco:p.area*preco;
+                          const qtd = isTS ? calcQtdTS(p,culture) : (p.dose>0?p.dose*p.area:p.area);
+                          const total = qtd*preco;
                           const bg = prodIdx%2===0?"#fff":"#fafafa";
                           const comprado = p.preco_compra!=null;
                           return (
@@ -2063,8 +2086,9 @@ function App() {
                               <td style={{padding:"6px 8px",fontWeight:600}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
                               {showIA && <td style={{padding:"6px 8px",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,1)}/></td>
+                              {isTS && <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:"6px 8px",textAlign:"right"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(p.dose>0?p.dose*p.area:p.area,1)}</td>
+                              <td style={{padding:"6px 8px",textAlign:"right",color:"#555"}}>{fmtN(qtd,1)}</td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#777"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
                               <td style={{padding:"6px 8px",color:"#888",maxWidth:120}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
                               <td style={{padding:"6px 8px",textAlign:"right",color:"#888",textDecoration:comprado?"line-through":""}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
@@ -2083,7 +2107,7 @@ function App() {
                           <tr style={{background:"#fffde7"}}>
                             {addRowFields.map((field,i)=>(
                               <td key={i} style={{padding:"5px 6px"}}>
-                                {field?(<input placeholder={field} type={["dose","area","preco_unit"].includes(field)?"number":"text"} step="any"
+                                {field?(<input placeholder={field} type={["dose","kgHa","area","preco_unit"].includes(field)?"number":"text"} step="any"
                                   value={newProd[field]||""} onChange={e=>setNewProd(p=>({...p,[field]:e.target.value}))}
                                   style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>)
                                 :<span style={{color:"#bbb",fontSize:10}}>-</span>}
@@ -2096,7 +2120,7 @@ function App() {
                           </tr>
                         ):(
                           <tr><td colSpan={progHeaders.length} style={{padding:"5px 10px"}}>
-                            <button onClick={()=>{setAddingTo({catIdx});setNewProd({produto:"",dose:"",area:culture.area,fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});}}
+                            <button onClick={()=>{setAddingTo({catIdx});setNewProd({produto:"",dose:"",kgHa:"",area:culture.area,fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});}}
                               style={{background:"none",border:"1px dashed "+colors.badge,color:colors.accent,borderRadius:5,padding:"3px 12px",cursor:"pointer",fontSize:11}}>+ Adicionar produto</button>
                           </td></tr>
                         )}
