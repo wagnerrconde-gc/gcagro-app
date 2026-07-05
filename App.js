@@ -1211,6 +1211,7 @@ function App() {
   const [backupMsg, setBackupMsg]         = useState(null); // {ok, texto}
   const [addingColheita, setAddingColheita]     = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
+  const [colheitaTipoTab, setColheitaTipoTab] = useState("verao");
 
   // ── Vendas (registro de vendas de grãos) ──
   const [vendasRecords, setVendasRecords] = useState(() => loadLS(KEY_VENDAS, []));
@@ -1761,10 +1762,11 @@ function App() {
 
   // ── Colheita: totais derivados ──
   const colheitaTotais = useMemo(() => {
-    const totalArea = colheitaRecords.reduce((s,r)=>s+r.areaHa,0);
-    const totalSacas = colheitaRecords.reduce((s,r)=>s+r.sacas,0);
+    const recs = colheitaRecords.filter(r=>r.tipo===colheitaTipoTab);
+    const totalArea = recs.reduce((s,r)=>s+r.areaHa,0);
+    const totalSacas = recs.reduce((s,r)=>s+r.sacas,0);
     return { totalArea, totalSacas, media: totalArea>0 ? totalSacas/totalArea : 0 };
-  }, [colheitaRecords]);
+  }, [colheitaRecords, colheitaTipoTab]);
 
   const comprasTotais = useMemo(() => {
     const total = comprasRecords.reduce((s,r)=>s+r.valorTotal,0);
@@ -1817,17 +1819,15 @@ function App() {
       txt=>{ setImportMsg({modulo:"colheita",texto:txt}); setTimeout(()=>setImportMsg(null),6000); });
   }
 
-  // Importa de uma vez todos os lotes do Planejamento (Verão + Safrinha) que ainda não têm
-  // registro de colheita nesta safra — sem precisar selecionar lote por lote. Fica só faltando
-  // preencher Data, Sacas, PMG e Umidade em cada linha já criada.
+  // Importa de uma vez todos os lotes do Planejamento (da safra Verão ou Inverno, conforme a aba
+  // ativa em Colheita) que ainda não têm registro de colheita nesta safra — sem precisar
+  // selecionar lote por lote. Fica só faltando preencher Data, Sacas, PMG e Umidade.
   function importarTodosLotesPlanejamento() {
-    const jaTem = new Set(colheitaRecords.filter(r=>r.safra===safraAtiva).map(r=>r.loteId));
-    const todos = [
-      ...planVerao.map(l=>({...l, tipo:"verao"})),
-      ...planSafrinha.map(l=>({...l, tipo:"inv"})),
-    ].filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
+    const jaTem = new Set(colheitaRecords.filter(r=>r.safra===safraAtiva && r.tipo===colheitaTipoTab).map(r=>r.loteId));
+    const planData = colheitaTipoTab==="verao" ? planVerao : planSafrinha;
+    const todos = planData.filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
     if (!todos.length) return;
-    const novos = todos.map(lote => ({ id:newId(), safra:safraAtiva, tipo:lote.tipo, loteId:lote.id, lote:lote.lote,
+    const novos = todos.map(lote => ({ id:newId(), safra:safraAtiva, tipo:colheitaTipoTab, loteId:lote.id, lote:lote.lote,
       cultura:lote.cultura, variedade:lote.variedade||"", populacao:lote.populacao||0, dataPlantio:lote.dataPlantio||"", previsaoColheita:lote.previsaoColheita,
       data:"", areaHa:lote.area||0, sacas:0, umidade:0, pmg:0, obs:"" }));
     setColheitaRecords(rs => [...rs, ...novos]);
@@ -2370,13 +2370,19 @@ function App() {
           COLHEITA / PRODUTIVIDADE
       ══════════════════════════════════════════════════════ */}
       {appView==="colheita" && (()=>{
-        const jaTem = new Set(colheitaRecords.filter(r=>r.safra===safraAtiva).map(r=>r.loteId));
-        const faltantes = [
-          ...planVerao.map(l=>({...l, tipo:"verao"})),
-          ...planSafrinha.map(l=>({...l, tipo:"inv"})),
-        ].filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
+        const recsTab = colheitaRecords.filter(r=>r.tipo===colheitaTipoTab);
+        const jaTem = new Set(recsTab.filter(r=>r.safra===safraAtiva).map(r=>r.loteId));
+        const planData = colheitaTipoTab==="verao" ? planVerao : planSafrinha;
+        const faltantes = planData.filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
+        const corTab = colheitaTipoTab==="verao" ? "#1a5c2e" : "#5c4a00";
         return (
         <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+          <div style={{display:"flex",gap:6,marginBottom:14}}>
+            {[["verao","🌱 Verão"],["inv","🌾 Inverno"]].map(([t,l])=>(
+              <button key={t} onClick={()=>setColheitaTipoTab(t)}
+                style={{padding:"7px 16px",background:colheitaTipoTab===t?corTab:"#fff",border:`1px solid ${colheitaTipoTab===t?corTab:"#ddd"}`,borderRadius:20,color:colheitaTipoTab===t?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:colheitaTipoTab===t?700:400}}>{l}</button>
+            ))}
+          </div>
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Área colhida</div>
@@ -2392,12 +2398,12 @@ function App() {
             </div>
             <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
               <ImportButton label="Importar planilha" color="#2e7d32" onFile={handleImportColheita}/>
-              <button onClick={()=>setAddingColheita(a=>!a)} style={{padding:"6px 14px",background:"none",border:"1px dashed #2e7d32",color:"#2e7d32",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Registro</button>
+              <button onClick={()=>{setNewColheita(p=>({...p,tipo:colheitaTipoTab,loteId:""}));setAddingColheita(a=>!a);}} style={{padding:"6px 14px",background:"none",border:"1px dashed #2e7d32",color:"#2e7d32",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Registro</button>
             </div>
           </div>
           {faltantes.length>0 && (
             <div style={{background:"#e3f2fd",border:"1px solid #90caf9",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:12,color:"#1565C0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              📋 {faltantes.length} lote(s) do Planejamento desta safra ainda sem registro de colheita.
+              📋 {faltantes.length} lote(s) do Planejamento {colheitaTipoTab==="verao"?"Verão":"Inverno"} desta safra ainda sem registro de colheita.
               <button onClick={importarTodosLotesPlanejamento} style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar todos os lotes</button>
             </div>
           )}
@@ -2409,18 +2415,17 @@ function App() {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#e8f5e9"}}>
-                  {["Temporada","Lote","Cultura","Variedade","População","Data Plantio","Data","Área(ha)","Sacas","Sc/ha","PMG(g)","Umid.(%)","Prev. Colheita","Obs",""].map(h=>(
+                  {["Lote","Cultura","Variedade","População","Data Plantio","Data","Área(ha)","Sacas","Sc/ha","PMG(g)","Umid.(%)","Prev. Colheita","Obs",""].map(h=>(
                     <th key={h} style={{padding:"7px 9px",textAlign:["Lote","Cultura","Variedade","Obs"].includes(h)?"left":"right",color:"#2e7d32",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #a5d6a7",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {colheitaRecords.map((r,i)=>{
+                {recsTab.map((r,i)=>{
                   const prod = r.areaHa>0 ? r.sacas/r.areaHa : 0;
                   const bg = i%2===0?"#fff":"#fafafa";
                   return (
                     <tr key={r.id} style={{background:bg}}>
-                      <td style={{padding:"6px 9px",fontSize:11,color:r.tipo==="inv"?"#5c4a00":"#1a5c2e",fontWeight:600}}>{r.tipo==="inv"?"Inverno":"Verão"}</td>
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"col|"+r.id} field="lote" value={r.lote} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"lote",v)}/></td>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"col|"+r.id} field="cultura" value={r.cultura} onCommit={v=>updateRecordField(setColheitaRecords,r.id,"cultura",v)}/></td>
                       <td style={{padding:"6px 9px",color:"#555"}}>{r.variedade||"—"}</td>
@@ -2442,12 +2447,6 @@ function App() {
                 })}
                 {addingColheita && (
                   <tr style={{background:"#fffde7"}}>
-                    <td style={{padding:"5px 6px"}}>
-                      <select value={newColheita.tipo} onChange={e=>setNewColheita(p=>({...p,tipo:e.target.value,loteId:""}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                        <option value="verao">Verão</option>
-                        <option value="inv">Inverno</option>
-                      </select>
-                    </td>
                     <td style={{padding:"5px 6px"}} colSpan={2}>
                       <select value={newColheita.loteId} onChange={e=>{
                           const lote = lotesDisponiveis.find(l=>l.id===e.target.value);
@@ -2476,8 +2475,8 @@ function App() {
                     </td>
                   </tr>
                 )}
-                {colheitaRecords.length===0 && !addingColheita && (
-                  <tr><td colSpan={15} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita ainda. Importe uma planilha ou adicione manualmente.</td></tr>
+                {recsTab.length===0 && !addingColheita && (
+                  <tr><td colSpan={14} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum registro de colheita {colheitaTipoTab==="verao"?"de Verão":"de Inverno"} ainda. Importe uma planilha ou adicione manualmente.</td></tr>
                 )}
               </tbody>
             </table>
