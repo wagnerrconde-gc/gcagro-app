@@ -1120,6 +1120,8 @@ function App() {
   const [fornecedoresTab, setFornecedoresTab] = useState("adub");
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
+  const [viewingSafraIdx, setViewingSafraIdx] = useState(null);
+  const [safraDetailTab, setSafraDetailTab] = useState("prog_verao");
   const [showFecharCotModal, setShowFecharCotModal] = useState(false);
   const [fecharDecisions, setFecharDecisions] = useState(null);
   const [gerarCotMsg, setGerarCotMsg] = useState(null);
@@ -1561,6 +1563,8 @@ function App() {
       dataArquivamento: new Date().toLocaleDateString("pt-BR"),
       dataVerao: JSON.parse(JSON.stringify(dataVerao)),
       dataInverno: JSON.parse(JSON.stringify(dataInverno)),
+      planVerao: JSON.parse(JSON.stringify(planVerao)),
+      planSafrinha: JSON.parse(JSON.stringify(planSafrinha)),
       cotacoes: { cotVeraoAdub, cotVeraoIns, cotInvAdub, cotInvIns }
     };
     setSafrasArquivadas(prev => { const n=[...prev, arquivo]; saveLS(KEY_SAFRAS+"_arquivo",n); return n; });
@@ -3036,18 +3040,22 @@ function App() {
             </div>
           </div>
 
-          <div style={{fontSize:16,fontWeight:700,color:"#333",marginBottom:12}}>📁 Safras Arquivadas ({safrasArquivadas.length})</div>
+          <div style={{fontSize:16,fontWeight:700,color:"#333",marginBottom:12}}>🗂️ SAFRAS — Arquivadas ({safrasArquivadas.length})</div>
           {safrasArquivadas.length===0 && <div style={{color:"#999",fontSize:13}}>Nenhuma safra arquivada ainda.</div>}
           {safrasArquivadas.map((s,i)=>(
-            <div key={i} style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:10}}>
+            <div key={i} onClick={()=>{setViewingSafraIdx(i);setSafraDetailTab("prog_verao");}}
+              style={{background:"#fff",borderRadius:10,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:10,cursor:"pointer"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <div style={{fontSize:16,fontWeight:700,color:"#333"}}>{s.nome}</div>
+                  <div style={{fontSize:16,fontWeight:700,color:"#333"}}>📁 {s.nome}</div>
                   <div style={{fontSize:12,color:"#888"}}>Arquivada em {s.dataArquivamento}</div>
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <span style={{fontSize:11,padding:"4px 10px",background:"#e8f5e9",color:"#2e7d32",borderRadius:12}}>
                     {Object.keys(s.dataVerao||{}).length} cult. verão / {Object.keys(s.dataInverno||{}).length} cult. inverno
+                  </span>
+                  <span style={{fontSize:11,padding:"4px 10px",background:"#e3f2fd",color:"#1565C0",borderRadius:12}}>
+                    {(s.planVerao||[]).length} lotes verão / {(s.planSafrinha||[]).length} lotes inverno
                   </span>
                 </div>
               </div>
@@ -3100,6 +3108,149 @@ function App() {
                 </button>
                 <button onClick={()=>{setShowSafrasModal(false);setNovaSafraNome("");}} style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:14,cursor:"pointer"}}>Cancelar</button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL: DETALHE DE SAFRA ARQUIVADA
+      ══════════════════════════════════════════════════════ */}
+      {viewingSafraIdx!==null && (()=>{
+        const s = safrasArquivadas[viewingSafraIdx];
+        if (!s) return null;
+        const isProg = safraDetailTab.startsWith("prog_");
+        const isPlan = safraDetailTab.startsWith("plan_");
+        const isCompras = safraDetailTab==="compras";
+        const isVendas = safraDetailTab==="vendas";
+        const progData = safraDetailTab==="prog_verao" ? (s.dataVerao||{}) : (s.dataInverno||{});
+        const planData = safraDetailTab==="plan_verao" ? (s.planVerao||[]) : (s.planSafrinha||[]);
+        // Compras/Vendas não são copiadas pro arquivo — já guardam a safra em cada registro,
+        // então buscamos ao vivo pra sempre refletir edições feitas depois do arquivamento.
+        const comprasDaSafra = comprasRecords.filter(r=>r.safra===s.nome);
+        const vendasDaSafra = vendasRecords.filter(r=>r.safra===s.nome);
+        const TABS = [["prog_verao","🌱 Programação Verão"],["prog_inv","🌾 Programação Inverno"],["plan_verao","🗺️ Planejamento Verão"],["plan_inv","🗺️ Planejamento Inverno"],["compras","🛒 Compras"],["vendas","💰 Vendas"]];
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
+            <div style={{background:"#fff",borderRadius:14,padding:"24px",width:"min(1000px,95vw)",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.3)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div>
+                  <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>📁 {s.nome}</div>
+                  <div style={{fontSize:12,color:"#888"}}>Arquivada em {s.dataArquivamento} — somente leitura</div>
+                </div>
+                <button onClick={()=>setViewingSafraIdx(null)} style={{padding:"8px 14px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,cursor:"pointer"}}>Fechar ✕</button>
+              </div>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap",margin:"14px 0",borderBottom:"1px solid #eee",paddingBottom:10}}>
+                {TABS.map(([t,l])=>(
+                  <button key={t} onClick={()=>setSafraDetailTab(t)} style={{padding:"7px 14px",background:safraDetailTab===t?"#2e7d32":"#f5f5f5",border:"none",borderRadius:6,color:safraDetailTab===t?"#fff":"#555",fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+
+              {isProg && (
+                Object.keys(progData).length===0 ? <div style={{color:"#999",fontSize:13,padding:20,textAlign:"center"}}>Nenhuma cultura registrada.</div> : (
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {Object.entries(progData).map(([nome,c])=>{
+                      const t = calcCultureTotals(c);
+                      return (
+                        <div key={nome} style={{border:"1px solid #eee",borderRadius:8,padding:"10px 14px",opacity:c.ativo?1:0.5}}>
+                          <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                            <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{nome} {!c.ativo && "(inativa)"}</div>
+                            <div style={{fontSize:12,color:"#666"}}>{fmtN(c.area)} ha · {c.categories.length} categorias · {fmt(t.total)}/ha</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+
+              {isPlan && (
+                planData.length===0 ? <div style={{color:"#999",fontSize:13,padding:20,textAlign:"center"}}>Nenhum lote registrado.</div> : (
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#f5f5f5"}}>
+                          {["Lote","Área (ha)","Cultura","Variedade","População","Data Plantio","Prev. Colheita","Obs"].map(h=>(
+                            <th key={h} style={{padding:"7px 9px",textAlign:"left",color:"#666",fontSize:10,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {planData.map((r,i)=>(
+                          <tr key={r.id||i} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                            <td style={{padding:"6px 9px"}}>{r.lote}</td>
+                            <td style={{padding:"6px 9px"}}>{fmtN(r.area)}</td>
+                            <td style={{padding:"6px 9px"}}>{r.cultura}</td>
+                            <td style={{padding:"6px 9px"}}>{r.variedade}</td>
+                            <td style={{padding:"6px 9px"}}>{r.populacao}</td>
+                            <td style={{padding:"6px 9px"}}>{r.dataPlantio}</td>
+                            <td style={{padding:"6px 9px"}}>{r.previsaoColheita}</td>
+                            <td style={{padding:"6px 9px",color:"#888"}}>{r.obs}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+
+              {isCompras && (
+                comprasDaSafra.length===0 ? <div style={{color:"#999",fontSize:13,padding:20,textAlign:"center"}}>Nenhuma compra registrada nesta safra.</div> : (
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#f5f5f5"}}>
+                          {["Data","Categoria","Produto","Qtd.","Preço Unit.","Total","Fornecedor"].map(h=>(
+                            <th key={h} style={{padding:"7px 9px",textAlign:"left",color:"#666",fontSize:10,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {comprasDaSafra.map(r=>(
+                          <tr key={r.id} style={{background:"#fff"}}>
+                            <td style={{padding:"6px 9px"}}>{r.data}</td>
+                            <td style={{padding:"6px 9px"}}>{r.categoria}</td>
+                            <td style={{padding:"6px 9px",fontWeight:600}}>{r.produto}</td>
+                            <td style={{padding:"6px 9px"}}>{fmtQtd(r.quantidade)} {r.unidade}</td>
+                            <td style={{padding:"6px 9px"}}>{fmt(r.precoUnitario)}</td>
+                            <td style={{padding:"6px 9px",fontWeight:700,color:"#00695c"}}>{fmt(r.valorTotal)}</td>
+                            <td style={{padding:"6px 9px"}}>{r.fornecedor}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+
+              {isVendas && (
+                vendasDaSafra.length===0 ? <div style={{color:"#999",fontSize:13,padding:20,textAlign:"center"}}>Nenhuma venda registrada nesta safra.</div> : (
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#f5f5f5"}}>
+                          {["Cultura","Qtd.","Preço","Total","Comprador","Dt. Entrega","Dt. Pagamento"].map(h=>(
+                            <th key={h} style={{padding:"7px 9px",textAlign:"left",color:"#666",fontSize:10,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vendasDaSafra.map(r=>(
+                          <tr key={r.id} style={{background:"#fff"}}>
+                            <td style={{padding:"6px 9px",fontWeight:600}}>{r.cultura}</td>
+                            <td style={{padding:"6px 9px"}}>{fmtQtd(r.qtd)} {r.unidade}</td>
+                            <td style={{padding:"6px 9px"}}>{fmt(r.preco)}</td>
+                            <td style={{padding:"6px 9px",fontWeight:700,color:"#00695c"}}>{fmt((r.qtd||0)*(r.preco||0))}</td>
+                            <td style={{padding:"6px 9px"}}>{r.comprador}</td>
+                            <td style={{padding:"6px 9px"}}>{r.dataEntrega}</td>
+                            <td style={{padding:"6px 9px"}}>{r.dataPagamento}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
             </div>
           </div>
         );
