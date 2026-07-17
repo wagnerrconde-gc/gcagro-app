@@ -1199,7 +1199,6 @@ function App() {
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [editingSafraNome, setEditingSafraNome] = useState(false);
-  const [editingComprasSafraNome, setEditingComprasSafraNome] = useState(false);
   const [viewingSafraIdx, setViewingSafraIdx] = useState(null);
   const [expandedArqCulturas, setExpandedArqCulturas] = useState({});
   const [safraDetailTab, setSafraDetailTab] = useState("prog_verao");
@@ -1802,17 +1801,6 @@ function App() {
     setSafraAtiva(nome);
     saveLS(KEY_SAFRAS+"_ativa", nome);
   }
-  // Renomeia uma pasta de safra dentro de Compras. Se a pasta for a safra ativa, usa o
-  // mesmo fluxo de renomearSafraAtiva (que também corrige Vendas/Colheita); senão, só
-  // atualiza os lançamentos de Compras marcados com esse nome (pasta histórica/manual).
-  function renomearComprasSafra(nomeAntigo, novoNome) {
-    const nome = novoNome.trim();
-    if (!nome || nome===nomeAntigo) return;
-    if (nomeAntigo===safraAtiva) { renomearSafraAtiva(nome); }
-    else { setComprasRecords(rs => rs.map(r => r.safra===nomeAntigo ? {...r, safra:nome} : r)); }
-    setComprasSafraSel(nome);
-  }
-
   // ── Backup (exportar/importar todos os dados) ──
   function exportarBackup() {
     const payload = {
@@ -3171,19 +3159,11 @@ function App() {
 
           {/* Breadcrumb */}
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
-            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);setEditingComprasSafraNome(false);}}
+            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);}}
               style={{cursor:"pointer",fontWeight:comprasSafraSel?600:800,color:"#00695c"}}>🛒 Compras</span>
             {comprasSafraSel && (<>
               <span style={{color:"#bbb"}}>›</span>
-              {editingComprasSafraNome ? (
-                <input autoFocus defaultValue={comprasSafraSel}
-                  onBlur={e=>{renomearComprasSafra(comprasSafraSel,e.target.value);setEditingComprasSafraNome(false);}}
-                  onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingComprasSafraNome(false);}}
-                  style={{fontWeight:800,color:"#00695c",border:"1px solid #00695c",borderRadius:5,padding:"2px 6px",fontSize:13}}/>
-              ) : (<>
-                <span onClick={()=>setComprasCatSel(null)} style={{cursor:"pointer",fontWeight:comprasCatSel?600:800,color:"#00695c"}}>📁 {comprasSafraSel}</span>
-                {!comprasCatSel && <span onClick={()=>setEditingComprasSafraNome(true)} title="Renomear esta pasta de safra" style={{cursor:"pointer",fontSize:12,color:"#999"}}>✏</span>}
-              </>)}
+              <span onClick={()=>setComprasCatSel(null)} style={{cursor:"pointer",fontWeight:comprasCatSel?600:800,color:"#00695c"}}>📁 Compras</span>
             </>)}
             {comprasCatSel && (<>
               <span style={{color:"#bbb"}}>›</span>
@@ -3199,7 +3179,6 @@ function App() {
                   style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #00695c":"1px solid transparent"}}>
                   <div style={{fontSize:26}}>📁</div>
                   <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras</div>
-                  <div style={{fontSize:11,color:"#00695c",fontWeight:600,marginTop:1}}>{s.safra}</div>
                   <div style={{fontSize:11,color:"#888",marginTop:4}}>{s.count} lançamento{s.count===1?"":"s"}</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(s.total)}</div>
                 </div>
