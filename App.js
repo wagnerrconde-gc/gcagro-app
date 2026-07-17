@@ -1231,6 +1231,7 @@ function App() {
   const [vendaFiltroSafra, setVendaFiltroSafra] = useState("Todas");
   const [vendaCulturaTab, setVendaCulturaTab]   = useState("Soja");
   const [newVenda, setNewVenda] = useState({cultura:"Soja",safra:"",qtd:"",unidade:"sc",preco:"",comprador:"",dataEntrega:"",dataPagamento:"",obs:""});
+  const [vendaSubmitError, setVendaSubmitError] = useState("");
 
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
@@ -1965,12 +1966,16 @@ function App() {
     setAddingColheita(false);
   }
   function submitVenda() {
-    if (!newVenda.qtd || !newVenda.comprador.trim()) return;
+    const faltando = [];
+    if (!newVenda.qtd) faltando.push("Qtd.");
+    if (!newVenda.comprador.trim()) faltando.push("Comprador");
+    if (faltando.length) { setVendaSubmitError(`Preencha ${faltando.join(" e ")} para adicionar a venda.`); return; }
     addRecord(setVendasRecords, { cultura:newVenda.cultura, safra:newVenda.safra.trim()||safraAtiva,
       qtd:parseFloat(newVenda.qtd)||0, unidade:newVenda.unidade, preco:parseFloat(newVenda.preco)||0,
       comprador:newVenda.comprador.trim(), dataEntrega:newVenda.dataEntrega.trim(), dataPagamento:newVenda.dataPagamento.trim(),
       obs:newVenda.obs.trim() });
     setNewVenda({cultura:"Soja",safra:"",qtd:"",unidade:"sc",preco:"",comprador:"",dataEntrega:"",dataPagamento:"",obs:""});
+    setVendaSubmitError("");
     setAddingVenda(false);
   }
   function submitCompra() {
@@ -2659,7 +2664,7 @@ function App() {
               <select value={vendaFiltroSafra} onChange={e=>setVendaFiltroSafra(e.target.value)} style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12}}>
                 {safrasDaCultura.map(s=><option key={s}>{s}</option>)}
               </select>
-              <button onClick={()=>{setNewVenda(p=>({...p,cultura:vendaCulturaTab}));setAddingVenda(a=>!a);}}
+              <button onClick={()=>{setNewVenda(p=>({...p,cultura:vendaCulturaTab}));setVendaSubmitError("");setAddingVenda(a=>!a);}}
                 style={{padding:"6px 14px",background:"none",border:`1px dashed ${cc.bg}`,color:cc.bg,borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Nova Venda</button>
             </div>
 
@@ -2710,8 +2715,13 @@ function App() {
                       <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newVenda.obs} onChange={e=>setNewVenda(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <button onClick={submitVenda} style={{background:cc.bg,color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
-                        <button onClick={()=>setAddingVenda(false)} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                        <button onClick={()=>{setAddingVenda(false);setVendaSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
                       </td>
+                    </tr>
+                  )}
+                  {addingVenda && vendaSubmitError && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td colSpan={10} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {vendaSubmitError}</td>
                     </tr>
                   )}
                   {filtradas.length===0 && !addingVenda && (
