@@ -3198,7 +3198,8 @@ function App() {
                 <div key={s.safra} onClick={()=>setComprasSafraSel(s.safra)}
                   style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #00695c":"1px solid transparent"}}>
                   <div style={{fontSize:26}}>📁</div>
-                  <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras safra {s.safra}</div>
+                  <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras</div>
+                  <div style={{fontSize:11,color:"#00695c",fontWeight:600,marginTop:1}}>{s.safra}</div>
                   <div style={{fontSize:11,color:"#888",marginTop:4}}>{s.count} lançamento{s.count===1?"":"s"}</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(s.total)}</div>
                 </div>
