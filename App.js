@@ -3916,10 +3916,25 @@ function App() {
 }
 
 function StatC({label,value,color}){return <div style={{background:"#0d1e36",borderRadius:7,padding:"9px 11px"}}><div style={{fontSize:9,color:"#5a7a9a",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{label}</div><div style={{fontSize:12,fontWeight:700,color}}>{value}</div></div>;}
+// "fbDb existe" só confirma que o SDK do Firebase carregou — não que a conexão em tempo
+// real está de pé (rede pode bloquear o WebSocket e o SDK carrega normalmente mesmo assim).
+// ".info/connected" é o caminho especial do Firebase que reflete o estado real da conexão.
+function useFirebaseConnected() {
+  const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    if (!fbDb) return;
+    const ref = fbDb.ref(".info/connected");
+    const cb = ref.on("value", snap => setConnected(snap.val()===true));
+    return () => ref.off("value", cb);
+  }, []);
+  return connected;
+}
 function SyncBadge(){
-  return fbDb
+  const connected = useFirebaseConnected();
+  if (!fbDb) return <span title="Sem conexão com a nuvem — dados só neste aparelho/navegador" style={{fontSize:10,padding:"3px 9px",background:"#2a1a0d",border:"1px solid #f59e0b66",borderRadius:20,color:"#f59e0b"}}>⚠ Somente local</span>;
+  return connected
     ? <span title="Sincronizado em nuvem — outros aparelhos veem em tempo real" style={{fontSize:10,padding:"3px 9px",background:"#0d2a1a",border:"1px solid #2e7d3266",borderRadius:20,color:"#4ade80"}}>☁️ Sincronizado</span>
-    : <span title="Sem conexão com a nuvem — dados só neste aparelho/navegador" style={{fontSize:10,padding:"3px 9px",background:"#2a1a0d",border:"1px solid #f59e0b66",borderRadius:20,color:"#f59e0b"}}>⚠ Somente local</span>;
+    : <span title="Sem conexão em tempo real com a nuvem agora — verifique sua internet. Dados ficam salvos neste aparelho e sincronizam quando a conexão voltar." style={{fontSize:10,padding:"3px 9px",background:"#2a1a0d",border:"1px solid #f59e0b66",borderRadius:20,color:"#f59e0b"}}>🔄 Conectando...</span>;
 }
 function thS(align,bg,color="#7a9ab8"){return {padding:"8px 10px",background:bg,color,textAlign:align,fontSize:10,letterSpacing:1,fontWeight:600,textTransform:"uppercase",whiteSpace:"nowrap",border:"1px solid #1e3a5f22"};}
 function tdS(align,bg,color="#c8dff0",bold=false){return {padding:"7px 10px",background:bg,color,textAlign:align,fontSize:11,fontWeight:bold?700:400,border:"1px solid #1e3a5f22",whiteSpace:"nowrap"};}
