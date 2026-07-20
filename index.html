@@ -38,6 +38,34 @@
   <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <script>
+    // Mostra qualquer erro (de carregamento, de render do React, ou de execução em
+    // qualquer outro momento) direto na tela, em vez de deixar a tela em branco sem
+    // explicação — essencial pra diagnosticar problemas remotamente (ex: dado de um
+    // backup importado em formato inesperado quebrando o render).
+    function mostrarErroFatal(msg) {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:20px;color:#b00;font-family:monospace;white-space:pre-wrap;">'
+        + '⚠ Erro no GC Agro:\n\n' + msg
+        + '\n\nTire um print desta tela e envie. Depois, tente recarregar a página.'
+        + '</div>';
+    }
+    window.addEventListener('error', e => mostrarErroFatal(e.error ? (e.error.stack || e.error.message) : e.message));
+    window.addEventListener('unhandledrejection', e => mostrarErroFatal(e.reason && e.reason.stack ? e.reason.stack : String(e.reason)));
+
+    class ErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { erro: null }; }
+      static getDerivedStateFromError(erro) { return { erro }; }
+      componentDidCatch(erro, info) { console.error(erro, info); }
+      render() {
+        if (this.state.erro) {
+          return React.createElement('div', { style: { padding: 20, color: '#b00', fontFamily: 'monospace', whiteSpace: 'pre-wrap' } },
+            '⚠ Erro no GC Agro:\n\n' + (this.state.erro.stack || this.state.erro.message)
+            + '\n\nTire um print desta tela e envie. Depois, tente recarregar a página.');
+        }
+        return this.props.children;
+      }
+    }
+
     // Carrega App.js via fetch, compila com Babel e executa.
     // Cache-bust com timestamp: garante que toda atualização publicada
     // apareça no próximo carregamento, sem precisar limpar cache manualmente.
@@ -51,11 +79,10 @@
 
         // Agora App está definido — renderiza
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(App));
+        root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
       })
       .catch(err => {
-        document.getElementById('root').innerHTML =
-          '<div style="padding:20px;color:red">Erro ao carregar: ' + err.message + '</div>';
+        mostrarErroFatal(err.stack || err.message);
       });
   </script>
 </body>
