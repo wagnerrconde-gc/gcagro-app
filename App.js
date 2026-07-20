@@ -197,7 +197,7 @@ function calcQtdSementes(row) {
   return (pop * 20000 * area) / SEMENTES_POR_UNIDADE[unidade];
 }
 function calcCultureTotals(culture) {
-  const insumos = culture.categories.reduce((s,cat)=>s+cat.products.reduce((ss,p)=>ss+calcProdTotal(p,cat,culture),0),0);
+  const insumos = (culture.categories||[]).reduce((s,cat)=>s+(cat.products||[]).reduce((ss,p)=>ss+calcProdTotal(p,cat,culture),0),0);
   const opSum   = Object.values(culture.op_costs||{}).reduce((s,v)=>s+v,0);
   return { insumos, opTotal:opSum, total: culture.area>0 ? insumos/culture.area + opSum : 0 };
 }
@@ -211,12 +211,12 @@ function produtoJaResolvido(p) {
 }
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
-  Object.values(data).forEach(culture => {
-    culture.categories.forEach(cat => {
+  Object.values(data||{}).forEach(culture => {
+    (culture.categories||[]).forEach(cat => {
       // Adubação e Sementes têm cotações próprias e dedicadas — não entram na de Insumos.
       if (excluirAdubacao && (cat.name === "Adubação" || cat.name === "Sementes")) return;
-      cat.products.forEach(p => {
-        if (produtoJaResolvido(p)) return;
+      (cat.products||[]).forEach(p => {
+        if (!p || !p.produto || produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -228,11 +228,11 @@ function derivarProdutos(data, excluirAdubacao=false) {
 }
 function derivarAdubacao(data) {
   const map = {};
-  Object.values(data).forEach(culture => {
-    culture.categories.forEach(cat => {
+  Object.values(data||{}).forEach(culture => {
+    (culture.categories||[]).forEach(cat => {
       if (cat.name !== "Adubação") return;
-      cat.products.forEach(p => {
-        if (produtoJaResolvido(p)) return;
+      (cat.products||[]).forEach(p => {
+        if (!p || !p.produto || produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -244,11 +244,11 @@ function derivarAdubacao(data) {
 }
 function derivarSementes(data) {
   const map = {};
-  Object.values(data).forEach(culture => {
-    culture.categories.forEach(cat => {
+  Object.values(data||{}).forEach(culture => {
+    (culture.categories||[]).forEach(cat => {
       if (cat.name !== "Sementes") return;
-      cat.products.forEach(p => {
-        if (produtoJaResolvido(p)) return;
+      (cat.products||[]).forEach(p => {
+        if (!p || !p.produto || produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
         if (map[key]) { map[key].qtd_total += qtd; }
@@ -1866,8 +1866,8 @@ function App() {
   const opTotal = Object.values(culture.op_costs||{}).reduce((a,b)=>a+b,0);
   const totalHa = culture.area>0 ? insumoTotal/culture.area + opTotal : 0;
 
-  const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataVerao]);
-  const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:c.categories.map(cat=>({name:cat.name,total:cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataInverno]);
+  const summaryVerao  = useMemo(()=>Object.entries(dataVerao).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:(c.categories||[]).map(cat=>({name:cat.name,total:(cat.products||[]).reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataVerao]);
+  const summaryInverno = useMemo(()=>Object.entries(dataInverno).map(([name,c])=>{ const t=calcCultureTotals(c); return {name,area:c.area,ativo:c.ativo,...t,cats:(c.categories||[]).map(cat=>({name:cat.name,total:(cat.products||[]).reduce((s,p)=>s+calcProdTotal(p,cat,c),0)}))}; }),[dataInverno]);
 
   // ── Colheita: totais derivados ──
   const colheitaTotais = useMemo(() => {
