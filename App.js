@@ -57,6 +57,9 @@ const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
 const KEY_COMPRAS = "gcagro_compras_v1";
 const KEY_VENDAS = "gcagro_vendas_v1";
 const KEY_FINANCEIRO = "gcagro_financeiro_v1";
+const KEY_COMISSAO_ADIANT = "gcagro_comissao_adiant_v1";
+const KEY_COMISSAO_COM = "gcagro_comissao_com_v1";
+const KEY_COMISSAO_GERENTE = "gcagro_comissao_gerente_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -1241,6 +1244,18 @@ function App() {
   const [newOperacao, setNewOperacao] = useState({tipo:"NDF",ativo:"",contraparte:"",data:"",vencimento:"",quantidade:"",unidade:"US$",preco:"",premio:"",status:"Aberta",resultado:"",obs:""});
   const [financeiroSubmitError, setFinanceiroSubmitError] = useState("");
 
+  // ── Comissões do gerente (adiantamentos + comissões apuradas por safra) ──
+  const [gerenteNome, setGerenteNome] = useState(() => loadLS(KEY_COMISSAO_GERENTE, "Gilberto"));
+  const [editingGerenteNome, setEditingGerenteNome] = useState(false);
+  const [comissaoAdiant, setComissaoAdiant] = useState(() => loadLS(KEY_COMISSAO_ADIANT, []));
+  const [comissaoRecords, setComissaoRecords] = useState(() => loadLS(KEY_COMISSAO_COM, []));
+  const [comissaoSafraSel, setComissaoSafraSel] = useState(null);
+  const [addingAdiant, setAddingAdiant] = useState(false);
+  const [addingComissaoItem, setAddingComissaoItem] = useState(false);
+  const [newAdiant, setNewAdiant] = useState({data:"",valor:"",obs:""});
+  const [newComissaoItem, setNewComissaoItem] = useState({produto:"",qtd:"",precoUnit:"",total:"",obs:""});
+  const [comissaoSubmitError, setComissaoSubmitError] = useState("");
+
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
   useEffect(() => { saveLS(KEY_PROG+"_inverno", dataInverno); }, [dataInverno]);
@@ -1287,6 +1302,9 @@ function App() {
   useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
+  useFirebaseSync("gcagro/comissao_adiant", comissaoAdiant, setComissaoAdiant);
+  useFirebaseSync("gcagro/comissao_com", comissaoRecords, setComissaoRecords);
+  useFirebaseSync("gcagro/comissao_gerente", gerenteNome, setGerenteNome);
   useFirebaseSync("gcagro/colheita", colheitaRecords, setColheitaRecords);
   useFirebaseSync("gcagro/planejamento/verao", planVerao, setPlanVerao);
   useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
@@ -1308,6 +1326,9 @@ function App() {
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
+  useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
+  useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
+  useEffect(() => { saveLS(KEY_COMISSAO_GERENTE, gerenteNome); }, [gerenteNome]);
 
   const resolveLote = useMemo(() => makeLoteResolver(planVerao, planSafrinha), [planVerao, planSafrinha]);
   const lotesDisponiveis = newColheita.tipo === "verao" ? planVerao : planSafrinha;
@@ -1821,6 +1842,7 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
+      comissaoAdiant, comissaoRecords, gerenteNome,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1862,6 +1884,9 @@ function App() {
         if (b.comprasRecords) setComprasRecords(b.comprasRecords);
         if (b.vendasRecords) setVendasRecords(b.vendasRecords);
         if (b.financeiroRecords) setFinanceiroRecords(b.financeiroRecords);
+        if (b.comissaoAdiant) setComissaoAdiant(b.comissaoAdiant);
+        if (b.comissaoRecords) setComissaoRecords(b.comissaoRecords);
+        if (b.gerenteNome) setGerenteNome(b.gerenteNome);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -1992,6 +2017,28 @@ function App() {
     setFinanceiroSubmitError("");
     setAddingOperacao(false);
   }
+  function submitAdiant() {
+    if (!newAdiant.data.trim() || !newAdiant.valor) { setComissaoSubmitError("Preencha Data e Valor para adicionar o adiantamento."); return; }
+    addRecord(setComissaoAdiant, { safra:comissaoSafraSel, data:newAdiant.data.trim(), valor:parseFloat(newAdiant.valor)||0, obs:newAdiant.obs.trim() });
+    setNewAdiant({data:"",valor:"",obs:""});
+    setComissaoSubmitError("");
+    setAddingAdiant(false);
+  }
+  function submitComissaoItem() {
+    if (!newComissaoItem.produto.trim()) { setComissaoSubmitError("Preencha o Produto para adicionar a comissão."); return; }
+    const qtd = parseFloat(newComissaoItem.qtd)||0;
+    const precoUnit = parseFloat(newComissaoItem.precoUnit)||0;
+    const total = (qtd>0 && precoUnit>0) ? qtd*precoUnit : (parseFloat(newComissaoItem.total)||0);
+    addRecord(setComissaoRecords, { safra:comissaoSafraSel, produto:newComissaoItem.produto.trim(), qtd, precoUnit, total, obs:newComissaoItem.obs.trim() });
+    setNewComissaoItem({produto:"",qtd:"",precoUnit:"",total:"",obs:""});
+    setComissaoSubmitError("");
+    setAddingComissaoItem(false);
+  }
+  function renomearGerente(novoNome) {
+    const nome = novoNome.trim();
+    if (!nome) return;
+    setGerenteNome(nome);
+  }
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -2077,7 +2124,8 @@ function App() {
     { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
     { id:"vendas",         label:"Vendas",                icon:"💰", group:null },
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
-    { id:"financeiro",     label:"Financeiro",            icon:"💹", group:null },
+    { id:"financeiro",     label:"Operações Financeiras", icon:"💹", group:null },
+    { id:"comissoes",      label:"Comissões",             icon:"🤝", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
     { id:"backup",         label:"Backup",                icon:"💾", group:null },
@@ -2195,7 +2243,8 @@ function App() {
           { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
           { id:"vendas",      label:"Vendas",              icon:"💰", color:"#1565C0" },
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
-          { id:"financeiro",  label:"Financeiro",          icon:"💹", color:"#4527A0" },
+          { id:"financeiro",  label:"Operações Financeiras", icon:"💹", color:"#4527A0" },
+          { id:"comissoes",   label:"Comissões",           icon:"🤝", color:"#8d6e63" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
           { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
@@ -2755,7 +2804,7 @@ function App() {
           FINANCEIRO (NDF, PUT, CALL e outras operações de hedge)
       ══════════════════════════════════════════════════════ */}
       {appView==="financeiro" && (()=>{
-        const TIPOS = ["Todas","NDF","PUT","CALL","Outro"];
+        const TIPOS = ["Todas","PUT","CALL","Collar","Seagull","NDF","CPR","Outro"];
         const STATUS_OPTS = ["Todas","Aberta","Liquidada"];
         const filtradas = financeiroRecords.filter(o =>
           (financeiroFiltroTipo==="Todas"||o.tipo===financeiroFiltroTipo) &&
@@ -2837,9 +2886,12 @@ function App() {
                     <tr style={{background:"#fffde7"}}>
                       <td style={{padding:"5px 6px"}}>
                         <select value={newOperacao.tipo} onChange={e=>setNewOperacao(p=>({...p,tipo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                          <option value="NDF">NDF</option>
                           <option value="PUT">PUT</option>
                           <option value="CALL">CALL</option>
+                          <option value="Collar">Collar</option>
+                          <option value="Seagull">Seagull</option>
+                          <option value="NDF">NDF</option>
+                          <option value="CPR">CPR</option>
                           <option value="Outro">Outro</option>
                         </select>
                       </td>
@@ -2875,6 +2927,191 @@ function App() {
                   )}
                 </tbody>
               </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          COMISSÕES (adiantamentos + comissões apuradas, por safra)
+      ══════════════════════════════════════════════════════ */}
+      {appView==="comissoes" && (()=>{
+        const safrasSet = new Set([...comissaoAdiant.map(a=>a.safra), ...comissaoRecords.map(c=>c.safra)].filter(Boolean));
+        const comissaoSafrasList = Array.from(safrasSet).map(safra => {
+          const adiantsS = comissaoAdiant.filter(a=>a.safra===safra);
+          const itemsS = comissaoRecords.filter(c=>c.safra===safra);
+          const totalAdiantS = adiantsS.reduce((s,a)=>s+(a.valor||0),0);
+          const totalComissaoS = itemsS.reduce((s,c)=>s+(c.total||0),0);
+          return { safra, totalAdiant:totalAdiantS, totalComissao:totalComissaoS, saldo:totalComissaoS-totalAdiantS };
+        }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
+
+        if (!comissaoSafraSel) return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <div style={{fontSize:13,color:"#555"}}>Gerente:</div>
+              {editingGerenteNome ? (
+                <input autoFocus defaultValue={gerenteNome}
+                  onBlur={e=>{renomearGerente(e.target.value);setEditingGerenteNome(false);}}
+                  onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingGerenteNome(false);}}
+                  style={{fontWeight:800,color:"#5d4037",border:"1px solid #8d6e63",borderRadius:5,padding:"2px 6px",fontSize:14}}/>
+              ) : (<>
+                <span style={{fontWeight:800,color:"#5d4037",fontSize:14}}>{gerenteNome}</span>
+                <span onClick={()=>setEditingGerenteNome(true)} title="Renomear gerente" style={{cursor:"pointer",fontSize:12,color:"#999"}}>✏</span>
+              </>)}
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:16}}>
+              {comissaoSafrasList.map(s=>(
+                <div key={s.safra} onClick={()=>setComissaoSafraSel(s.safra)}
+                  style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #8d6e63":"1px solid transparent"}}>
+                  <div style={{fontSize:26}}>🗂️</div>
+                  <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Safra {s.safra}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:6}}>Comissão: {fmt(s.totalComissao)}</div>
+                  <div style={{fontSize:11,color:"#888"}}>Adiantado: {fmt(s.totalAdiant)}</div>
+                  <div style={{fontSize:14,fontWeight:800,marginTop:4,color:s.saldo>=0?"#2e7d32":"#c62828"}}>Saldo: {fmt(s.saldo)} {s.saldo>=0?"✓":"✗"}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <input placeholder="Nome da safra (ex: 26/27)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
+                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{if(novaPastaNome.trim()){setComissaoSafraSel(novaPastaNome.trim());setNovaPastaNome("");}}}
+                disabled={!novaPastaNome.trim()}
+                style={{padding:"7px 14px",background:"#8d6e63",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de safra</button>
+            </div>
+          </div>
+        );
+
+        const adiants = comissaoAdiant.filter(a=>a.safra===comissaoSafraSel);
+        const items = comissaoRecords.filter(c=>c.safra===comissaoSafraSel);
+        const totalAdiant = adiants.reduce((s,a)=>s+(a.valor||0),0);
+        const totalComissao = items.reduce((s,c)=>s+(c.total||0),0);
+        const saldo = totalComissao - totalAdiant;
+
+        return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
+              <span onClick={()=>setComissaoSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#8d6e63"}}>🤝 Comissões — {gerenteNome}</span>
+              <span style={{color:"#bbb"}}>›</span>
+              <span style={{fontWeight:800,color:"#8d6e63"}}>🗂️ Safra {comissaoSafraSel}</span>
+            </div>
+
+            <div style={{fontWeight:700,fontSize:13,color:"#5d4037",marginBottom:8,marginTop:4}}>Adiantamentos</div>
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#efebe9"}}>
+                    {["Data","Valor (R$)","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Valor (R$)"?"right":"left",color:"#5d4037",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {adiants.map((a,i)=>(
+                    <tr key={a.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"adiant|"+a.id} field="data" value={a.data} onCommit={val=>updateRecordField(setComissaoAdiant,a.id,"data",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"adiant|"+a.id} field="valor" type="number" align="right" value={fmt(a.valor)} onCommit={val=>updateRecordField(setComissaoAdiant,a.id,"valor",val,true)}/></td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"adiant|"+a.id} field="obs" value={a.obs} onCommit={val=>updateRecordField(setComissaoAdiant,a.id,"obs",val)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover adiantamento?"))deleteRecord(setComissaoAdiant,a.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingAdiant && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Data" value={newAdiant.data} onChange={e=>setNewAdiant(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Valor" type="number" step="any" value={newAdiant.valor} onChange={e=>setNewAdiant(p=>({...p,valor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newAdiant.obs} onChange={e=>setNewAdiant(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitAdiant} style={{background:"#8d6e63",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>{setAddingAdiant(false);setComissaoSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {addingAdiant && comissaoSubmitError && (
+                    <tr style={{background:"#fffde7"}}><td colSpan={4} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {comissaoSubmitError}</td></tr>
+                  )}
+                  {adiants.length===0 && !addingAdiant && (
+                    <tr><td colSpan={4} style={{padding:"16px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhum adiantamento registrado.</td></tr>
+                  )}
+                  <tr style={{background:"#efebe9",fontWeight:800}}>
+                    <td style={{padding:"7px 9px"}}>TOTAL ADIANTAMENTOS</td>
+                    <td style={{padding:"7px 9px",textAlign:"right"}}>{fmt(totalAdiant)}</td>
+                    <td colSpan={2}/>
+                  </tr>
+                </tbody>
+              </table>
+              </div>
+              <div style={{padding:"8px 12px"}}>
+                <button onClick={()=>{setAddingAdiant(a=>!a);setComissaoSubmitError("");}} style={{padding:"6px 14px",background:"none",border:"1px dashed #8d6e63",color:"#8d6e63",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Adiantamento</button>
+              </div>
+            </div>
+
+            <div style={{fontWeight:700,fontSize:13,color:"#5d4037",marginBottom:8}}>Comissões</div>
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#efebe9"}}>
+                    {["Produto","Qtd (sc)","Preço Unit. (R$)","Total (R$)","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Produto"||h==="Obs"?"left":"right",color:"#5d4037",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((c,i)=>(
+                    <tr key={c.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"com|"+c.id} field="produto" value={c.produto} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"produto",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="qtd" type="number" align="right" value={c.qtd?fmtN(c.qtd,2):""} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"qtd",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="precoUnit" type="number" align="right" value={c.precoUnit?fmt(c.precoUnit):""} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"precoUnit",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#5d4037"}}><RecEditCell recKey={"com|"+c.id} field="total" type="number" align="right" value={fmt(c.total)} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"total",val,true)}/></td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"com|"+c.id} field="obs" value={c.obs} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"obs",val)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover comissão?"))deleteRecord(setComissaoRecords,c.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingComissaoItem && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newComissaoItem.produto} onChange={e=>setNewComissaoItem(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd" type="number" step="any" value={newComissaoItem.qtd} onChange={e=>setNewComissaoItem(p=>({...p,qtd:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newComissaoItem.precoUnit} onChange={e=>setNewComissaoItem(p=>({...p,precoUnit:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Total (se não tiver Qtd/Preço)" type="number" step="any" value={newComissaoItem.total} onChange={e=>setNewComissaoItem(p=>({...p,total:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newComissaoItem.obs} onChange={e=>setNewComissaoItem(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitComissaoItem} style={{background:"#8d6e63",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>{setAddingComissaoItem(false);setComissaoSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {addingComissaoItem && comissaoSubmitError && (
+                    <tr style={{background:"#fffde7"}}><td colSpan={6} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {comissaoSubmitError}</td></tr>
+                  )}
+                  {items.length===0 && !addingComissaoItem && (
+                    <tr><td colSpan={6} style={{padding:"16px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma comissão registrada.</td></tr>
+                  )}
+                  <tr style={{background:"#efebe9",fontWeight:800}}>
+                    <td colSpan={3} style={{padding:"7px 9px"}}>TOTAL COMISSÕES</td>
+                    <td style={{padding:"7px 9px",textAlign:"right"}}>{fmt(totalComissao)}</td>
+                    <td colSpan={2}/>
+                  </tr>
+                </tbody>
+              </table>
+              </div>
+              <div style={{padding:"8px 12px"}}>
+                <button onClick={()=>{setAddingComissaoItem(a=>!a);setComissaoSubmitError("");}} style={{padding:"6px 14px",background:"none",border:"1px dashed #8d6e63",color:"#8d6e63",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Comissão</button>
+              </div>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <div style={{fontWeight:700,fontSize:13,color:"#5d4037",marginBottom:10}}>Apuração do saldo</div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}><span>(+) Total Comissões</span><span style={{fontWeight:700}}>{fmt(totalComissao)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}><span>(−) Total Adiantamentos</span><span style={{fontWeight:700}}>{fmt(totalAdiant)}</span></div>
+              <div style={{borderTop:"1px solid #eee",marginTop:6,paddingTop:8,display:"flex",justifyContent:"space-between",fontSize:15}}>
+                <span style={{fontWeight:800}}>SALDO FINAL</span>
+                <span style={{fontWeight:800,color:saldo>=0?"#2e7d32":"#c62828"}}>{fmt(saldo)} {saldo>=0?"✓":"✗"}</span>
               </div>
             </div>
           </div>
