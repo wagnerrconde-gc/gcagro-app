@@ -1241,7 +1241,9 @@ function App() {
   const [addingOperacao, setAddingOperacao] = useState(false);
   const [financeiroFiltroTipo, setFinanceiroFiltroTipo] = useState("Todas");
   const [financeiroFiltroStatus, setFinanceiroFiltroStatus] = useState("Todas");
-  const [newOperacao, setNewOperacao] = useState({tipo:"NDF",ativo:"",contraparte:"",data:"",vencimento:"",quantidade:"",unidade:"US$",preco:"",premio:"",status:"Aberta",resultado:"",obs:""});
+  const [newOperacao, setNewOperacao] = useState({tipo:"NDF",ativo:"",contraparte:"",data:"",vencimento:"",quantidade:"",unidade:"US$",preco:"",strike2:"",strike3:"",premio:"",status:"Aberta",resultado:"",obs:""});
+  // Quantos strikes cada tipo de operação usa: NDF/Put/Call = 1 (preco), Spread/Collar = 2 (+strike2), Seagull = 3 (+strike3).
+  const TIPO_N_STRIKES = {"Put Spread":2,"Call Spread":2,"Collar":2,"Seagull":3};
   const [financeiroSubmitError, setFinanceiroSubmitError] = useState("");
 
   // ── Comissões do gerente (adiantamentos + comissões apuradas por safra) ──
@@ -2011,9 +2013,10 @@ function App() {
     addRecord(setFinanceiroRecords, { tipo:newOperacao.tipo, ativo:newOperacao.ativo.trim(), contraparte:newOperacao.contraparte.trim(),
       data:newOperacao.data.trim(), vencimento:newOperacao.vencimento.trim(),
       quantidade:parseFloat(newOperacao.quantidade)||0, unidade:newOperacao.unidade,
-      preco:parseFloat(newOperacao.preco)||0, premio:parseFloat(newOperacao.premio)||0,
+      preco:parseFloat(newOperacao.preco)||0, strike2:parseFloat(newOperacao.strike2)||0, strike3:parseFloat(newOperacao.strike3)||0,
+      premio:parseFloat(newOperacao.premio)||0,
       status:newOperacao.status, resultado:parseFloat(newOperacao.resultado)||0, obs:newOperacao.obs.trim() });
-    setNewOperacao({tipo:newOperacao.tipo,ativo:"",contraparte:"",data:"",vencimento:"",quantidade:"",unidade:newOperacao.unidade,preco:"",premio:"",status:"Aberta",resultado:"",obs:""});
+    setNewOperacao({tipo:newOperacao.tipo,ativo:"",contraparte:"",data:"",vencimento:"",quantidade:"",unidade:newOperacao.unidade,preco:"",strike2:"",strike3:"",premio:"",status:"Aberta",resultado:"",obs:""});
     setFinanceiroSubmitError("");
     setAddingOperacao(false);
   }
@@ -2804,7 +2807,7 @@ function App() {
           FINANCEIRO (NDF, PUT, CALL e outras operações de hedge)
       ══════════════════════════════════════════════════════ */}
       {appView==="financeiro" && (()=>{
-        const TIPOS = ["Todas","PUT","CALL","Collar","Seagull","NDF","CPR","Outro"];
+        const TIPOS = ["Todas","NDF","Put","Put Spread","Call","Call Spread","Collar","Seagull","CPR","Outro"];
         const STATUS_OPTS = ["Todas","Aberta","Liquidada"];
         const filtradas = financeiroRecords.filter(o =>
           (financeiroFiltroTipo==="Todas"||o.tipo===financeiroFiltroTipo) &&
@@ -2852,7 +2855,7 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#ede7f6"}}>
-                    {["Tipo","Ativo","Contraparte","Data","Vencimento","Quantidade","Unid.","Preço/Strike","Prêmio","Status","Resultado","Obs",""].map(h=>(
+                    {["Tipo","Ativo","Contraparte","Data","Vencimento","Quantidade","Unid.","Strike 1","Strike 2","Strike 3","Prêmio","Status","Resultado","Obs",""].map(h=>(
                       <th key={h} style={{padding:"7px 9px",textAlign:["Tipo","Ativo","Contraparte","Data","Vencimento","Unid.","Status","Obs"].includes(h)?"left":"right",color:cor,fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
@@ -2868,6 +2871,8 @@ function App() {
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"op|"+o.id} field="quantidade" type="number" align="right" value={fmtN(o.quantidade,2)} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"quantidade",val,true)}/></td>
                       <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"op|"+o.id} field="unidade" value={o.unidade} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"unidade",val)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"op|"+o.id} field="preco" type="number" align="right" value={fmt(o.preco)} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"preco",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"op|"+o.id} field="strike2" type="number" align="right" value={o.strike2?fmt(o.strike2):""} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"strike2",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"op|"+o.id} field="strike3" type="number" align="right" value={o.strike3?fmt(o.strike3):""} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"strike3",val,true)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"op|"+o.id} field="premio" type="number" align="right" value={fmt(o.premio)} onCommit={val=>updateRecordField(setFinanceiroRecords,o.id,"premio",val,true)}/></td>
                       <td style={{padding:"6px 9px"}}>
                         <select value={o.status} onChange={e=>updateRecordField(setFinanceiroRecords,o.id,"status",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,color:o.status==="Aberta"?"#1565C0":"#2e7d32",fontWeight:700}}>
@@ -2885,12 +2890,14 @@ function App() {
                   {addingOperacao && (
                     <tr style={{background:"#fffde7"}}>
                       <td style={{padding:"5px 6px"}}>
-                        <select value={newOperacao.tipo} onChange={e=>setNewOperacao(p=>({...p,tipo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
-                          <option value="PUT">PUT</option>
-                          <option value="CALL">CALL</option>
+                        <select value={newOperacao.tipo} onChange={e=>setNewOperacao(p=>({...p,tipo:e.target.value,strike2:"",strike3:""}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          <option value="NDF">NDF</option>
+                          <option value="Put">Put</option>
+                          <option value="Put Spread">Put Spread</option>
+                          <option value="Call">Call</option>
+                          <option value="Call Spread">Call Spread</option>
                           <option value="Collar">Collar</option>
                           <option value="Seagull">Seagull</option>
-                          <option value="NDF">NDF</option>
                           <option value="CPR">CPR</option>
                           <option value="Outro">Outro</option>
                         </select>
@@ -2901,7 +2908,11 @@ function App() {
                       <td style={{padding:"5px 6px"}}><input placeholder="Vencimento" value={newOperacao.vencimento} onChange={e=>setNewOperacao(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Quantidade" type="number" step="any" value={newOperacao.quantidade} onChange={e=>setNewOperacao(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Unid." value={newOperacao.unidade} onChange={e=>setNewOperacao(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Preço/Strike" type="number" step="any" value={newOperacao.preco} onChange={e=>setNewOperacao(p=>({...p,preco:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder={(TIPO_N_STRIKES[newOperacao.tipo]||1)>1?"Strike 1":"Strike"} type="number" step="any" value={newOperacao.preco} onChange={e=>setNewOperacao(p=>({...p,preco:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}>{(TIPO_N_STRIKES[newOperacao.tipo]||1)>=2 &&
+                        <input placeholder="Strike 2" type="number" step="any" value={newOperacao.strike2} onChange={e=>setNewOperacao(p=>({...p,strike2:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/>}</td>
+                      <td style={{padding:"5px 6px"}}>{(TIPO_N_STRIKES[newOperacao.tipo]||1)>=3 &&
+                        <input placeholder="Strike 3" type="number" step="any" value={newOperacao.strike3} onChange={e=>setNewOperacao(p=>({...p,strike3:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/>}</td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Prêmio" type="number" step="any" value={newOperacao.premio} onChange={e=>setNewOperacao(p=>({...p,premio:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <select value={newOperacao.status} onChange={e=>setNewOperacao(p=>({...p,status:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
@@ -2919,11 +2930,11 @@ function App() {
                   )}
                   {addingOperacao && financeiroSubmitError && (
                     <tr style={{background:"#fffde7"}}>
-                      <td colSpan={13} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {financeiroSubmitError}</td>
+                      <td colSpan={15} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {financeiroSubmitError}</td>
                     </tr>
                   )}
                   {filtradas.length===0 && !addingOperacao && (
-                    <tr><td colSpan={13} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma operação financeira registrada ainda.</td></tr>
+                    <tr><td colSpan={15} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma operação financeira registrada ainda.</td></tr>
                   )}
                 </tbody>
               </table>
