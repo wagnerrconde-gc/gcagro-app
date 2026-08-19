@@ -997,25 +997,25 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                       <td key={field} style={{padding:"3px 5px"}}>
                         {type==="select" ? (
                           <select value={row[field]||culturaOpts[0]} onChange={e=>upd(i,field,e.target.value)}
-                            style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,background:cc.light,color:cc.bg,fontWeight:700}}>
+                            style={{width:"100%",padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,background:cc.light,color:cc.bg,fontWeight:700,textAlign:"center",textAlignLast:"center"}}>
                             {culturaOpts.map(c=><option key={c}>{c}</option>)}
                           </select>
                         ) : type==="calc" ? (
                           (()=>{ const qtd=calcQtdSementes(row); return (
-                            <div style={{padding:"3px 5px",textAlign:dataAlign||"right",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
+                            <div style={{padding:"3px 5px",textAlign:dataAlign||"center",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
                               {qtd!=null?fmtN(qtd,1):"—"}
                             </div>
                           );})()
                         ) : type==="unit" ? (
                           <select value={row.unidadeQtd||(row.cultura==="Soja"?"bag":"saco")} onChange={e=>upd(i,"unidadeQtd",e.target.value)}
-                            style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
+                            style={{width:"100%",padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:"center",textAlignLast:"center"}}>
                             <option value="bag">bag</option>
                             <option value="saco">saco</option>
                           </select>
                         ) : (
                           <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
-                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||(type==="number"?"right":"left")}}/>
+                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||"center"}}/>
                         )}
                       </td>
                     ))}
