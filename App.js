@@ -955,12 +955,12 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   }
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
-       ["adubacao","Adubação Plantio","text",100],["kcl","KCl","text",80],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55],
-       ["quantidade","Quantidade","calc",70],["unidadeQtd","Unid.","unit",60],
+       ["adubacao","Adubação","text",100,"center"],["kcl","KCl","text",80,"center"],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55,"center","center"],
+       ["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacaoPlantio","Adub. Plantio","text",90],["cobertura","Cobertura (KCl)","text",90],["nCobertura","N Cobertura (Ureia)","text",90],
-       ["populacao","Pop.(sem/m)","number",55],["quantidade","Quantidade","calc",70],["unidadeQtd","Unid.","unit",60],
+       ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
 
   return (
@@ -982,8 +982,8 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
-                {[...cols.map(c=>c[1]),""].map(h=>(
-                  <th key={h} style={{padding:"8px 8px",textAlign:"left",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                {[...cols.map(c=>[c[1],c[4]||"left"]),["",  "center"]].map(([h,headerAlign])=>(
+                  <th key={h} style={{padding:"8px 8px",textAlign:headerAlign,fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -993,7 +993,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                 const cc = (cultureColors[row.cultura]) || { light:"#f5f5f5", bg:"#546e7a" };
                 return (
                   <tr key={row.id||i} style={{background:bg}}>
-                    {cols.map(([field,,type,width])=>(
+                    {cols.map(([field,,type,width,headerAlign,dataAlign])=>(
                       <td key={field} style={{padding:"3px 5px"}}>
                         {type==="select" ? (
                           <select value={row[field]||culturaOpts[0]} onChange={e=>upd(i,field,e.target.value)}
@@ -1002,7 +1002,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                           </select>
                         ) : type==="calc" ? (
                           (()=>{ const qtd=calcQtdSementes(row); return (
-                            <div style={{padding:"3px 5px",textAlign:"right",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
+                            <div style={{padding:"3px 5px",textAlign:dataAlign||"right",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
                               {qtd!=null?fmtN(qtd,1):"—"}
                             </div>
                           );})()
@@ -1015,7 +1015,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                         ) : (
                           <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
-                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:type==="number"?"right":"left"}}/>
+                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||(type==="number"?"right":"left")}}/>
                         )}
                       </td>
                     ))}
