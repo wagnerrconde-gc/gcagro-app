@@ -60,6 +60,7 @@ const KEY_FINANCEIRO = "gcagro_financeiro_v1";
 const KEY_COMISSAO_ADIANT = "gcagro_comissao_adiant_v1";
 const KEY_COMISSAO_COM = "gcagro_comissao_com_v1";
 const KEY_COMISSAO_GERENTE = "gcagro_comissao_gerente_v1";
+const KEY_CHUVA = "gcagro_chuva_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -291,6 +292,12 @@ function calcPayoffOperacao(tipo, k1, k2, k3, mercado) {
 function calcResultadoOperacao(o) {
   const payoff = calcPayoffOperacao(o.tipo, o.preco||0, o.strike2||0, o.strike3||0, o.precoSaida||0);
   return payoff * (o.quantidade||0) + (o.premio||0);
+}
+
+// Converte "dd/mm/aaaa" em Date; retorna null se o texto não estiver nesse formato.
+function parseDataBR(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((s||"").trim());
+  return m ? new Date(+m[3], +m[2]-1, +m[1]) : null;
 }
 
 function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JSON.parse(r):def; } catch { return def; } }
@@ -1288,6 +1295,16 @@ function App() {
   const [newComissaoItem, setNewComissaoItem] = useState({produto:"",qtd:"",precoUnit:"",total:"",obs:""});
   const [comissaoSubmitError, setComissaoSubmitError] = useState("");
 
+  // ── Pluviometria (controle de chuva por lote, por safra) ──
+  const LOTES_CHUVA_PADRAO = ["Lote 11","Lote 13","Lote 39","Lote 40"];
+  const [chuvaRecords, setChuvaRecords] = useState(() => loadLS(KEY_CHUVA, []));
+  const [chuvaSafraSel, setChuvaSafraSel] = useState(null);
+  const [chuvaLoteTab, setChuvaLoteTab] = useState(LOTES_CHUVA_PADRAO[0]);
+  const [addingChuva, setAddingChuva] = useState(false);
+  const [newChuva, setNewChuva] = useState({data:"",mm:"",obs:""});
+  const [chuvaSubmitError, setChuvaSubmitError] = useState("");
+  const [novoLoteChuvaNome, setNovoLoteChuvaNome] = useState("");
+
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
   useEffect(() => { saveLS(KEY_PROG+"_inverno", dataInverno); }, [dataInverno]);
@@ -1337,6 +1354,7 @@ function App() {
   useFirebaseSync("gcagro/comissao_adiant", comissaoAdiant, setComissaoAdiant);
   useFirebaseSync("gcagro/comissao_com", comissaoRecords, setComissaoRecords);
   useFirebaseSync("gcagro/comissao_gerente", gerenteNome, setGerenteNome);
+  useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
   useFirebaseSync("gcagro/colheita", colheitaRecords, setColheitaRecords);
   useFirebaseSync("gcagro/planejamento/verao", planVerao, setPlanVerao);
   useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
@@ -1361,6 +1379,7 @@ function App() {
   useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
   useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
   useEffect(() => { saveLS(KEY_COMISSAO_GERENTE, gerenteNome); }, [gerenteNome]);
+  useEffect(() => { saveLS(KEY_CHUVA, chuvaRecords); }, [chuvaRecords]);
 
   const resolveLote = useMemo(() => makeLoteResolver(planVerao, planSafrinha), [planVerao, planSafrinha]);
   const lotesDisponiveis = newColheita.tipo === "verao" ? planVerao : planSafrinha;
@@ -1874,7 +1893,7 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
-      comissaoAdiant, comissaoRecords, gerenteNome,
+      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1919,6 +1938,7 @@ function App() {
         if (b.comissaoAdiant) setComissaoAdiant(b.comissaoAdiant);
         if (b.comissaoRecords) setComissaoRecords(b.comissaoRecords);
         if (b.gerenteNome) setGerenteNome(b.gerenteNome);
+        if (b.chuvaRecords) setChuvaRecords(b.chuvaRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -2083,6 +2103,13 @@ function App() {
     if (!nome) return;
     setGerenteNome(nome);
   }
+  function submitChuva() {
+    if (!newChuva.data.trim() || !newChuva.mm) { setChuvaSubmitError("Preencha Data e Milímetros para adicionar a chuva."); return; }
+    addRecord(setChuvaRecords, { safra:chuvaSafraSel, lote:chuvaLoteTab, data:newChuva.data.trim(), mm:parseFloat(newChuva.mm)||0, obs:newChuva.obs.trim() });
+    setNewChuva({data:"",mm:"",obs:""});
+    setChuvaSubmitError("");
+    setAddingChuva(false);
+  }
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -2170,6 +2197,7 @@ function App() {
     { id:"compras",        label:"Compras",               icon:"🛒", group:null },
     { id:"financeiro",     label:"Operações Financeiras", icon:"💹", group:null },
     { id:"comissoes",      label:"Comissões",             icon:"🤝", group:null },
+    { id:"chuva",          label:"Pluviometria",          icon:"🌧️", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
     { id:"backup",         label:"Backup",                icon:"💾", group:null },
@@ -2289,6 +2317,7 @@ function App() {
           { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
           { id:"financeiro",  label:"Operações Financeiras", icon:"💹", color:"#4527A0" },
           { id:"comissoes",   label:"Comissões",           icon:"🤝", color:"#8d6e63" },
+          { id:"chuva",       label:"Pluviometria",        icon:"🌧️", color:"#0288D1" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
           { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
@@ -3170,6 +3199,157 @@ function App() {
                 <span style={{fontWeight:800,color:saldo>=0?"#2e7d32":"#c62828"}}>{fmt(saldo)} {saldo>=0?"✓":"✗"}</span>
               </div>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          PLUVIOMETRIA (controle de chuva por lote, por safra)
+      ══════════════════════════════════════════════════════ */}
+      {appView==="chuva" && (()=>{
+        const safrasSet = new Set(chuvaRecords.map(r=>r.safra).filter(Boolean));
+        const chuvaSafrasList = Array.from(safrasSet).map(safra => {
+          const recs = chuvaRecords.filter(r=>r.safra===safra);
+          return { safra, total: recs.reduce((s,r)=>s+(r.mm||0),0), count: recs.length };
+        }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
+
+        if (!chuvaSafraSel) return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{fontSize:12,color:"#888",marginBottom:12}}>Safra agrícola: agosto a julho do ano seguinte.</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:16}}>
+              {chuvaSafrasList.map(s=>(
+                <div key={s.safra} onClick={()=>setChuvaSafraSel(s.safra)}
+                  style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #0288D1":"1px solid transparent"}}>
+                  <div style={{fontSize:26}}>🌧️</div>
+                  <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Safra {s.safra}</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:6}}>{s.count} lançamento{s.count===1?"":"s"}</div>
+                  <div style={{fontSize:14,fontWeight:800,marginTop:4,color:"#0288D1"}}>{fmtN(s.total,1)} mm</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+              <input placeholder="Nome da safra (ex: 26/27)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
+                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{if(novaPastaNome.trim()){setChuvaSafraSel(novaPastaNome.trim());setNovaPastaNome("");}}}
+                disabled={!novaPastaNome.trim()}
+                style={{padding:"7px 14px",background:"#0288D1",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de safra</button>
+            </div>
+          </div>
+        );
+
+        const lotesExistentes = Array.from(new Set([...LOTES_CHUVA_PADRAO, ...chuvaRecords.filter(r=>r.safra===chuvaSafraSel).map(r=>r.lote)]));
+        const recsLote = chuvaRecords.filter(r=>r.safra===chuvaSafraSel && r.lote===chuvaLoteTab);
+        const totalLote = recsLote.reduce((s,r)=>s+(r.mm||0),0);
+        const maiorChuva = recsLote.reduce((m,r)=>Math.max(m,r.mm||0),0);
+
+        const porMes = {};
+        recsLote.forEach(r => {
+          const d = parseDataBR(r.data);
+          const key = d ? `${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}` : "Data inválida";
+          const sortKey = d ? d.getFullYear()*12+d.getMonth() : -1;
+          if (!porMes[key]) porMes[key] = { mes:key, total:0, sortKey };
+          porMes[key].total += r.mm||0;
+        });
+        const mesesList = Object.values(porMes).sort((a,b)=>a.sortKey-b.sortKey);
+
+        return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
+              <span onClick={()=>setChuvaSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#0288D1"}}>🌧️ Pluviometria</span>
+              <span style={{color:"#bbb"}}>›</span>
+              <span style={{fontWeight:800,color:"#0288D1"}}>Safra {chuvaSafraSel}</span>
+            </div>
+
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {lotesExistentes.map(l=>(
+                <button key={l} onClick={()=>setChuvaLoteTab(l)}
+                  style={{padding:"7px 16px",background:chuvaLoteTab===l?"#0288D1":"#fff",border:`1px solid ${chuvaLoteTab===l?"#0288D1":"#ddd"}`,borderRadius:20,color:chuvaLoteTab===l?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:chuvaLoteTab===l?700:400}}>{l}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+              <input placeholder="Novo lote" value={novoLoteChuvaNome} onChange={e=>setNovoLoteChuvaNome(e.target.value)}
+                style={{padding:"6px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{if(novoLoteChuvaNome.trim()){setChuvaLoteTab(novoLoteChuvaNome.trim());setNovoLoteChuvaNome("");}}}
+                disabled={!novoLoteChuvaNome.trim()}
+                style={{padding:"6px 12px",background:"none",border:"1px dashed #0288D1",color:"#0288D1",borderRadius:6,fontSize:11,cursor:"pointer",opacity:novoLoteChuvaNome.trim()?1:0.5}}>+ Lote</button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Total acumulado ({chuvaLoteTab})</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#0288D1"}}>{fmtN(totalLote,1)} mm</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Dias com chuva registrada</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#0288D1"}}>{recsLote.length}</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Maior chuva em um dia</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#0288D1"}}>{fmtN(maiorChuva,1)} mm</div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <button onClick={()=>{setAddingChuva(a=>!a);setChuvaSubmitError("");}}
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #0288D1",color:"#0288D1",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Registro de chuva</button>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#e1f5fe"}}>
+                    {["Data","Mm","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Mm"?"right":h===""?"center":"left",color:"#0277bd",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recsLote.map((r,i)=>(
+                    <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"chuva|"+r.id} field="data" value={r.data} onCommit={val=>updateRecordField(setChuvaRecords,r.id,"data",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"chuva|"+r.id} field="mm" type="number" align="right" value={fmtN(r.mm,1)} onCommit={val=>updateRecordField(setChuvaRecords,r.id,"mm",val,true)}/></td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"chuva|"+r.id} field="obs" value={r.obs} onCommit={val=>updateRecordField(setChuvaRecords,r.id,"obs",val)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover registro de chuva?"))deleteRecord(setChuvaRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingChuva && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newChuva.data} onChange={e=>setNewChuva(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Mm" type="number" step="any" value={newChuva.mm} onChange={e=>setNewChuva(p=>({...p,mm:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newChuva.obs} onChange={e=>setNewChuva(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitChuva} style={{background:"#0288D1",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>{setAddingChuva(false);setChuvaSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {addingChuva && chuvaSubmitError && (
+                    <tr style={{background:"#fffde7"}}><td colSpan={4} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {chuvaSubmitError}</td></tr>
+                  )}
+                  {recsLote.length===0 && !addingChuva && (
+                    <tr><td colSpan={4} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma chuva registrada para {chuvaLoteTab} nesta safra.</td></tr>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+
+            {mesesList.length>0 && (
+              <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#0277bd",marginBottom:10}}>Resumo mensal — {chuvaLoteTab}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))",gap:8}}>
+                  {mesesList.map(m=>(
+                    <div key={m.mes} style={{background:"#e1f5fe",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+                      <div style={{fontSize:10,color:"#0277bd"}}>{m.mes}</div>
+                      <div style={{fontSize:14,fontWeight:800,color:"#01579b"}}>{fmtN(m.total,1)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
