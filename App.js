@@ -963,12 +963,12 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacao","Adubação","text",100,"center"],["kcl","KCl","text",80,"center"],["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55,"center","center"],
-       ["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
-       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
+       ["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
+       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacaoPlantio","Adubação","text",90,"center"],["cobertura","KCl","text",90,"center"],["nCobertura","N Cobertura","text",90,"center"],
-       ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
-       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
+       ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
+       ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
   return (
     <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
@@ -989,8 +989,8 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
-                {[...cols.map(c=>c[1]),""].map(h=>(
-                  <th key={h} style={{padding:"8px 8px",textAlign:"center",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                {[...cols.map(c=>[c[1],c[6]]),["","print-hide"]].map(([h,printHide])=>(
+                  <th key={h} className={printHide?"print-hide":undefined} style={{padding:"8px 8px",textAlign:"center",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1000,8 +1000,8 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                 const cc = (cultureColors[row.cultura]) || { light:"#f5f5f5", bg:"#546e7a" };
                 return (
                   <tr key={row.id||i} style={{background:bg}}>
-                    {cols.map(([field,,type,width,headerAlign,dataAlign])=>(
-                      <td key={field} style={{padding:"3px 5px"}}>
+                    {cols.map(([field,,type,width,headerAlign,dataAlign,printHide])=>(
+                      <td key={field} className={printHide?"print-hide":undefined} style={{padding:"3px 5px"}}>
                         {type==="select" ? (
                           <select value={row[field]||culturaOpts[0]} onChange={e=>upd(i,field,e.target.value)}
                             style={{width:"100%",padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,background:cc.light,color:cc.bg,fontWeight:700,textAlign:"center",textAlignLast:"center"}}>
@@ -1026,7 +1026,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                         )}
                       </td>
                     ))}
-                    <td style={{padding:"3px 4px",textAlign:"center",whiteSpace:"nowrap"}}>
+                    <td className="print-hide" style={{padding:"3px 4px",textAlign:"center",whiteSpace:"nowrap"}}>
                       <button onClick={()=>dividirLote(i)} title="Dividir este lote/pivô ao meio (duas variedades na mesma área)" style={{background:"none",border:"none",color:cc.bg,cursor:"pointer",fontSize:13,marginRight:6}}>🔀</button>
                       <button onClick={()=>{if(window.confirm(`Remover lote "${row.lote||"sem nome"}"?`))setData(d=>d.filter((_,ri)=>ri!==i));}} style={{background:"none",border:"none",color:"#e57373",cursor:"pointer",fontSize:13}}>✕</button>
                     </td>
@@ -1045,7 +1045,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           </table>
         </div>
       </div>
-      <div style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+      <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
         <textarea value={obs||""} onChange={e=>setObs(e.target.value)} rows={4}
           placeholder="Anotações e testes realizados durante a safra..."
