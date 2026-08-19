@@ -3967,8 +3967,8 @@ function App() {
             </div>
             {TABS.filter(([id])=>id===fornecedoresTab).map(([tipo,label,list])=>(
               <div key={tipo} style={{display:"grid",gap:10}}>
-                {list.map(f=>(
-                  <div key={f.nome} style={{background:"#fff",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                {list.map((f,fi)=>(
+                  <div key={fi} style={{background:"#fff",borderRadius:10,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <div style={{flex:2,minWidth:130}}>
                       <div style={{fontSize:10,color:"#888",marginBottom:3}}>NOME</div>
                       <input value={f.nome} onChange={e=>updateFornecedor(tipo,f.nome,"nome",e.target.value)}
