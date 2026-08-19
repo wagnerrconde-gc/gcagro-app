@@ -982,8 +982,8 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
-                {[...cols.map(c=>[c[1],c[4]||"left"]),["",  "center"]].map(([h,headerAlign])=>(
-                  <th key={h} style={{padding:"8px 8px",textAlign:headerAlign,fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                {[...cols.map(c=>c[1]),""].map(h=>(
+                  <th key={h} style={{padding:"8px 8px",textAlign:"center",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
