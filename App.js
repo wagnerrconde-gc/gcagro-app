@@ -959,7 +959,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
-       ["adubacaoPlantio","Adub. Plantio","text",90],["cobertura","Cobertura (KCl)","text",90],["nCobertura","N Cobertura (Ureia)","text",90],
+       ["adubacaoPlantio","Adubação","text",90,"center"],["cobertura","KCl","text",90,"center"],["nCobertura","N Cobertura","text",90,"center"],
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center"],["unidadeQtd","Unid.","unit",60],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80]];
 
