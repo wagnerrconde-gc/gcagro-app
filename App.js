@@ -1022,7 +1022,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                         ) : (
                           <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
-                            style={{width:width||"100%",minWidth:type==="number"?55:80,padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||"center"}}/>
+                            style={{width:"100%",minWidth:width||(type==="number"?55:80),padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||"center"}}/>
                         )}
                       </td>
                     ))}
