@@ -61,6 +61,7 @@ const KEY_COMISSAO_ADIANT = "gcagro_comissao_adiant_v1";
 const KEY_COMISSAO_COM = "gcagro_comissao_com_v1";
 const KEY_COMISSAO_GERENTE = "gcagro_comissao_gerente_v1";
 const KEY_CHUVA = "gcagro_chuva_v1";
+const KEY_ESTOQUE_PECAS = "gcagro_estoque_pecas_v1";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -1305,6 +1306,13 @@ function App() {
   const [chuvaSubmitError, setChuvaSubmitError] = useState("");
   const [novoLoteChuvaNome, setNovoLoteChuvaNome] = useState("");
 
+  // ── Estoque de Peças (controle de peças do almoxarifado) ──
+  const [pecasRecords, setPecasRecords] = useState(() => loadLS(KEY_ESTOQUE_PECAS, []));
+  const [addingPeca, setAddingPeca] = useState(false);
+  const [newPeca, setNewPeca] = useState({codigo:"",nome:"",localizacao:"",quantidade:"",obs:""});
+  const [pecaSubmitError, setPecaSubmitError] = useState("");
+  const [pecaBusca, setPecaBusca] = useState("");
+
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
   useEffect(() => { saveLS(KEY_PROG+"_inverno", dataInverno); }, [dataInverno]);
@@ -1355,6 +1363,7 @@ function App() {
   useFirebaseSync("gcagro/comissao_com", comissaoRecords, setComissaoRecords);
   useFirebaseSync("gcagro/comissao_gerente", gerenteNome, setGerenteNome);
   useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
+  useFirebaseSync("gcagro/estoque_pecas", pecasRecords, setPecasRecords);
   useFirebaseSync("gcagro/colheita", colheitaRecords, setColheitaRecords);
   useFirebaseSync("gcagro/planejamento/verao", planVerao, setPlanVerao);
   useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
@@ -1375,6 +1384,7 @@ function App() {
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_safrinha", tsSafrinha); }, [tsSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
+  useEffect(() => { saveLS(KEY_ESTOQUE_PECAS, pecasRecords); }, [pecasRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
   useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
@@ -1893,7 +1903,7 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
-      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords,
+      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1939,6 +1949,7 @@ function App() {
         if (b.comissaoRecords) setComissaoRecords(b.comissaoRecords);
         if (b.gerenteNome) setGerenteNome(b.gerenteNome);
         if (b.chuvaRecords) setChuvaRecords(b.chuvaRecords);
+        if (b.pecasRecords) setPecasRecords(b.pecasRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -2110,6 +2121,14 @@ function App() {
     setChuvaSubmitError("");
     setAddingChuva(false);
   }
+  function submitPeca() {
+    if (!newPeca.nome.trim()) { setPecaSubmitError("Preencha o Nome da peça para adicionar."); return; }
+    addRecord(setPecasRecords, { codigo:newPeca.codigo.trim(), nome:newPeca.nome.trim(),
+      localizacao:newPeca.localizacao.trim(), quantidade:parseFloat(newPeca.quantidade)||0, obs:newPeca.obs.trim() });
+    setNewPeca({codigo:"",nome:"",localizacao:"",quantidade:"",obs:""});
+    setPecaSubmitError("");
+    setAddingPeca(false);
+  }
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -2198,6 +2217,7 @@ function App() {
     { id:"financeiro",     label:"Operações Financeiras", icon:"💹", group:null },
     { id:"comissoes",      label:"Comissões",             icon:"🤝", group:null },
     { id:"chuva",          label:"Pluviometria",          icon:"🌧️", group:null },
+    { id:"pecas",          label:"Estoque de Peças",      icon:"🔧", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
     { id:"backup",         label:"Backup",                icon:"💾", group:null },
@@ -2318,6 +2338,7 @@ function App() {
           { id:"financeiro",  label:"Operações Financeiras", icon:"💹", color:"#4527A0" },
           { id:"comissoes",   label:"Comissões",           icon:"🤝", color:"#8d6e63" },
           { id:"chuva",       label:"Pluviometria",        icon:"🌧️", color:"#0288D1" },
+          { id:"pecas",       label:"Estoque de Peças",    icon:"🔧", color:"#5d4037" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
           { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
@@ -3350,6 +3371,87 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          ESTOQUE DE PEÇAS
+      ══════════════════════════════════════════════════════ */}
+      {appView==="pecas" && (()=>{
+        const busca = pecaBusca.trim().toLowerCase();
+        const pecasFiltradas = pecasRecords.filter(r => !busca ||
+          (r.nome||"").toLowerCase().includes(busca) ||
+          (r.codigo||"").toLowerCase().includes(busca) ||
+          (r.localizacao||"").toLowerCase().includes(busca)
+        ).sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
+
+        return (
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Peças cadastradas</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#5d4037"}}>{pecasRecords.length}</div>
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:11,color:"#888"}}>Quantidade total</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#5d4037"}}>{fmtN(pecasRecords.reduce((s,r)=>s+(r.quantidade||0),0),0)}</div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+              <input placeholder="🔎 Buscar por nome, número ou localização..." value={pecaBusca} onChange={e=>setPecaBusca(e.target.value)}
+                style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{setAddingPeca(a=>!a);setPecaSubmitError("");}}
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #5d4037",color:"#5d4037",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Nova peça</button>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#efebe9"}}>
+                    {["Número","Nome da Peça","Localização","Qtd.","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."?"right":h===""?"center":"left",color:"#5d4037",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pecasFiltradas.map((r,i)=>(
+                    <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"peca|"+r.id} field="codigo" value={r.codigo} onCommit={val=>updateRecordField(setPecasRecords,r.id,"codigo",val)}/></td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"peca|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setPecasRecords,r.id,"nome",val)}/></td>
+                      <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"peca|"+r.id} field="localizacao" value={r.localizacao} onCommit={val=>updateRecordField(setPecasRecords,r.id,"localizacao",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"peca|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,0)} onCommit={val=>updateRecordField(setPecasRecords,r.id,"quantidade",val,true)}/></td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"peca|"+r.id} field="obs" value={r.obs} onCommit={val=>updateRecordField(setPecasRecords,r.id,"obs",val)}/></td>
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <button onClick={()=>{if(window.confirm("Remover esta peça do estoque?"))deleteRecord(setPecasRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingPeca && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Número" value={newPeca.codigo} onChange={e=>setNewPeca(p=>({...p,codigo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Nome da peça" value={newPeca.nome} onChange={e=>setNewPeca(p=>({...p,nome:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Ex: Prateleira A3" value={newPeca.localizacao} onChange={e=>setNewPeca(p=>({...p,localizacao:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newPeca.quantidade} onChange={e=>setNewPeca(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newPeca.obs} onChange={e=>setNewPeca(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitPeca} style={{background:"#5d4037",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>{setAddingPeca(false);setPecaSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {addingPeca && pecaSubmitError && (
+                    <tr style={{background:"#fffde7"}}><td colSpan={6} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {pecaSubmitError}</td></tr>
+                  )}
+                  {pecasFiltradas.length===0 && !addingPeca && (
+                    <tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca ? "Nenhuma peça encontrada." : "Nenhuma peça cadastrada."}</td></tr>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
           </div>
         );
       })()}
