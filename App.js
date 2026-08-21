@@ -1312,6 +1312,9 @@ function App() {
   const [newPeca, setNewPeca] = useState({codigo:"",nome:"",localizacao:"",quantidade:"",obs:""});
   const [pecaSubmitError, setPecaSubmitError] = useState("");
   const [pecaBusca, setPecaBusca] = useState("");
+  // Histórico de baixas dadas pela tela de funcionários (estoque.html) — gravado direto
+  // no Firebase como nós com push-id (evita duas baixas simultâneas se sobrescreverem).
+  const [pecasHistorico, setPecasHistorico] = useState([]);
 
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
@@ -1364,6 +1367,17 @@ function App() {
   useFirebaseSync("gcagro/comissao_gerente", gerenteNome, setGerenteNome);
   useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
   useFirebaseSync("gcagro/estoque_pecas", pecasRecords, setPecasRecords);
+  // Histórico de baixas: nó com push-ids (não um array simples), então lê direto em vez de useFirebaseSync.
+  useEffect(() => {
+    if (!fbDb) return;
+    const ref = fbDb.ref("gcagro/estoque_pecas_historico");
+    const cb = ref.on("value", snap => {
+      const val = snap.val() || {};
+      const lista = Object.entries(val).map(([key,v]) => ({ key, ...v })).sort((a,b)=>(b.data||0)-(a.data||0));
+      setPecasHistorico(lista);
+    });
+    return () => ref.off("value", cb);
+  }, []);
   useFirebaseSync("gcagro/colheita", colheitaRecords, setColheitaRecords);
   useFirebaseSync("gcagro/planejamento/verao", planVerao, setPlanVerao);
   useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
@@ -3399,6 +3413,16 @@ function App() {
               </div>
             </div>
 
+            <div style={{background:"#efebe9",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",justifyContent:"space-between"}}>
+              <div style={{fontSize:12,color:"#5d4037"}}>
+                📱 Peça de campo pode dar baixa direto pelo celular, sem entrar no GC Agro inteiro.
+              </div>
+              <a href="./estoque.html" target="_blank" rel="noopener"
+                style={{padding:"8px 16px",background:"#5d4037",color:"#fff",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>
+                🔗 Abrir tela de baixa (funcionários)
+              </a>
+            </div>
+
             <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
               <input placeholder="🔎 Buscar por nome, número ou localização..." value={pecaBusca} onChange={e=>setPecaBusca(e.target.value)}
                 style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
@@ -3447,6 +3471,37 @@ function App() {
                   )}
                   {pecasFiltradas.length===0 && !addingPeca && (
                     <tr><td colSpan={6} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca ? "Nenhuma peça encontrada." : "Nenhuma peça cadastrada."}</td></tr>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+
+            <div style={{fontSize:13,fontWeight:700,color:"#5d4037",marginBottom:10}}>📋 Histórico de baixas</div>
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#efebe9"}}>
+                    {["Data/hora","Número","Peça","Localização","Qtd. baixada","Restante","Obs"].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h.startsWith("Qtd")||h==="Restante"?"right":"left",color:"#5d4037",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pecasHistorico.slice(0,50).map(h=>(
+                    <tr key={h.key} style={{background:"#fff"}}>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11,whiteSpace:"nowrap"}}>{h.data ? new Date(h.data).toLocaleString("pt-BR") : "—"}</td>
+                      <td style={{padding:"6px 9px",color:"#888",fontSize:11}}>{h.codigo||"—"}</td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}>{h.nome}</td>
+                      <td style={{padding:"6px 9px",color:"#888"}}>{h.localizacao||"—"}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#c62828",fontWeight:700}}>-{fmtN(h.quantidadeBaixada,0)}</td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{fmtN(h.quantidadeDepois,0)}</td>
+                      <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}>{h.obs||""}</td>
+                    </tr>
+                  ))}
+                  {pecasHistorico.length===0 && (
+                    <tr><td colSpan={7} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma baixa registrada ainda.</td></tr>
                   )}
                 </tbody>
               </table>
