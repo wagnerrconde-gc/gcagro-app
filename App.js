@@ -83,6 +83,11 @@ const ADMIN_PASSWORD = "gcagro2526";
 // ─────────────────────────────────────────────────────────────────────────────
 // COLORS & ICONS
 // ─────────────────────────────────────────────────────────────────────────────
+function hexA(hex, alpha) {
+  const h = hex.replace("#","");
+  const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 const CULTURE_COLORS_VERAO = {
   Soja:   { bg:"#1a5c2e", light:"#e8f5e9", accent:"#2e7d32", badge:"#43a047" },
   Feijão: { bg:"#7b1c1c", light:"#fce4ec", accent:"#c62828", badge:"#e53935" },
@@ -2323,60 +2328,83 @@ function App() {
           { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
         ];
 
+        const totalVerao = culturasVerao.reduce((s,c)=>s+c.area,0);
+        const totalInverno = culturasInverno.reduce((s,c)=>s+c.area,0);
+        const CARD = {background:"#fff",border:"1px solid #e2e6dc",borderRadius:14,boxShadow:"0 1px 2px rgba(22,35,28,0.05), 0 8px 24px -14px rgba(22,35,28,0.18)"};
+        const EYEBROW = {fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",color:"#8a978c"};
         return (
-          <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a"}}>Olá! 👋</div>
-              <div style={{fontSize:13,color:"#667"}}>Resumo da safra {safraAtiva.replace(/\b(Safra|Verão|Inverno)\b/gi,"").replace(/\s+/g," ").trim()}</div>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:11,color:"#888"}}>Área total (ativas)</div>
-                <div style={{fontSize:22,fontWeight:800,color:"#1a3a1a"}}>{fmtN(areaTotal,1)} ha</div>
-              </div>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:11,color:"#888"}}>Custo insumos (Verão+Inv.)</div>
-                <div style={{fontSize:22,fontWeight:800,color:"#1a3a1a"}}>{fmt(refInsumosSafraAtiva)}</div>
-              </div>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:11,color:"#888"}}>Colhido</div>
-                <div style={{fontSize:22,fontWeight:800,color:"#2e7d32"}}>{fmtN(colheitaTotais.totalSacas,1)} sc</div>
-                <div style={{fontSize:11,color:"#999"}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
+          <div style={{maxWidth:1180,margin:"0 auto",padding:"16px"}}>
+            <div style={{marginBottom:22}}>
+              <div style={EYEBROW}>Resumo da safra</div>
+              <div style={{fontFamily:"Sora,ui-sans-serif,sans-serif",fontSize:24,fontWeight:700,color:"#16231c",letterSpacing:-0.2}}>
+                Olá — <span style={{color:"#1b5e3a"}}>{safraAtiva.replace(/\b(Safra|Verão|Inverno)\b/gi,"").replace(/\s+/g," ").trim()}</span> está em andamento
               </div>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:20}}>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#1a3a1a",marginBottom:12}}>🌱 Área — Verão</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:22}}>
+              <div style={{...CARD,padding:"18px 20px"}}>
+                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Área total (ativas)</div>
+                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#16231c",letterSpacing:-0.3}}>
+                  {fmtN(areaTotal,1)} <span style={{fontSize:14,fontWeight:500,color:"#8a978c",fontFamily:"inherit"}}>ha</span>
+                </div>
+              </div>
+              <div style={{...CARD,padding:"18px 20px"}}>
+                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Custo insumos (Verão + Inverno)</div>
+                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#16231c",letterSpacing:-0.3}}>{fmt(refInsumosSafraAtiva)}</div>
+              </div>
+              <div style={{...CARD,padding:"18px 20px"}}>
+                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Colhido até agora</div>
+                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#2f8f4e",letterSpacing:-0.3}}>
+                  {fmtN(colheitaTotais.totalSacas,1)} <span style={{fontSize:14,fontWeight:500,color:"#8a978c",fontFamily:"inherit"}}>sc</span>
+                </div>
+                <div className="dash-num" style={{fontSize:12,color:"#8a978c",marginTop:4}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
+              </div>
+            </div>
+
+            <div style={{...EYEBROW,marginBottom:12}}>Área plantada por cultura</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:22}}>
+              <div style={{...CARD,padding:"18px 20px 20px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,fontSize:14,fontWeight:600,color:"#16231c"}}>
+                    <span style={{width:9,height:9,borderRadius:3,background:"#1b5e3a",display:"inline-block"}}/>Verão
+                  </div>
+                  <div style={{fontSize:12,color:"#5b6b5f"}}>total <b className="dash-num" style={{color:"#16231c",fontWeight:600}}>{fmtN(totalVerao,1)} ha</b></div>
+                </div>
                 {culturasVerao.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
                 {culturasVerao.map(c=>{
                   const cc = CULTURE_COLORS_VERAO[c.name]||{bg:"#546e7a"};
                   const pct = (c.area/maxAreaVerao)*100;
                   return (
-                    <div key={c.name} style={{marginBottom:10}}>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                        <span style={{fontWeight:600,color:"#333"}}>{c.name}</span><span style={{color:"#888"}}>{fmtN(c.area,1)} ha</span>
+                    <div key={c.name} style={{marginBottom:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:12.5,marginBottom:5}}>
+                        <span style={{fontWeight:600,color:"#16231c"}}>{c.name}</span>
+                        <span className="dash-num" style={{color:"#5b6b5f",fontSize:12}}>{fmtN(c.area,1)} ha</span>
                       </div>
-                      <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{height:7,background:"#eef1e9",borderRadius:4,overflow:"hidden"}}>
                         <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#5c4a00",marginBottom:12}}>🌾 Área — Inverno</div>
+              <div style={{...CARD,padding:"18px 20px 20px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,fontSize:14,fontWeight:600,color:"#16231c"}}>
+                    <span style={{width:9,height:9,borderRadius:3,background:"#9c6b1f",display:"inline-block"}}/>Inverno
+                  </div>
+                  <div style={{fontSize:12,color:"#5b6b5f"}}>total <b className="dash-num" style={{color:"#16231c",fontWeight:600}}>{fmtN(totalInverno,1)} ha</b></div>
+                </div>
                 {culturasInverno.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
                 {culturasInverno.map(c=>{
                   const cc = CULTURE_COLORS_INVERNO[c.name]||{bg:"#546e7a"};
                   const pct = (c.area/maxAreaInverno)*100;
                   return (
-                    <div key={c.name} style={{marginBottom:10}}>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                        <span style={{fontWeight:600,color:"#333"}}>{c.name}</span><span style={{color:"#888"}}>{fmtN(c.area,1)} ha</span>
+                    <div key={c.name} style={{marginBottom:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:12.5,marginBottom:5}}>
+                        <span style={{fontWeight:600,color:"#16231c"}}>{c.name}</span>
+                        <span className="dash-num" style={{color:"#5b6b5f",fontSize:12}}>{fmtN(c.area,1)} ha</span>
                       </div>
-                      <div style={{height:8,background:"#f0f0f0",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{height:7,background:"#eef1e9",borderRadius:4,overflow:"hidden"}}>
                         <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
                       </div>
                     </div>
@@ -2385,13 +2413,13 @@ function App() {
               </div>
             </div>
 
-            <div style={{fontSize:13,fontWeight:700,color:"#1a3a1a",marginBottom:10}}>Acesso rápido</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+            <div style={{...EYEBROW,marginBottom:12}}>Acesso rápido</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
               {NAV_CARDS.map(nc=>(
-                <button key={nc.id} onClick={()=>setAppView(nc.id)}
-                  style={{background:"#fff",border:"none",borderRadius:12,padding:"16px 14px",textAlign:"left",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                  <div style={{fontSize:22,marginBottom:6}}>{nc.icon}</div>
-                  <div style={{fontSize:12,fontWeight:700,color:nc.color}}>{nc.label}</div>
+                <button key={nc.id} onClick={()=>setAppView(nc.id)} className="dash-tile"
+                  style={{...CARD,padding:14,textAlign:"left",cursor:"pointer",display:"flex",flexDirection:"column",gap:10,alignItems:"flex-start",fontFamily:"inherit"}}>
+                  <span style={{width:34,height:34,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:hexA(nc.color,0.12)}}>{nc.icon}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,lineHeight:1.3,color:"#16231c"}}>{nc.label}</span>
                 </button>
               ))}
             </div>
