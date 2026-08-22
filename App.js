@@ -81,6 +81,12 @@ const FORN_COLORS  = ["#1565C0","#2E7D32","#B71C1C","#6A1B9A","#E65100","#00695C
 
 const ADMIN_PASSWORD = "gcagro2526";
 
+// Telas liberadas pro papel "equipe" (chefe de equipe / funcionário) — todo o resto
+// (financeiro, vendas, cotação, programação, planejamento, safras...) é só do dono.
+const EQUIPE_VIEWS = ["pecas"];
+function loadRole() { try { return localStorage.getItem("gcagro_role"); } catch { return null; } }
+function saveRole(role) { try { role ? localStorage.setItem("gcagro_role", role) : localStorage.removeItem("gcagro_role"); } catch {} }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COLORS & ICONS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1215,7 +1221,12 @@ function App() {
   const [novaPastaNome, setNovaPastaNome]     = useState("");
 
   // ── UI ──
-  const [appView, setAppView]             = useState("dashboard");
+  // ── Acesso (dono vs. equipe) ──
+  const [appRole, setAppRole]             = useState(() => loadRole());
+  const [roleLoginPass, setRoleLoginPass] = useState("");
+  const [roleLoginError, setRoleLoginError] = useState("");
+
+  const [appView, setAppView]             = useState(() => loadRole()==="equipe" ? "pecas" : "dashboard");
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [activeCultureVerao, setActiveCultureVerao] = useState("Soja");
   const [activeCultureInverno, setActiveCultureInverno] = useState("Milho");
@@ -2237,6 +2248,22 @@ function App() {
     { id:"backup",         label:"Backup",                icon:"💾", group:null },
   ];
 
+  // ── Acesso: dono (senha) vs. equipe (sem senha, só as telas de estoque) ──
+  function loginDono() {
+    if (roleLoginPass !== ADMIN_PASSWORD) { setRoleLoginError("Senha incorreta."); return; }
+    saveRole("dono"); setAppRole("dono"); setRoleLoginPass(""); setRoleLoginError("");
+  }
+  function loginEquipe() {
+    saveRole("equipe"); setAppRole("equipe"); setAppView("pecas");
+  }
+  function sairDoAcesso() {
+    saveRole(null); setAppRole(null); setAppView("dashboard"); setSidebarOpen(false);
+  }
+  // Trava: se por algum motivo a equipe cair numa tela que não é dela (ex: link direto), volta pro Estoque de Peças.
+  useEffect(() => {
+    if (appRole==="equipe" && !EQUIPE_VIEWS.includes(appView)) setAppView("pecas");
+  }, [appRole, appView]);
+
   // ── Set cotContext when entering cot views ──
   useEffect(() => {
     if (appView==="cot_verao_adub") setCotContext({safra:"verao",tipo:"adub"});
@@ -2250,6 +2277,44 @@ function App() {
 
   const tintColor = isCotView ? "10,22,40" : appView.includes("inv") ? "26,15,0" : "240,244,248";
   const tintAlpha = isCotView || appView.includes("inv") ? 0.82 : 0.86;
+
+  // ══════════════════════════════════════════════════════
+  // PORTA DE ENTRADA: escolha de acesso (dono vs. equipe)
+  // ══════════════════════════════════════════════════════
+  if (!appRole) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0d1f14",padding:20}}>
+      <div style={{width:"100%",maxWidth:380,background:"#132a1d",borderRadius:16,padding:"32px 28px",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)"}}>
+        <div style={{textAlign:"center",marginBottom:26}}>
+          <div style={{fontSize:26,marginBottom:6}}>🌿</div>
+          <div style={{fontSize:19,fontWeight:800,color:"#fff"}}>GC Agro</div>
+          <div style={{fontSize:12,color:"#8fb89c",marginTop:4}}>Quem está acessando?</div>
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:11,color:"#8fb89c",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>👷 Equipe (chefe / funcionário)</div>
+          <div style={{fontSize:12,color:"#6a9a7a",marginBottom:10}}>Acesso direto ao Estoque de Peças, sem senha.</div>
+          <button onClick={loginEquipe}
+            style={{width:"100%",padding:"13px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+            🔧 Entrar como equipe
+          </button>
+        </div>
+
+        <div style={{height:1,background:"rgba(255,255,255,0.1)",margin:"20px 0"}}/>
+
+        <div>
+          <div style={{fontSize:11,color:"#8fb89c",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>🔑 Dono da fazenda</div>
+          <input type="password" value={roleLoginPass} onChange={e=>{setRoleLoginPass(e.target.value);setRoleLoginError("");}}
+            onKeyDown={e=>e.key==="Enter"&&loginDono()} placeholder="Senha"
+            style={{width:"100%",padding:"12px 14px",background:"#0d1f14",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:roleLoginError?8:12}}/>
+          {roleLoginError && <div style={{color:"#ff6b6b",fontSize:12,marginBottom:10}}>{roleLoginError}</div>}
+          <button onClick={loginDono} disabled={!roleLoginPass}
+            style={{width:"100%",padding:"13px",background:roleLoginPass?"linear-gradient(135deg,#2e7d32,#1b5e20)":"#2a3d2f",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:roleLoginPass?"pointer":"not-allowed"}}>
+            Entrar como dono
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{minHeight:"100vh",fontFamily:"system-ui,sans-serif"}}>
@@ -2274,6 +2339,10 @@ function App() {
               <button onClick={gerarCotacao} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
             )}
             <button onClick={()=>printView(appView)} style={{padding:"6px 12px",background:"rgba(255,255,255,0.15)",border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>📄 PDF</button>
+            <button onClick={()=>{if(window.confirm("Sair e voltar pra tela de acesso?"))sairDoAcesso();}} title={appRole==="equipe"?"Acesso: Equipe":"Acesso: Dono"}
+              style={{padding:"6px 10px",background:"rgba(255,255,255,0.1)",border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>
+              {appRole==="equipe"?"👷":"🔑"} Sair
+            </button>
           </div>
         </div>
         {gerarCotMsg && (
@@ -2313,8 +2382,8 @@ function App() {
             style={{background:"rgba(255,255,255,0.1)",border:"none",borderRadius:6,color:"#fff",width:30,height:30,fontSize:15,cursor:"pointer"}}>✕</button>
         </div>
         <div style={{padding:"10px 10px 24px"}}>
-          {MAIN_TABS.map((t,i)=>{
-            const prevGroup = i>0 ? MAIN_TABS[i-1].group : undefined;
+          {(appRole==="equipe" ? MAIN_TABS.filter(t=>EQUIPE_VIEWS.includes(t.id)) : MAIN_TABS).map((t,i,visibleTabs)=>{
+            const prevGroup = i>0 ? visibleTabs[i-1].group : undefined;
             const showHeader = t.group && t.group!==prevGroup;
             const active = appView===t.id;
             return (
