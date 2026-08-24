@@ -88,6 +88,74 @@ function hexA(hex, alpha) {
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+// Ícones do Dashboard: traço fino monocromático (em vez de emoji), no padrão de painéis corporativos.
+const ICON_PATHS = {
+  sprout: <>
+    <path d="M10 17V9"/>
+    <path d="M10 9C7.5 9 6 7.2 6 5C8.2 5 10 6.5 10 9Z"/>
+    <path d="M10 9C12.5 9 14 7.2 14 5C11.8 5 10 6.5 10 9Z"/>
+  </>,
+  wheat: <>
+    <path d="M10 17V4"/>
+    <path d="M10 6.5L7 4.8M10 6.5L13 4.8M10 9.5L7 7.8M10 9.5L13 7.8M10 12.5L7 10.8M10 12.5L13 10.8"/>
+  </>,
+  map: <>
+    <path d="M4 6.3L8 4.5L12 6.3L16 4.5V15.3L12 17.1L8 15.3L4 17.1V6.3Z"/>
+    <path d="M8 4.5V15.3M12 6.3V17.1"/>
+  </>,
+  trend: <>
+    <path d="M4 14L8.2 9.2L11.2 12L16 6"/>
+    <path d="M12 6H16V10"/>
+  </>,
+  cart: <>
+    <path d="M3.5 4.5H5.3L7.6 13H15L17 7.2H6.7"/>
+    <circle cx="8.4" cy="16" r="1.3"/>
+    <circle cx="14.2" cy="16" r="1.3"/>
+  </>,
+  chart: <>
+    <path d="M4 17H16"/>
+    <path d="M6.5 17V11M10 17V5.5M13.5 17V13"/>
+  </>,
+  percent: <>
+    <circle cx="6.5" cy="6.5" r="2"/>
+    <circle cx="13.5" cy="13.5" r="2"/>
+    <path d="M15 5L5 15"/>
+  </>,
+  drop: <path d="M10 3.2C10 3.2 4.8 10.3 4.8 13.7C4.8 16.6 7.1 18.5 10 18.5C12.9 18.5 15.2 16.6 15.2 13.7C15.2 10.3 10 3.2 10 3.2Z"/>,
+  users: <>
+    <circle cx="7.3" cy="7" r="2.6"/>
+    <circle cx="14.2" cy="8.2" r="2.1"/>
+    <path d="M3 16.5C3 13.2 5 11.5 7.3 11.5C9.6 11.5 11.4 13 11.6 15"/>
+    <path d="M12.2 16.5C12.2 13.9 13.5 12.3 15 12.3C16.8 12.3 17.8 14.3 17.8 16.5"/>
+  </>,
+  folder: <path d="M3 6H8.2L9.7 8H17V16H3V6Z"/>,
+  save: <>
+    <path d="M10 4.5V13"/>
+    <path d="M6.5 9.8L10 13.3L13.5 9.8"/>
+    <path d="M4 13.5V16.5H16V13.5"/>
+  </>,
+  crop: <>
+    <path d="M4 8V4H8"/>
+    <path d="M12 4H16V8"/>
+    <path d="M16 12V16H12"/>
+    <path d="M8 16H4V12"/>
+  </>,
+  coin: <>
+    <circle cx="10" cy="10" r="7"/>
+    <path d="M10 5.5V14.5"/>
+    <path d="M12.3 7.6C12.1 6.6 11.1 6 10 6C8.7 6 7.5 6.7 7.5 7.9C7.5 10.3 12.5 9.2 12.5 12.1C12.5 13.4 11.3 14 10 14C8.9 14 7.9 13.5 7.7 12.5"/>
+  </>,
+};
+function Icon({ name, size=17 }) {
+  return (
+    <svg viewBox="0 0 20 20" width={size} height={size}
+      style={{stroke:"currentColor",fill:"none",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",display:"block",flexShrink:0}}>
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}
+
 const CULTURE_COLORS_VERAO = {
   Soja:   { bg:"#1a5c2e", light:"#e8f5e9", accent:"#2e7d32", badge:"#43a047" },
   Feijão: { bg:"#7b1c1c", light:"#fce4ec", accent:"#c62828", badge:"#e53935" },
@@ -2309,118 +2377,161 @@ function App() {
       {appView==="dashboard" && (()=>{
         const culturasVerao = summaryVerao.filter(c=>c.ativo);
         const culturasInverno = summaryInverno.filter(c=>c.ativo);
-        const areaTotal = culturasVerao.reduce((s,c)=>s+c.area,0) + culturasInverno.reduce((s,c)=>s+c.area,0);
-        const maxAreaVerao = Math.max(1, ...culturasVerao.map(c=>c.area), 0);
-        const maxAreaInverno = Math.max(1, ...culturasInverno.map(c=>c.area), 0);
-        const NAV_CARDS = [
-          { id:"prog_verao",  label:"Programação Verão",   icon:"🌱", color:"#1a5c2e" },
-          { id:"prog_inv",    label:"Programação Inverno", icon:"🌾", color:"#5c4a00" },
-          { id:"plan_verao",  label:"Planejamento Verão",  icon:"🗺️", color:"#1565C0" },
-          { id:"plan_inv",    label:"Planejamento Inverno",icon:"🗺️", color:"#1565C0" },
-          { id:"colheita",    label:"Colheita",            icon:"🌾", color:"#2e7d32" },
-          { id:"vendas",      label:"Vendas",              icon:"💰", color:"#1565C0" },
-          { id:"compras",     label:"Compras",             icon:"🛒", color:"#00695c" },
-          { id:"financeiro",  label:"Operações Financeiras", icon:"💹", color:"#4527A0" },
-          { id:"comissoes",   label:"Comissões",           icon:"🤝", color:"#8d6e63" },
-          { id:"chuva",       label:"Pluviometria",        icon:"🌧️", color:"#0288D1" },
-          { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
-          { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
-          { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
-        ];
-
         const totalVerao = culturasVerao.reduce((s,c)=>s+c.area,0);
         const totalInverno = culturasInverno.reduce((s,c)=>s+c.area,0);
-        const CARD = {background:"#fff",border:"1px solid #e2e6dc",borderRadius:14,boxShadow:"0 1px 2px rgba(22,35,28,0.05), 0 8px 24px -14px rgba(22,35,28,0.18)"};
-        const EYEBROW = {fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",color:"#8a978c"};
+        const areaTotal = totalVerao + totalInverno;
+        const pctVerao = areaTotal>0 ? (totalVerao/areaTotal)*100 : 50;
+        const pctInverno = 100-pctVerao;
+
+        const NAV_CARDS = [
+          { id:"prog_verao",  label:"Programação Verão",     icon:"sprout",  color:"#1a5c2e", group:"Programação" },
+          { id:"prog_inv",    label:"Programação Inverno",   icon:"wheat",   color:"#9c6b1f", group:"Programação" },
+          { id:"plan_verao",  label:"Planejamento Verão",    icon:"map",     color:"#1565C0", group:"Planejamento" },
+          { id:"plan_inv",    label:"Planejamento Inverno",  icon:"map",     color:"#1565C0", group:"Planejamento" },
+          { id:"colheita",    label:"Colheita",              icon:"wheat",   color:"#2e7d32", group:"Operação" },
+          { id:"vendas",      label:"Vendas",                icon:"trend",   color:"#1565C0", group:"Operação" },
+          { id:"compras",     label:"Compras",               icon:"cart",    color:"#00695c", group:"Operação" },
+          { id:"financeiro",  label:"Operações Financeiras", icon:"chart",   color:"#4527A0", group:"Financeiro" },
+          { id:"comissoes",   label:"Comissões",             icon:"percent", color:"#8d6e63", group:"Financeiro" },
+          { id:"chuva",       label:"Pluviometria",          icon:"drop",    color:"#0288D1", group:"Registros" },
+          { id:"fornecedores",label:"Fornecedores",          icon:"users",   color:"#1565C0", group:"Registros" },
+          { id:"safras",      label:"Safras",                icon:"folder",  color:"#37474f", group:"Registros" },
+          { id:"backup",      label:"Backup",                icon:"save",    color:"#455a64", group:"Registros" },
+        ];
+        const NAV_GROUPS = ["Programação","Planejamento","Operação","Financeiro","Registros"]
+          .map(group=>({ group, items: NAV_CARDS.filter(nc=>nc.group===group) }));
+
+        const CARD = {background:"#fff",border:"1px solid #e0e4d6",borderRadius:10,boxShadow:"0 1px 2px rgba(18,24,15,0.05), 0 10px 26px -16px rgba(18,24,15,0.22)"};
+        const EYEBROW = {fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",color:"#8b9a80"};
+        const safraLabel = safraAtiva.replace(/\b(Safra|Verão|Inverno)\b/gi,"").replace(/\s+/g," ").trim();
+
         return (
-          <div style={{maxWidth:1180,margin:"0 auto",padding:"16px"}}>
-            <div style={{marginBottom:22}}>
-              <div style={EYEBROW}>Resumo da safra</div>
-              <div style={{fontFamily:"Sora,ui-sans-serif,sans-serif",fontSize:24,fontWeight:700,color:"#16231c",letterSpacing:-0.2}}>
-                Olá — <span style={{color:"#1b5e3a"}}>{safraAtiva.replace(/\b(Safra|Verão|Inverno)\b/gi,"").replace(/\s+/g," ").trim()}</span> está em andamento
-              </div>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:22}}>
-              <div style={{...CARD,padding:"18px 20px"}}>
-                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Área total (ativas)</div>
-                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#16231c",letterSpacing:-0.3}}>
-                  {fmtN(areaTotal,1)} <span style={{fontSize:14,fontWeight:500,color:"#8a978c",fontFamily:"inherit"}}>ha</span>
-                </div>
-              </div>
-              <div style={{...CARD,padding:"18px 20px"}}>
-                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Custo insumos (Verão + Inverno)</div>
-                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#16231c",letterSpacing:-0.3}}>{fmt(refInsumosSafraAtiva)}</div>
-              </div>
-              <div style={{...CARD,padding:"18px 20px"}}>
-                <div style={{fontSize:12,color:"#5b6b5f",marginBottom:8}}>Colhido até agora</div>
-                <div className="dash-num" style={{fontSize:26,fontWeight:600,color:"#2f8f4e",letterSpacing:-0.3}}>
-                  {fmtN(colheitaTotais.totalSacas,1)} <span style={{fontSize:14,fontWeight:500,color:"#8a978c",fontFamily:"inherit"}}>sc</span>
-                </div>
-                <div className="dash-num" style={{fontSize:12,color:"#8a978c",marginTop:4}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
-              </div>
-            </div>
-
-            <div style={{...EYEBROW,marginBottom:12}}>Área plantada por cultura</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:22}}>
-              <div style={{...CARD,padding:"18px 20px 20px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",gap:9,fontSize:14,fontWeight:600,color:"#16231c"}}>
-                    <span style={{width:9,height:9,borderRadius:3,background:"#1b5e3a",display:"inline-block"}}/>Verão
+          <div>
+            {/* faixa escura de indicadores, largura total */}
+            <div style={{background:"linear-gradient(165deg,#0d1712 0%,#101c15 100%)",position:"relative"}}>
+              <div style={{height:2,background:"linear-gradient(90deg,#3fae6c,#9c6b1f 65%,#9c6b1f 100%)"}}/>
+              <div style={{maxWidth:1180,margin:"0 auto",padding:"24px 16px 22px",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
+                <div style={{width:"100%",marginBottom:18}}>
+                  <div style={{fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:"uppercase",color:"#8ba190"}}>Resumo da safra</div>
+                  <div style={{fontFamily:"Sora,ui-sans-serif,sans-serif",fontSize:20,fontWeight:700,color:"#f3faf5",letterSpacing:-0.2}}>
+                    Olá — <span style={{color:"#3fae6c"}}>{safraLabel}</span> está em andamento
                   </div>
-                  <div style={{fontSize:12,color:"#5b6b5f"}}>total <b className="dash-num" style={{color:"#16231c",fontWeight:600}}>{fmtN(totalVerao,1)} ha</b></div>
                 </div>
-                {culturasVerao.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
-                {culturasVerao.map(c=>{
-                  const cc = CULTURE_COLORS_VERAO[c.name]||{bg:"#546e7a"};
-                  const pct = (c.area/maxAreaVerao)*100;
-                  return (
-                    <div key={c.name} style={{marginBottom:14}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:12.5,marginBottom:5}}>
-                        <span style={{fontWeight:600,color:"#16231c"}}>{c.name}</span>
-                        <span className="dash-num" style={{color:"#5b6b5f",fontSize:12}}>{fmtN(c.area,1)} ha</span>
-                      </div>
-                      <div style={{height:7,background:"#eef1e9",borderRadius:4,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
+
+                <div style={{flex:"1 1 160px",minWidth:0,padding:"0 26px 0 0"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11,color:"#c3d0c5"}}>
+                    <span style={{width:22,height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.07)",flexShrink:0}}><Icon name="crop" size={12}/></span>
+                    <span style={{fontSize:11.5,color:"#93a596"}}>Área total (ativas)</span>
+                  </div>
+                  <div className="dash-num" style={{fontSize:"clamp(20px,6vw,32px)",fontWeight:700,letterSpacing:-0.8,color:"#f3faf5",overflowWrap:"anywhere"}}>
+                    {fmtN(areaTotal,1)}<span style={{fontSize:14,fontWeight:500,color:"#71877a",marginLeft:3,fontFamily:"inherit"}}>ha</span>
+                  </div>
+                </div>
+                <div style={{flex:"1.4 1 200px",minWidth:0,padding:"0 26px",borderLeft:"1px solid #28382f"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
+                    <span style={{width:22,height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.07)",color:"#c3d0c5",flexShrink:0}}><Icon name="coin" size={12}/></span>
+                    <span style={{fontSize:11.5,color:"#93a596"}}>Custo insumos (Verão + Inverno)</span>
+                  </div>
+                  <div className="dash-num" style={{fontSize:"clamp(16px,4.2vw,28px)",fontWeight:700,letterSpacing:-0.8,color:"#f3faf5",overflowWrap:"anywhere"}}>{fmt(refInsumosSafraAtiva)}</div>
+                </div>
+                <div style={{flex:"1 1 160px",minWidth:0,padding:"0 26px",borderLeft:"1px solid #28382f"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
+                    <span style={{width:22,height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.07)",color:"#c3d0c5",flexShrink:0}}><Icon name="wheat" size={12}/></span>
+                    <span style={{fontSize:11.5,color:"#93a596"}}>Colhido até agora</span>
+                  </div>
+                  <div className="dash-num" style={{fontSize:"clamp(20px,6vw,32px)",fontWeight:700,letterSpacing:-0.8,color:"#3fae6c",overflowWrap:"anywhere"}}>
+                    {fmtN(colheitaTotais.totalSacas,1)}<span style={{fontSize:14,fontWeight:500,color:"#71877a",marginLeft:3,fontFamily:"inherit"}}>sc</span>
+                  </div>
+                  <div className="dash-num" style={{fontSize:12,color:"#71877a",marginTop:6}}>{fmtN(colheitaTotais.media,1)} sc/ha média</div>
+                </div>
+
+                {areaTotal>0 && (
+                  <div style={{flex:"1 1 200px",minWidth:0,padding:"0 0 0 26px",borderLeft:"1px solid #28382f",display:"flex",alignItems:"center",gap:16}}>
+                    <div style={{position:"relative",width:64,height:64,flexShrink:0}}>
+                      <svg viewBox="0 0 42 42" width={64} height={64}>
+                        <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="rgba(255,255,255,0.08)" strokeWidth="3.4"/>
+                        <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#3fae6c" strokeWidth="3.4"
+                          strokeDasharray={`${pctVerao} ${100-pctVerao}`} strokeDashoffset="25"/>
+                        <circle cx="21" cy="21" r="15.9155" fill="transparent" stroke="#9c6b1f" strokeWidth="3.4"
+                          strokeDasharray={`${pctInverno} ${100-pctInverno}`} strokeDashoffset={25-pctVerao}/>
+                      </svg>
+                      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                        <b className="dash-num" style={{fontSize:14,fontWeight:600,color:"#f3faf5",lineHeight:1}}>{Math.round(pctVerao)}/{Math.round(pctInverno)}</b>
+                        <span style={{fontSize:8.5,color:"#7f9184",letterSpacing:0.3,marginTop:2}}>V · I</span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-              <div style={{...CARD,padding:"18px 20px 20px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-                  <div style={{display:"flex",alignItems:"center",gap:9,fontSize:14,fontWeight:600,color:"#16231c"}}>
-                    <span style={{width:9,height:9,borderRadius:3,background:"#9c6b1f",display:"inline-block"}}/>Inverno
-                  </div>
-                  <div style={{fontSize:12,color:"#5b6b5f"}}>total <b className="dash-num" style={{color:"#16231c",fontWeight:600}}>{fmtN(totalInverno,1)} ha</b></div>
-                </div>
-                {culturasInverno.length===0 && <div style={{fontSize:12,color:"#bbb"}}>Nenhuma cultura ativa.</div>}
-                {culturasInverno.map(c=>{
-                  const cc = CULTURE_COLORS_INVERNO[c.name]||{bg:"#546e7a"};
-                  const pct = (c.area/maxAreaInverno)*100;
-                  return (
-                    <div key={c.name} style={{marginBottom:14}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:12.5,marginBottom:5}}>
-                        <span style={{fontWeight:600,color:"#16231c"}}>{c.name}</span>
-                        <span className="dash-num" style={{color:"#5b6b5f",fontSize:12}}>{fmtN(c.area,1)} ha</span>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7,fontSize:11.5,color:"#c3d0c5"}}>
+                        <span style={{width:7,height:7,borderRadius:2,background:"#3fae6c",display:"inline-block"}}/>Verão <b className="dash-num" style={{color:"#f3faf5",fontWeight:600}}>{fmtN(totalVerao,1)} ha</b>
                       </div>
-                      <div style={{height:7,background:"#eef1e9",borderRadius:4,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${pct}%`,background:cc.bg,borderRadius:4}}/>
+                      <div style={{display:"flex",alignItems:"center",gap:7,fontSize:11.5,color:"#c3d0c5"}}>
+                        <span style={{width:7,height:7,borderRadius:2,background:"#9c6b1f",display:"inline-block"}}/>Inverno <b className="dash-num" style={{color:"#f3faf5",fontWeight:600}}>{fmtN(totalInverno,1)} ha</b>
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div style={{...EYEBROW,marginBottom:12}}>Acesso rápido</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-              {NAV_CARDS.map(nc=>(
-                <button key={nc.id} onClick={()=>setAppView(nc.id)} className="dash-tile"
-                  style={{...CARD,padding:14,textAlign:"left",cursor:"pointer",display:"flex",flexDirection:"column",gap:10,alignItems:"flex-start",fontFamily:"inherit"}}>
-                  <span style={{width:34,height:34,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,background:hexA(nc.color,0.12)}}>{nc.icon}</span>
-                  <span style={{fontSize:12.5,fontWeight:600,lineHeight:1.3,color:"#16231c"}}>{nc.label}</span>
-                </button>
+            <div style={{maxWidth:1180,margin:"0 auto",padding:"16px"}}>
+              <div style={{...EYEBROW,marginBottom:12,marginTop:10}}>Área plantada por cultura</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:22}}>
+                {[{titulo:"Verão", culturas:culturasVerao, total:totalVerao, cores:CULTURE_COLORS_VERAO, swatch:"#1a5c2e"},
+                  {titulo:"Inverno", culturas:culturasInverno, total:totalInverno, cores:CULTURE_COLORS_INVERNO, swatch:"#9c6b1f"}].map(s=>(
+                  <div key={s.titulo} style={{...CARD,padding:"18px 20px 6px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:14,fontWeight:600,color:"#12180f"}}>
+                        <span style={{width:9,height:9,borderRadius:3,background:s.swatch,display:"inline-block"}}/>{s.titulo}
+                      </div>
+                      <div style={{fontSize:12,color:"#57654a"}}>total <b className="dash-num" style={{color:"#12180f",fontWeight:600}}>{fmtN(s.total,1)} ha</b></div>
+                    </div>
+                    {s.culturas.length===0 && <div style={{fontSize:12,color:"#bbb",paddingBottom:14}}>Nenhuma cultura ativa.</div>}
+                    {s.culturas.length>0 && (
+                      <div style={{height:10,borderRadius:5,overflow:"hidden",display:"flex",background:"#eef0e6",marginBottom:4}}>
+                        {s.culturas.map(c=>{
+                          const cc = s.cores[c.name]||{bg:"#546e7a"};
+                          const pct = s.total>0 ? (c.area/s.total)*100 : 0;
+                          return <span key={c.name} style={{height:"100%",width:`${pct}%`,background:cc.bg}}/>;
+                        })}
+                      </div>
+                    )}
+                    {s.culturas.map((c,i)=>{
+                      const cc = s.cores[c.name]||{bg:"#546e7a"};
+                      const pct = s.total>0 ? (c.area/s.total)*100 : 0;
+                      return (
+                        <div key={c.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderTop:i===0?"none":"1px solid #e0e4d6",fontSize:12.5}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{width:8,height:8,borderRadius:2,background:cc.bg,display:"inline-block",flexShrink:0}}/>
+                            <span style={{fontWeight:600,color:"#12180f"}}>{c.name}</span>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <span className="dash-num" style={{color:"#57654a"}}>{fmtN(c.area,1)} ha</span>
+                            <span className="dash-num" style={{fontSize:11,color:"#8b9a80",minWidth:34,textAlign:"right"}}>{Math.round(pct)}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{...EYEBROW,marginBottom:2}}>Acesso rápido</div>
+              {NAV_GROUPS.map(g=>(
+                <div key={g.group} style={{marginBottom:22}}>
+                  <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:14,marginBottom:9}}>
+                    <span style={{fontSize:11,fontWeight:600,letterSpacing:0.7,textTransform:"uppercase",color:"#8b9a80"}}>{g.group}</span>
+                    <span style={{flex:1,height:1,background:"#e0e4d6"}}/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
+                    {g.items.map(nc=>(
+                      <button key={nc.id} onClick={()=>setAppView(nc.id)} className="dash-tile"
+                        style={{...CARD,padding:"12px 13px",textAlign:"left",cursor:"pointer",display:"flex",alignItems:"center",gap:11,fontFamily:"inherit",color:"inherit"}}>
+                        <span style={{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:hexA(nc.color,0.12),color:nc.color,flexShrink:0}}><Icon name={nc.icon}/></span>
+                        <span style={{fontSize:12.5,fontWeight:600,lineHeight:1.25,color:"#12180f",flex:1}}>{nc.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
