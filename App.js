@@ -1378,7 +1378,7 @@ function App() {
   // ── Estoque de Insumos (defensivos, adubos, foliares e sementes) ──
   const [insumosEstoqueRecords, setInsumosEstoqueRecords] = useState(() => loadLS(KEY_ESTOQUE_INSUMOS, []));
   const [addingInsumoEstoque, setAddingInsumoEstoque] = useState(false);
-  const [newInsumoEstoque, setNewInsumoEstoque] = useState({categoria:GRUPOS_ESTOQUE_INSUMOS[0],nome:"",unidade:"L",quantidade:"",localizacao:"",vencimento:"",obs:""});
+  const [newInsumoEstoque, setNewInsumoEstoque] = useState({categoria:GRUPOS_ESTOQUE_INSUMOS[0],nome:"",unidade:"L",quantidade:"",vencimento:"",obs:""});
   const [insumoEstoqueSubmitError, setInsumoEstoqueSubmitError] = useState("");
   const [insumoEstoqueBusca, setInsumoEstoqueBusca] = useState("");
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
@@ -2231,8 +2231,8 @@ function App() {
     if (!newInsumoEstoque.nome.trim()) { setInsumoEstoqueSubmitError("Preencha o Nome do produto para adicionar."); return; }
     addRecord(setInsumosEstoqueRecords, { categoria:newInsumoEstoque.categoria, nome:newInsumoEstoque.nome.trim(),
       unidade:newInsumoEstoque.unidade, quantidade:parseFloat(newInsumoEstoque.quantidade)||0,
-      localizacao:newInsumoEstoque.localizacao.trim(), vencimento:newInsumoEstoque.vencimento.trim(), obs:newInsumoEstoque.obs.trim() });
-    setNewInsumoEstoque({categoria:newInsumoEstoque.categoria,nome:"",unidade:newInsumoEstoque.unidade,quantidade:"",localizacao:"",vencimento:"",obs:""});
+      vencimento:newInsumoEstoque.vencimento.trim(), obs:newInsumoEstoque.obs.trim() });
+    setNewInsumoEstoque({categoria:newInsumoEstoque.categoria,nome:"",unidade:newInsumoEstoque.unidade,quantidade:"",vencimento:"",obs:""});
     setInsumoEstoqueSubmitError("");
     setAddingInsumoEstoque(false);
   }
@@ -3741,9 +3741,7 @@ function App() {
         const hoje = new Date(); hoje.setHours(0,0,0,0);
         const itensFiltrados = insumosEstoqueRecords.filter(r =>
           (insumoEstoqueCatFiltro==="Todas" || r.categoria===insumoEstoqueCatFiltro) &&
-          (!busca ||
-            (r.nome||"").toLowerCase().includes(busca) ||
-            (r.localizacao||"").toLowerCase().includes(busca))
+          (!busca || (r.nome||"").toLowerCase().includes(busca))
         ).sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"") || (a.nome||"").localeCompare(b.nome||""));
 
         const totaisPorCategoria = GRUPOS_ESTOQUE_INSUMOS.map(cat => ({
@@ -3781,7 +3779,7 @@ function App() {
             </div>
 
             <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-              <input placeholder="🔎 Buscar por nome ou localização..." value={insumoEstoqueBusca} onChange={e=>setInsumoEstoqueBusca(e.target.value)}
+              <input placeholder="🔎 Buscar por nome..." value={insumoEstoqueBusca} onChange={e=>setInsumoEstoqueBusca(e.target.value)}
                 style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
               <button onClick={()=>{setAddingInsumoEstoque(a=>!a);setInsumoEstoqueSubmitError("");}}
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
@@ -3792,7 +3790,7 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {["Categoria","Produto","Unid.","Qtd.","Localização","Vencimento","Obs",""].map(h=>(
+                    {["Categoria","Produto","Unid.","Qtd.","Vencimento","Obs",""].map(h=>(
                       <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
@@ -3809,7 +3807,6 @@ function App() {
                         <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"nome",val)}/></td>
                         <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="unidade" value={r.unidade} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"unidade",val)}/></td>
                         <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,1)} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"quantidade",val,true)}/></td>
-                        <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="localizacao" value={r.localizacao} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"localizacao",val)}/></td>
                         <td style={{padding:"6px 9px",color:vencido?"#c62828":"#888",fontWeight:vencido?700:400}}>
                           <RecEditCell recKey={"insumoEstoque|"+r.id} field="vencimento" value={r.vencimento} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"vencimento",val)}/>
                           {vencido && " ⚠"}
@@ -3837,7 +3834,6 @@ function App() {
                         </select>
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newInsumoEstoque.quantidade} onChange={e=>setNewInsumoEstoque(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Ex: Galpão 2" value={newInsumoEstoque.localizacao} onChange={e=>setNewInsumoEstoque(p=>({...p,localizacao:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newInsumoEstoque.vencimento} onChange={e=>setNewInsumoEstoque(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newInsumoEstoque.obs} onChange={e=>setNewInsumoEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
@@ -3847,10 +3843,10 @@ function App() {
                     </tr>
                   )}
                   {addingInsumoEstoque && insumoEstoqueSubmitError && (
-                    <tr style={{background:"#fffde7"}}><td colSpan={8} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
+                    <tr style={{background:"#fffde7"}}><td colSpan={7} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
                   )}
                   {itensFiltrados.length===0 && !addingInsumoEstoque && (
-                    <tr><td colSpan={8} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
+                    <tr><td colSpan={7} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
                   )}
                 </tbody>
               </table>
