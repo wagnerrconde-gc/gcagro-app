@@ -68,7 +68,12 @@ const KEY_ESTOQUE_INSUMOS = "gcagro_estoque_insumos_v1";
 const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
 const COR_GRUPO_ESTOQUE = { Defensivos:"#c62828", Adubos:"#8d6e63", Foliares:"#2e7d32", Sementes:"#f9a825" };
 const UNIDADES_ESTOQUE_INSUMOS = ["L","KG","TN","sc","doses","un"];
-const KEY_RECOMENDACOES = "gcagro_recomendacoes_v1";
+const KEY_AREAS = "gcagro_areas_v1";
+const KEY_CICLOS = "gcagro_ciclos_v1";
+const KEY_NOTAS_FISCAIS = "gcagro_notas_fiscais_v1";
+const KEY_APLICACOES = "gcagro_aplicacoes_v1";
+const KEY_MOVIMENTACOES_ESTOQUE = "gcagro_movimentacoes_estoque_v1";
+const CULTURAS_CICLO = ["Soja","Milho","Feijão","Sorgo","Trigo","Algodão","Outra"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KML — cálculo de área (ha) de talhões enviados como arquivo .kml
@@ -1382,18 +1387,50 @@ function App() {
   const [insumoEstoqueSubmitError, setInsumoEstoqueSubmitError] = useState("");
   const [insumoEstoqueBusca, setInsumoEstoqueBusca] = useState("");
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
-  const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // "estoque" | "recomendacoes"
-
-  // ── Recomendações de Campo (dá baixa automática no Estoque de Insumos) ──
-  const [recomendacoesRecords, setRecomendacoesRecords] = useState(() => loadLS(KEY_RECOMENDACOES, []));
-  const [addingRecomendacao, setAddingRecomendacao] = useState(false);
-  const [novaRecomendacao, setNovaRecomendacao] = useState({data:"",talhao:"",areaHa:"",vazao:"",capacidadeTanque:"",itens:[],obs:""});
-  const [novoItemRec, setNovoItemRec] = useState({produtoId:"",dose:""});
-  const [recSubmitError, setRecSubmitError] = useState("");
-  const [recConfirmMsg, setRecConfirmMsg] = useState(null);
-  const [expandedRecId, setExpandedRecId] = useState(null);
+  const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // estoque | areas | safras | notas | aplicacoes | custos
   const [kmlMsg, setKmlMsg] = useState(null);
-  const [recFormTab, setRecFormTab] = useState("produtos"); // "produtos" | "calda"
+
+  // ── Ajuste manual de estoque (entrada/saída avulsa, pra acerto) ──
+  const [movimentacoesEstoqueRecords, setMovimentacoesEstoqueRecords] = useState(() => loadLS(KEY_MOVIMENTACOES_ESTOQUE, []));
+  const [addingMovimentacao, setAddingMovimentacao] = useState(false);
+  const [newMovimentacao, setNewMovimentacao] = useState({produtoId:"",tipo:"Entrada",quantidade:"",motivo:"",data:""});
+  const [movimentacaoSubmitError, setMovimentacaoSubmitError] = useState("");
+
+  // ── Áreas (talhões da fazenda — cadastro fixo, reaproveitado entre safras) ──
+  const [areasRecords, setAreasRecords] = useState(() => loadLS(KEY_AREAS, []));
+  const [addingArea, setAddingArea] = useState(false);
+  const [newArea, setNewArea] = useState({nome:"",areaHa:"",obs:""});
+  const [areaSubmitError, setAreaSubmitError] = useState("");
+  const [areaKmlMsg, setAreaKmlMsg] = useState(null);
+
+  // ── Safras de cultivo (ciclo: cultura + áreas vinculadas, ex: "Safra Soja 26/27") ──
+  // Não confundir com a safra global do app (safraAtiva) — essa é por talhão/cultura.
+  const [ciclosRecords, setCiclosRecords] = useState(() => loadLS(KEY_CICLOS, []));
+  const [addingCiclo, setAddingCiclo] = useState(false);
+  const [newCiclo, setNewCiclo] = useState({nome:"",cultura:CULTURAS_CICLO[0],areaIds:[],dataInicio:"",obs:""});
+  const [cicloSubmitError, setCicloSubmitError] = useState("");
+  const [expandedCicloId, setExpandedCicloId] = useState(null);
+
+  // ── Notas Fiscais (entrada de estoque com custo — atualiza o custo médio do produto) ──
+  const [notasFiscaisRecords, setNotasFiscaisRecords] = useState(() => loadLS(KEY_NOTAS_FISCAIS, []));
+  const [addingNota, setAddingNota] = useState(false);
+  const [newNota, setNewNota] = useState({fornecedor:"",numero:"",data:"",itens:[],obs:""});
+  const [novoItemNota, setNovoItemNota] = useState({produtoId:"",produtoNovoNome:"",categoria:GRUPOS_ESTOQUE_INSUMOS[0],unidade:"L",precoUnitario:"",quantidade:""});
+  const [notaSubmitError, setNotaSubmitError] = useState("");
+  const [expandedNotaId, setExpandedNotaId] = useState(null);
+
+  // ── Aplicações (planejado → realizado: dá baixa no estoque e calcula custo só ao realizar) ──
+  const [aplicacoesRecords, setAplicacoesRecords] = useState(() => loadLS(KEY_APLICACOES, []));
+  const [addingAplicacao, setAddingAplicacao] = useState(false);
+  const [novaAplicacao, setNovaAplicacao] = useState({cicloId:"",areaIds:[],dataPlanejada:"",vazao:"",capacidadeTanque:"",itens:[],obs:""});
+  const [novoItemAplicacao, setNovoItemAplicacao] = useState({produtoId:"",dose:""});
+  const [aplicacaoSubmitError, setAplicacaoSubmitError] = useState("");
+  const [aplicacaoConfirmMsg, setAplicacaoConfirmMsg] = useState(null);
+  const [expandedAplicacaoId, setExpandedAplicacaoId] = useState(null);
+  const [aplicacaoFormTab, setAplicacaoFormTab] = useState("produtos"); // "produtos" | "calda"
+  const [realizandoAplicacaoId, setRealizandoAplicacaoId] = useState(null);
+  const [dataRealizarInput, setDataRealizarInput] = useState("");
+  const [printAplicacaoId, setPrintAplicacaoId] = useState(null);
 
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
@@ -1447,7 +1484,11 @@ function App() {
   useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
   useFirebaseSync("gcagro/estoque_pecas", pecasRecords, setPecasRecords);
   useFirebaseSync("gcagro/estoque_insumos", insumosEstoqueRecords, setInsumosEstoqueRecords);
-  useFirebaseSync("gcagro/recomendacoes", recomendacoesRecords, setRecomendacoesRecords);
+  useFirebaseSync("gcagro/areas", areasRecords, setAreasRecords);
+  useFirebaseSync("gcagro/ciclos", ciclosRecords, setCiclosRecords);
+  useFirebaseSync("gcagro/notas_fiscais", notasFiscaisRecords, setNotasFiscaisRecords);
+  useFirebaseSync("gcagro/aplicacoes", aplicacoesRecords, setAplicacoesRecords);
+  useFirebaseSync("gcagro/movimentacoes_estoque", movimentacoesEstoqueRecords, setMovimentacoesEstoqueRecords);
   // Histórico de baixas: nó com push-ids (não um array simples), então lê direto em vez de useFirebaseSync.
   useEffect(() => {
     if (!fbDb) return;
@@ -1481,7 +1522,11 @@ function App() {
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
   useEffect(() => { saveLS(KEY_ESTOQUE_PECAS, pecasRecords); }, [pecasRecords]);
   useEffect(() => { saveLS(KEY_ESTOQUE_INSUMOS, insumosEstoqueRecords); }, [insumosEstoqueRecords]);
-  useEffect(() => { saveLS(KEY_RECOMENDACOES, recomendacoesRecords); }, [recomendacoesRecords]);
+  useEffect(() => { saveLS(KEY_AREAS, areasRecords); }, [areasRecords]);
+  useEffect(() => { saveLS(KEY_CICLOS, ciclosRecords); }, [ciclosRecords]);
+  useEffect(() => { saveLS(KEY_NOTAS_FISCAIS, notasFiscaisRecords); }, [notasFiscaisRecords]);
+  useEffect(() => { saveLS(KEY_APLICACOES, aplicacoesRecords); }, [aplicacoesRecords]);
+  useEffect(() => { saveLS(KEY_MOVIMENTACOES_ESTOQUE, movimentacoesEstoqueRecords); }, [movimentacoesEstoqueRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
   useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
@@ -2000,7 +2045,8 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
-      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords, recomendacoesRecords,
+      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords,
+      areasRecords, ciclosRecords, notasFiscaisRecords, aplicacoesRecords, movimentacoesEstoqueRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -2048,7 +2094,11 @@ function App() {
         if (b.chuvaRecords) setChuvaRecords(b.chuvaRecords);
         if (b.pecasRecords) setPecasRecords(b.pecasRecords);
         if (b.insumosEstoqueRecords) setInsumosEstoqueRecords(b.insumosEstoqueRecords);
-        if (b.recomendacoesRecords) setRecomendacoesRecords(b.recomendacoesRecords);
+        if (b.areasRecords) setAreasRecords(b.areasRecords);
+        if (b.ciclosRecords) setCiclosRecords(b.ciclosRecords);
+        if (b.notasFiscaisRecords) setNotasFiscaisRecords(b.notasFiscaisRecords);
+        if (b.aplicacoesRecords) setAplicacoesRecords(b.aplicacoesRecords);
+        if (b.movimentacoesEstoqueRecords) setMovimentacoesEstoqueRecords(b.movimentacoesEstoqueRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -2238,79 +2288,212 @@ function App() {
     setAddingInsumoEstoque(false);
   }
 
-  // ── Recomendações de Campo ──
-  function handleKmlUpload(e) {
+  // ── Áreas (talhões) ──
+  function handleAreaKmlUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
         const talhoes = parseKML(ev.target.result);
-        if (!talhoes.length) { setKmlMsg({ok:false, texto:"Não encontrei nenhuma área (polígono) nesse KML."}); return; }
-        const areaTotal = talhoes.reduce((s,t)=>s+t.areaHa,0);
-        const nomes = talhoes.map(t=>t.nome).join(" + ");
-        setNovaRecomendacao(p=>({...p, talhao: nomes, areaHa: areaTotal.toFixed(2)}));
-        setKmlMsg({ok:true, texto:`✓ ${talhoes.length} área(s) lida(s): ${fmtN(areaTotal,1)} ha no total.`});
+        if (!talhoes.length) { setAreaKmlMsg({ok:false, texto:"Não encontrei nenhuma área (polígono) nesse KML."}); return; }
+        if (talhoes.length===1) {
+          setNewArea(p=>({...p, nome: talhoes[0].nome, areaHa: talhoes[0].areaHa.toFixed(2)}));
+          setAreaKmlMsg({ok:true, texto:`✓ Área lida: ${fmtN(talhoes[0].areaHa,1)} ha.`});
+        } else {
+          talhoes.forEach(t => addRecord(setAreasRecords, { nome:t.nome, areaHa: Number(t.areaHa.toFixed(2)), obs:"" }));
+          setAreaKmlMsg({ok:true, texto:`✓ ${talhoes.length} áreas importadas direto do KML: ${talhoes.map(t=>t.nome).join(", ")}.`});
+        }
       } catch {
-        setKmlMsg({ok:false, texto:"Não consegui ler esse arquivo KML."});
+        setAreaKmlMsg({ok:false, texto:"Não consegui ler esse arquivo KML."});
       }
     };
     reader.readAsText(file);
     e.target.value = "";
   }
-  function addItemRec() {
-    if (!novoItemRec.produtoId || !novoItemRec.dose) { setRecSubmitError("Selecione o produto e a dose por hectare."); return; }
-    const produto = insumosEstoqueRecords.find(p=>p.id===novoItemRec.produtoId);
-    if (!produto) return;
-    setNovaRecomendacao(p=>({...p, itens:[...p.itens, {
-      produtoId: produto.id, nome: produto.nome, categoria: produto.categoria, unidade: produto.unidade,
-      dose: parseFloat(novoItemRec.dose)||0
+  function submitArea() {
+    if (!newArea.nome.trim()) { setAreaSubmitError("Preencha o nome da área."); return; }
+    const areaHa = parseFloat(newArea.areaHa)||0;
+    if (areaHa<=0) { setAreaSubmitError("Informe a área em hectares (envie o KML ou digite manualmente)."); return; }
+    addRecord(setAreasRecords, { nome:newArea.nome.trim(), areaHa, obs:newArea.obs.trim() });
+    setNewArea({nome:"",areaHa:"",obs:""});
+    setAreaSubmitError("");
+    setAddingArea(false);
+    setAreaKmlMsg(null);
+  }
+
+  // ── Safras de cultivo (ciclo: cultura + áreas vinculadas) ──
+  function toggleAreaCiclo(areaId) {
+    setNewCiclo(p=>({...p, areaIds: p.areaIds.includes(areaId) ? p.areaIds.filter(id=>id!==areaId) : [...p.areaIds, areaId]}));
+  }
+  function submitCiclo() {
+    if (!newCiclo.nome.trim()) { setCicloSubmitError("Preencha o nome da safra (ex: Safra Soja 26/27)."); return; }
+    if (!newCiclo.areaIds.length) { setCicloSubmitError("Selecione ao menos uma área."); return; }
+    addRecord(setCiclosRecords, { nome:newCiclo.nome.trim(), cultura:newCiclo.cultura, areaIds:newCiclo.areaIds,
+      dataInicio:newCiclo.dataInicio.trim(), status:"Ativa", obs:newCiclo.obs.trim() });
+    setNewCiclo({nome:"",cultura:CULTURAS_CICLO[0],areaIds:[],dataInicio:"",obs:""});
+    setCicloSubmitError("");
+    setAddingCiclo(false);
+  }
+  function encerrarCiclo(id) { updateRecordField(setCiclosRecords, id, "status", "Encerrada"); }
+  function reabrirCiclo(id) { updateRecordField(setCiclosRecords, id, "status", "Ativa"); }
+
+  // ── Notas Fiscais (entrada de estoque + custo médio ponderado) ──
+  function addItemNota() {
+    const qtd = parseFloat(novoItemNota.quantidade)||0;
+    const preco = parseFloat(novoItemNota.precoUnitario)||0;
+    if (!qtd || !preco) { setNotaSubmitError("Preencha a quantidade e o preço unitário do produto."); return; }
+    let nome, categoria, unidade, produtoIdGerado = null;
+    const produtoId = novoItemNota.produtoId || null;
+    if (produtoId) {
+      const produto = insumosEstoqueRecords.find(p=>p.id===produtoId);
+      if (!produto) return;
+      nome = produto.nome; categoria = produto.categoria; unidade = produto.unidade;
+    } else {
+      if (!novoItemNota.produtoNovoNome.trim()) { setNotaSubmitError("Selecione um produto já cadastrado ou digite o nome de um novo."); return; }
+      nome = novoItemNota.produtoNovoNome.trim();
+      categoria = novoItemNota.categoria;
+      unidade = novoItemNota.unidade;
+      produtoIdGerado = newId();
+    }
+    setNewNota(p=>({...p, itens:[...p.itens, {
+      produtoId, produtoIdGerado, nome, categoria, unidade,
+      precoUnitario: preco, quantidade: qtd, valorTotal: preco*qtd
     }]}));
-    setNovoItemRec({produtoId:"",dose:""});
-    setRecSubmitError("");
+    setNovoItemNota({produtoId:"",produtoNovoNome:"",categoria:GRUPOS_ESTOQUE_INSUMOS[0],unidade:"L",precoUnitario:"",quantidade:""});
+    setNotaSubmitError("");
   }
-  function removeItemRec(idx) {
-    setNovaRecomendacao(p=>({...p, itens: p.itens.filter((_,i)=>i!==idx)}));
+  function removeItemNota(idx) {
+    setNewNota(p=>({...p, itens: p.itens.filter((_,i)=>i!==idx)}));
   }
-  function confirmarRecomendacao() {
-    const areaHa = parseFloat(novaRecomendacao.areaHa)||0;
-    if (areaHa<=0) { setRecSubmitError("Informe a área em hectares (envie o KML ou digite manualmente)."); return; }
-    if (!novaRecomendacao.itens.length) { setRecSubmitError("Adicione ao menos um produto à recomendação."); return; }
-
-    const vazao = parseFloat(novaRecomendacao.vazao)||0;
-    const capacidadeTanque = parseFloat(novaRecomendacao.capacidadeTanque)||0;
-    const areaPorTanqueHa = (vazao>0 && capacidadeTanque>0) ? capacidadeTanque/vazao : 0;
-
-    const itensProcessados = novaRecomendacao.itens.map(it => {
-      const produto = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
-      const qtdTotal = it.dose*areaHa;
-      const qtdPorTanque = areaPorTanqueHa>0 ? it.dose*areaPorTanqueHa : null;
-      const estoqueAntes = produto ? (produto.quantidade||0) : 0;
-      const estoqueDepois = estoqueAntes - qtdTotal;
-      const faltante = Math.max(0, qtdTotal-estoqueAntes);
-      return { produtoId: it.produtoId, nome: it.nome, categoria: it.categoria, unidade: it.unidade,
-        dose: it.dose, qtdTotal, qtdPorTanque, estoqueAntes, estoqueDepois, faltante };
+  function submitNota() {
+    if (!newNota.itens.length) { setNotaSubmitError("Adicione ao menos um produto à nota."); return; }
+    const valorTotalNota = newNota.itens.reduce((s,it)=>s+it.valorTotal,0);
+    setInsumosEstoqueRecords(recs => {
+      let updated = recs.map(r=>({...r}));
+      newNota.itens.forEach(it => {
+        if (it.produtoId) {
+          updated = updated.map(r => {
+            if (r.id!==it.produtoId) return r;
+            const estoqueAntes = r.quantidade||0;
+            const custoAntes = r.custoMedio||0;
+            const novaQtd = estoqueAntes + it.quantidade;
+            const novoCusto = novaQtd>0 ? (estoqueAntes*custoAntes + it.quantidade*it.precoUnitario)/novaQtd : it.precoUnitario;
+            return {...r, quantidade: novaQtd, custoMedio: novoCusto};
+          });
+        } else {
+          updated.push({ id: it.produtoIdGerado, categoria: it.categoria, nome: it.nome, unidade: it.unidade,
+            quantidade: it.quantidade, custoMedio: it.precoUnitario, vencimento:"", obs:"" });
+        }
+      });
+      return updated;
     });
+    addRecord(setNotasFiscaisRecords, {
+      fornecedor: newNota.fornecedor.trim(), numero: newNota.numero.trim(),
+      data: newNota.data.trim()||new Date().toLocaleDateString("pt-BR"),
+      itens: newNota.itens, valorTotalNota, obs: newNota.obs.trim()
+    });
+    setNewNota({fornecedor:"",numero:"",data:"",itens:[],obs:""});
+    setNotaSubmitError("");
+    setAddingNota(false);
+  }
 
+  // ── Ajuste manual de estoque ──
+  function submitMovimentacao() {
+    const qtd = parseFloat(newMovimentacao.quantidade)||0;
+    if (!newMovimentacao.produtoId || !qtd) { setMovimentacaoSubmitError("Selecione o produto e informe a quantidade."); return; }
+    const produto = insumosEstoqueRecords.find(p=>p.id===newMovimentacao.produtoId);
+    if (!produto) return;
+    const delta = newMovimentacao.tipo==="Entrada" ? qtd : -qtd;
+    const estoqueAntes = produto.quantidade||0;
+    const estoqueDepois = estoqueAntes+delta;
+    setInsumosEstoqueRecords(recs => recs.map(r=>r.id===produto.id?{...r,quantidade:estoqueDepois}:r));
+    addRecord(setMovimentacoesEstoqueRecords, {
+      produtoId: produto.id, nome: produto.nome, categoria: produto.categoria, unidade: produto.unidade,
+      tipo: newMovimentacao.tipo, quantidade: qtd, estoqueAntes, estoqueDepois,
+      motivo: newMovimentacao.motivo.trim(), data: newMovimentacao.data.trim()||new Date().toLocaleDateString("pt-BR")
+    });
+    setNewMovimentacao({produtoId:"",tipo:"Entrada",quantidade:"",motivo:"",data:""});
+    setMovimentacaoSubmitError("");
+    setAddingMovimentacao(false);
+  }
+
+  // ── Aplicações (Planejado → Realizado: baixa e custo só ao realizar) ──
+  function toggleAreaAplicacao(areaId) {
+    setNovaAplicacao(p=>({...p, areaIds: p.areaIds.includes(areaId) ? p.areaIds.filter(id=>id!==areaId) : [...p.areaIds, areaId]}));
+  }
+  function addItemAplicacao() {
+    if (!novoItemAplicacao.produtoId || !novoItemAplicacao.dose) { setAplicacaoSubmitError("Selecione o produto e a dose por hectare."); return; }
+    const produto = insumosEstoqueRecords.find(p=>p.id===novoItemAplicacao.produtoId);
+    if (!produto) return;
+    setNovaAplicacao(p=>({...p, itens:[...p.itens, {
+      produtoId: produto.id, nome: produto.nome, categoria: produto.categoria, unidade: produto.unidade,
+      dose: parseFloat(novoItemAplicacao.dose)||0
+    }]}));
+    setNovoItemAplicacao({produtoId:"",dose:""});
+    setAplicacaoSubmitError("");
+  }
+  function removeItemAplicacao(idx) {
+    setNovaAplicacao(p=>({...p, itens: p.itens.filter((_,i)=>i!==idx)}));
+  }
+  function resetFormAplicacao() {
+    setNovaAplicacao({cicloId:"",areaIds:[],dataPlanejada:"",vazao:"",capacidadeTanque:"",itens:[],obs:""});
+    setNovoItemAplicacao({produtoId:"",dose:""});
+    setAplicacaoSubmitError("");
+    setAddingAplicacao(false);
+    setAplicacaoFormTab("produtos");
+  }
+  function salvarAplicacaoPlanejada() {
+    if (!novaAplicacao.areaIds.length) { setAplicacaoSubmitError("Selecione ao menos uma área."); return; }
+    if (!novaAplicacao.itens.length) { setAplicacaoSubmitError("Adicione ao menos um produto."); return; }
+    const areasSelecionadas = areasRecords.filter(a=>novaAplicacao.areaIds.includes(a.id));
+    const areaTotalHa = areasSelecionadas.reduce((s,a)=>s+(a.areaHa||0),0);
+    const vazao = parseFloat(novaAplicacao.vazao)||0;
+    const capacidadeTanque = parseFloat(novaAplicacao.capacidadeTanque)||0;
+    const areaPorTanqueHa = (vazao>0 && capacidadeTanque>0) ? capacidadeTanque/vazao : 0;
+    const itensSalvos = novaAplicacao.itens.map(it => ({
+      produtoId: it.produtoId, nome: it.nome, categoria: it.categoria, unidade: it.unidade,
+      dose: it.dose, qtdTotal: it.dose*areaTotalHa, qtdPorTanque: areaPorTanqueHa>0 ? it.dose*areaPorTanqueHa : null
+    }));
+    addRecord(setAplicacoesRecords, {
+      cicloId: novaAplicacao.cicloId||null,
+      areaIds: novaAplicacao.areaIds, areaNomes: areasSelecionadas.map(a=>a.nome), areaTotalHa,
+      dataPlanejada: novaAplicacao.dataPlanejada.trim()||new Date().toLocaleDateString("pt-BR"), dataRealizada: null,
+      status: "Planejado", vazao, capacidadeTanque, areaPorTanqueHa,
+      itens: itensSalvos, obs: novaAplicacao.obs.trim()
+    });
+    resetFormAplicacao();
+  }
+  function iniciarRealizarAplicacao(id) {
+    setRealizandoAplicacaoId(id);
+    setDataRealizarInput(new Date().toLocaleDateString("pt-BR"));
+  }
+  function confirmarRealizarAplicacao() {
+    const aplicacao = aplicacoesRecords.find(a=>a.id===realizandoAplicacaoId);
+    if (!aplicacao) { setRealizandoAplicacaoId(null); return; }
+    const itensProcessados = aplicacao.itens.map(it => {
+      const produto = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
+      const estoqueAntes = produto ? (produto.quantidade||0) : 0;
+      const custoUnitario = produto ? (produto.custoMedio||0) : 0;
+      const estoqueDepois = estoqueAntes - it.qtdTotal;
+      const faltante = Math.max(0, it.qtdTotal-estoqueAntes);
+      const custoTotal = it.qtdTotal*custoUnitario;
+      return { ...it, estoqueAntes, estoqueDepois, faltante, custoUnitario, custoTotal };
+    });
     setInsumosEstoqueRecords(recs => recs.map(r => {
       const item = itensProcessados.find(it=>it.produtoId===r.id);
       return item ? {...r, quantidade: item.estoqueDepois} : r;
     }));
-
-    addRecord(setRecomendacoesRecords, {
-      data: novaRecomendacao.data.trim() || new Date().toLocaleDateString("pt-BR"),
-      talhao: novaRecomendacao.talhao.trim() || "Área sem nome",
-      areaHa, vazao, capacidadeTanque, areaPorTanqueHa,
-      itens: itensProcessados, obs: novaRecomendacao.obs.trim()
-    });
-
-    setRecConfirmMsg({ itens: itensProcessados });
-    setNovaRecomendacao({ data:"", talhao:"", areaHa:"", vazao:"", capacidadeTanque:"", itens:[], obs:"" });
-    setNovoItemRec({ produtoId:"", dose:"" });
-    setKmlMsg(null);
-    setRecSubmitError("");
-    setAddingRecomendacao(false);
-    setRecFormTab("produtos");
+    setAplicacoesRecords(recs => recs.map(r => r.id===aplicacao.id
+      ? {...r, status:"Realizado", dataRealizada: dataRealizarInput.trim()||new Date().toLocaleDateString("pt-BR"), itens: itensProcessados}
+      : r));
+    setAplicacaoConfirmMsg({ itens: itensProcessados });
+    setRealizandoAplicacaoId(null);
+    setDataRealizarInput("");
+  }
+  function imprimirAplicacao(id) {
+    setPrintAplicacaoId(id);
+    setTimeout(()=>window.print(), 60);
   }
 
   function submitCompra() {
@@ -2477,7 +2660,8 @@ function App() {
   );
 
   return (
-    <div style={{minHeight:"100vh",fontFamily:"system-ui,sans-serif"}}>
+    <>
+    <div className={printAplicacaoId?"print-hide":undefined} style={{minHeight:"100vh",fontFamily:"system-ui,sans-serif"}}>
       {/* Foto de fundo fixa, com um véu semi-transparente por cima (cor muda por seção) para manter a leitura */}
       <div style={{position:"fixed",inset:0,zIndex:-1,
         backgroundImage:"url('images/bg-soja.jpg')",backgroundSize:"cover",backgroundPosition:"center"}}/>
@@ -3756,21 +3940,30 @@ function App() {
           categoria: cat, count: insumosEstoqueRecords.filter(r=>r.categoria===cat).length
         }));
 
+        const SUBTABS_INSUMOS = [
+          ["estoque","📦 Estoque"], ["areas","🗺️ Áreas"], ["safras","🌱 Safras"],
+          ["notas","🧾 Notas Fiscais"], ["aplicacoes","🚜 Aplicações"], ["custos","💰 Custos"],
+        ];
+        const cardSt = {background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
+        const lblSt = {fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1};
+        const inpSt = {width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"};
+        const formCardSt = {background:"#fff",borderRadius:10,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
+
         return (
           <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
-            <div style={{display:"flex",gap:6,marginBottom:16}}>
-              <button onClick={()=>setInsumoSubTab("estoque")}
-                style={{padding:"8px 16px",background:insumoSubTab==="estoque"?"#00838f":"#fff",border:`1px solid ${insumoSubTab==="estoque"?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab==="estoque"?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab==="estoque"?700:400,cursor:"pointer"}}>📦 Estoque</button>
-              <button onClick={()=>setInsumoSubTab("recomendacoes")}
-                style={{padding:"8px 16px",background:insumoSubTab==="recomendacoes"?"#00838f":"#fff",border:`1px solid ${insumoSubTab==="recomendacoes"?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab==="recomendacoes"?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab==="recomendacoes"?700:400,cursor:"pointer"}}>🌾 Recomendações de Campo</button>
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+              {SUBTABS_INSUMOS.map(([id,label])=>(
+                <button key={id} onClick={()=>setInsumoSubTab(id)}
+                  style={{padding:"8px 16px",background:insumoSubTab===id?"#00838f":"#fff",border:`1px solid ${insumoSubTab===id?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab===id?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab===id?700:400,cursor:"pointer"}}>{label}</button>
+              ))}
             </div>
 
+            {/* ══ ESTOQUE ══ */}
             {insumoSubTab==="estoque" && (<>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:14}}>
               {totaisPorCategoria.map(t=>(
                 <div key={t.categoria} onClick={()=>setInsumoEstoqueCatFiltro(t.categoria)}
-                  style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",
-                    border:insumoEstoqueCatFiltro===t.categoria?`2px solid ${COR_GRUPO_ESTOQUE[t.categoria]}`:"2px solid transparent"}}>
+                  style={{...cardSt,cursor:"pointer",border:insumoEstoqueCatFiltro===t.categoria?`2px solid ${COR_GRUPO_ESTOQUE[t.categoria]}`:"2px solid transparent"}}>
                   <div style={{fontSize:11,color:"#888"}}>{t.categoria}</div>
                   <div style={{fontSize:18,fontWeight:800,color:COR_GRUPO_ESTOQUE[t.categoria]}}>{t.count}</div>
                 </div>
@@ -3791,15 +3984,51 @@ function App() {
                 style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
               <button onClick={()=>{setAddingInsumoEstoque(a=>!a);setInsumoEstoqueSubmitError("");}}
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
+              <button onClick={()=>{setAddingMovimentacao(a=>!a);setMovimentacaoSubmitError("");}}
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #607d8b",color:"#607d8b",borderRadius:6,fontSize:11,cursor:"pointer"}}>⚖️ Ajuste manual</button>
             </div>
+
+            {addingMovimentacao && (
+              <div style={formCardSt}>
+                <div style={{fontWeight:700,fontSize:12,color:"#607d8b",marginBottom:10}}>⚖️ Ajuste manual de estoque (entrada/saída avulsa)</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+                  <div style={{flex:"2 1 220px"}}>
+                    <label style={lblSt}>Produto</label>
+                    <select value={newMovimentacao.produtoId} onChange={e=>setNewMovimentacao(p=>({...p,produtoId:e.target.value}))} style={inpSt}>
+                      <option value="">Selecione...</option>
+                      {insumosEstoqueRecords.slice().sort((a,b)=>(a.nome||"").localeCompare(b.nome||"")).map(p=>(
+                        <option key={p.id} value={p.id}>{p.nome} ({fmtN(p.quantidade,1)} {p.unidade})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 110px"}}>
+                    <label style={lblSt}>Tipo</label>
+                    <select value={newMovimentacao.tipo} onChange={e=>setNewMovimentacao(p=>({...p,tipo:e.target.value}))} style={inpSt}>
+                      <option value="Entrada">Entrada</option>
+                      <option value="Saída">Saída</option>
+                    </select>
+                  </div>
+                  <div style={{flex:"1 1 110px"}}>
+                    <label style={lblSt}>Quantidade</label>
+                    <input type="number" step="any" value={newMovimentacao.quantidade} onChange={e=>setNewMovimentacao(p=>({...p,quantidade:e.target.value}))} style={inpSt}/>
+                  </div>
+                  <div style={{flex:"2 1 200px"}}>
+                    <label style={lblSt}>Motivo</label>
+                    <input placeholder="Ex: acerto de contagem" value={newMovimentacao.motivo} onChange={e=>setNewMovimentacao(p=>({...p,motivo:e.target.value}))} style={inpSt}/>
+                  </div>
+                  <button onClick={submitMovimentacao} style={{padding:"9px 18px",background:"#607d8b",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+                </div>
+                {movimentacaoSubmitError && <div style={{marginTop:8,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {movimentacaoSubmitError}</div>}
+              </div>
+            )}
 
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
               <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {["Categoria","Produto","Unid.","Qtd.","Vencimento","Obs",""].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    {["Categoria","Produto","Unid.","Qtd.","Custo méd.","Vencimento","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."||h==="Custo méd."?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3815,6 +4044,7 @@ function App() {
                         <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"nome",val)}/></td>
                         <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="unidade" value={r.unidade} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"unidade",val)}/></td>
                         <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,1)} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"quantidade",val,true)}/></td>
+                        <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{r.custoMedio ? fmt(r.custoMedio) : "—"}</td>
                         <td style={{padding:"6px 9px",color:vencido?"#c62828":"#888",fontWeight:vencido?700:400}}>
                           <RecEditCell recKey={"insumoEstoque|"+r.id} field="vencimento" value={r.vencimento} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"vencimento",val)}/>
                           {vencido && " ⚠"}
@@ -3842,6 +4072,7 @@ function App() {
                         </select>
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newInsumoEstoque.quantidade} onChange={e=>setNewInsumoEstoque(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px",color:"#bbb",fontSize:10,textAlign:"center"}}>—</td>
                       <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newInsumoEstoque.vencimento} onChange={e=>setNewInsumoEstoque(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newInsumoEstoque.obs} onChange={e=>setNewInsumoEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
@@ -3851,84 +4082,493 @@ function App() {
                     </tr>
                   )}
                   {addingInsumoEstoque && insumoEstoqueSubmitError && (
-                    <tr style={{background:"#fffde7"}}><td colSpan={7} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
+                    <tr style={{background:"#fffde7"}}><td colSpan={8} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
                   )}
                   {itensFiltrados.length===0 && !addingInsumoEstoque && (
-                    <tr><td colSpan={7} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
+                    <tr><td colSpan={8} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
                   )}
                 </tbody>
               </table>
               </div>
             </div>
+
+            {movimentacoesEstoqueRecords.length>0 && (
+              <div style={{marginTop:20}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#607d8b",marginBottom:10}}>⚖️ Últimos ajustes manuais</div>
+                <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                  <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{background:"#eceff1"}}>
+                        {["Data","Produto","Tipo","Qtd.","Antes","Depois","Motivo"].map(h=>(
+                          <th key={h} style={{padding:"6px 8px",textAlign:h==="Qtd."||h==="Antes"||h==="Depois"?"right":"left",color:"#607d8b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...movimentacoesEstoqueRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||"")).slice(0,20).map(m=>(
+                        <tr key={m.id}>
+                          <td style={{padding:"6px 8px",color:"#888",fontSize:11,whiteSpace:"nowrap"}}>{m.data}</td>
+                          <td style={{padding:"6px 8px",fontWeight:600}}>{m.nome}</td>
+                          <td style={{padding:"6px 8px",color:m.tipo==="Entrada"?"#2e7d32":"#c62828"}}>{m.tipo}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right"}}>{m.tipo==="Entrada"?"+":"-"}{fmtN(m.quantidade,1)} {m.unidade}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(m.estoqueAntes,1)}</td>
+                          <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(m.estoqueDepois,1)}</td>
+                          <td style={{padding:"6px 8px",color:"#aaa",fontSize:11}}>{m.motivo||"—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              </div>
+            )}
             </>)}
 
-            {insumoSubTab==="recomendacoes" && (()=>{
-              const recsOrdenadas = [...recomendacoesRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||""));
-              const areaHaAtual = parseFloat(novaRecomendacao.areaHa)||0;
+            {/* ══ ÁREAS ══ */}
+            {insumoSubTab==="areas" && (()=>{
+              const areasOrdenadas = [...areasRecords].sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
+              const areaTotalCadastrada = areasRecords.reduce((s,a)=>s+(a.areaHa||0),0);
               return (
                 <div>
-                  {recConfirmMsg && (
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Áreas cadastradas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{areasRecords.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Área total</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmtN(areaTotalCadastrada,1)} ha</div></div>
+                  </div>
+
+                  <div style={{display:"flex",marginBottom:14}}>
+                    <button onClick={()=>{setAddingArea(a=>!a);setAreaSubmitError("");setAreaKmlMsg(null);}}
+                      style={{padding:"8px 16px",background:addingArea?"#eee":"#00838f",border:"none",borderRadius:6,color:addingArea?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {addingArea ? "✕ Cancelar" : "+ Nova área"}
+                    </button>
+                  </div>
+
+                  {addingArea && (
+                    <div style={formCardSt}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🗺️ Nova área (talhão)</div>
+                      <label style={lblSt}>Arquivo KML (opcional — se tiver mais de um talhão, importa todos de uma vez)</label>
+                      <div style={{margin:"6px 0 4px"}}>
+                        <input type="file" accept=".kml" onChange={handleAreaKmlUpload}/>
+                      </div>
+                      {areaKmlMsg && <div style={{fontSize:12,marginBottom:10,color:areaKmlMsg.ok?"#2e7d32":"#c62828"}}>{areaKmlMsg.texto}</div>}
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <div style={{flex:"2 1 220px"}}>
+                          <label style={lblSt}>Nome da área</label>
+                          <input placeholder="Ex: Lote 11" value={newArea.nome} onChange={e=>setNewArea(p=>({...p,nome:e.target.value}))} style={inpSt}/>
+                        </div>
+                        <div style={{flex:"1 1 120px"}}>
+                          <label style={lblSt}>Área (ha)</label>
+                          <input type="number" step="any" value={newArea.areaHa} onChange={e=>setNewArea(p=>({...p,areaHa:e.target.value}))} style={inpSt}/>
+                        </div>
+                      </div>
+                      <div style={{marginTop:12}}>
+                        <label style={lblSt}>Observação</label>
+                        <input value={newArea.obs} onChange={e=>setNewArea(p=>({...p,obs:e.target.value}))} style={inpSt}/>
+                      </div>
+                      {areaSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {areaSubmitError}</div>}
+                      <div style={{display:"flex",gap:10,marginTop:18}}>
+                        <button onClick={()=>{setAddingArea(false);setAreaSubmitError("");setAreaKmlMsg(null);}}
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                        <button onClick={submitArea}
+                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar área</button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                    <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#e0f2f1"}}>
+                          {["Área","Ha","Obs",""].map(h=>(
+                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Ha"?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {areasOrdenadas.map((a,i)=>(
+                          <tr key={a.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                            <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"area|"+a.id} field="nome" value={a.nome} onCommit={val=>updateRecordField(setAreasRecords,a.id,"nome",val)}/></td>
+                            <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"area|"+a.id} field="areaHa" type="number" align="right" value={fmtN(a.areaHa,2)} onCommit={val=>updateRecordField(setAreasRecords,a.id,"areaHa",val,true)}/></td>
+                            <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"area|"+a.id} field="obs" value={a.obs} onCommit={val=>updateRecordField(setAreasRecords,a.id,"obs",val)}/></td>
+                            <td style={{padding:"6px 4px",textAlign:"center"}}>
+                              <button onClick={()=>{if(window.confirm("Remover esta área? Safras e aplicações que já usam ela mantêm só o nome salvo."))deleteRecord(setAreasRecords,a.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                        {areasOrdenadas.length===0 && (
+                          <tr><td colSpan={4} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma área cadastrada ainda.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ══ SAFRAS (ciclos de cultivo) ══ */}
+            {insumoSubTab==="safras" && (()=>{
+              const ciclosOrdenados = [...ciclosRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+              return (
+                <div>
+                  <div style={{display:"flex",marginBottom:14}}>
+                    <button onClick={()=>{setAddingCiclo(a=>!a);setCicloSubmitError("");}}
+                      style={{padding:"8px 16px",background:addingCiclo?"#eee":"#00838f",border:"none",borderRadius:6,color:addingCiclo?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {addingCiclo ? "✕ Cancelar" : "+ Nova safra"}
+                    </button>
+                  </div>
+
+                  {addingCiclo && (
+                    <div style={formCardSt}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🌱 Nova safra</div>
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <div style={{flex:"2 1 220px"}}>
+                          <label style={lblSt}>Nome da safra</label>
+                          <input placeholder="Ex: Safra Soja 26/27" value={newCiclo.nome} onChange={e=>setNewCiclo(p=>({...p,nome:e.target.value}))} style={inpSt}/>
+                        </div>
+                        <div style={{flex:"1 1 160px"}}>
+                          <label style={lblSt}>Cultura</label>
+                          <select value={newCiclo.cultura} onChange={e=>setNewCiclo(p=>({...p,cultura:e.target.value}))} style={inpSt}>
+                            {CULTURAS_CICLO.map(c=><option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div style={{flex:"1 1 140px"}}>
+                          <label style={lblSt}>Início</label>
+                          <input placeholder="dd/mm/aaaa" value={newCiclo.dataInicio} onChange={e=>setNewCiclo(p=>({...p,dataInicio:e.target.value}))} style={inpSt}/>
+                        </div>
+                      </div>
+
+                      <div style={{marginTop:14}}>
+                        <label style={lblSt}>Áreas desta safra</label>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                          {areasRecords.map(a=>{
+                            const sel = newCiclo.areaIds.includes(a.id);
+                            return (
+                              <button key={a.id} onClick={()=>toggleAreaCiclo(a.id)}
+                                style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${sel?"#2e7d32":"#ddd"}`,background:sel?"#2e7d32":"#fff",color:sel?"#fff":"#555",fontSize:12,cursor:"pointer"}}>
+                                {sel?"✓ ":""}{a.nome} ({fmtN(a.areaHa,1)} ha)
+                              </button>
+                            );
+                          })}
+                          {areasRecords.length===0 && <div style={{color:"#bbb",fontSize:12}}>Cadastre áreas primeiro, na aba "Áreas".</div>}
+                        </div>
+                      </div>
+
+                      <div style={{marginTop:14}}>
+                        <label style={lblSt}>Observação</label>
+                        <input value={newCiclo.obs} onChange={e=>setNewCiclo(p=>({...p,obs:e.target.value}))} style={inpSt}/>
+                      </div>
+
+                      {cicloSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {cicloSubmitError}</div>}
+
+                      <div style={{display:"flex",gap:10,marginTop:18}}>
+                        <button onClick={()=>{setAddingCiclo(false);setCicloSubmitError("");}}
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                        <button onClick={submitCiclo}
+                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar safra</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {ciclosOrdenados.length===0 && (
+                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma safra cadastrada ainda.</div>
+                  )}
+                  {ciclosOrdenados.map(c=>{
+                    const areasDoCiclo = areasRecords.filter(a=>(c.areaIds||[]).includes(a.id));
+                    const areaTotalCiclo = areasDoCiclo.reduce((s,a)=>s+(a.areaHa||0),0);
+                    const aplicacoesDoCiclo = aplicacoesRecords.filter(ap=>ap.cicloId===c.id);
+                    const custoTotalCiclo = aplicacoesDoCiclo.filter(ap=>ap.status==="Realizado")
+                      .reduce((s,ap)=>s+(ap.itens||[]).reduce((s2,it)=>s2+(it.custoTotal||0),0),0);
+                    const aberto = expandedCicloId===c.id;
+                    return (
+                      <div key={c.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                        <div onClick={()=>setExpandedCicloId(id=>id===c.id?null:c.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberto?"▼":"▶"} {c.nome}</div>
+                            <div style={{fontSize:11,color:"#888",marginTop:2}}>{c.cultura} · {fmtN(areaTotalCiclo,1)} ha em {areasDoCiclo.length} área(s) · {aplicacoesDoCiclo.length} aplicação(ões)</div>
+                          </div>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            {custoTotalCiclo>0 && <span style={{fontSize:12,fontWeight:700,color:"#00695c"}}>{fmt(custoTotalCiclo)}</span>}
+                            <span style={{padding:"3px 10px",borderRadius:12,fontSize:10,fontWeight:700,background:c.status==="Ativa"?"#e8f5e9":"#eee",color:c.status==="Ativa"?"#2e7d32":"#888"}}>{c.status}</span>
+                          </div>
+                        </div>
+                        {aberto && (
+                          <div style={{padding:"0 16px 14px"}}>
+                            <div style={{fontSize:12,color:"#888",marginBottom:8}}>Áreas: {areasDoCiclo.map(a=>a.nome).join(", ")||"—"}</div>
+                            {c.obs && <div style={{fontSize:12,color:"#888",fontStyle:"italic",marginBottom:8}}>Obs: {c.obs}</div>}
+                            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                              {c.status==="Ativa"
+                                ? <button onClick={()=>encerrarCiclo(c.id)} style={{padding:"6px 12px",background:"none",border:"1px solid #bbb",color:"#666",borderRadius:6,fontSize:11,cursor:"pointer"}}>Encerrar safra</button>
+                                : <button onClick={()=>reabrirCiclo(c.id)} style={{padding:"6px 12px",background:"none",border:"1px solid #2e7d32",color:"#2e7d32",borderRadius:6,fontSize:11,cursor:"pointer"}}>Reabrir safra</button>}
+                              <button onClick={()=>{if(window.confirm("Remover esta safra? As aplicações vinculadas continuam existindo, só perdem o vínculo."))deleteRecord(setCiclosRecords,c.id);}}
+                                style={{padding:"6px 12px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* ══ NOTAS FISCAIS ══ */}
+            {insumoSubTab==="notas" && (()=>{
+              const notasOrdenadas = [...notasFiscaisRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+              const totalGeralNotas = notasFiscaisRecords.reduce((s,n)=>s+(n.valorTotalNota||0),0);
+              const precoAtualItem = (parseFloat(novoItemNota.precoUnitario)||0) * (parseFloat(novoItemNota.quantidade)||0);
+              return (
+                <div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Notas lançadas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{notasFiscaisRecords.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Valor total comprado</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmt(totalGeralNotas)}</div></div>
+                  </div>
+
+                  <div style={{display:"flex",marginBottom:14}}>
+                    <button onClick={()=>{setAddingNota(a=>!a);setNotaSubmitError("");}}
+                      style={{padding:"8px 16px",background:addingNota?"#eee":"#00838f",border:"none",borderRadius:6,color:addingNota?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {addingNota ? "✕ Cancelar" : "+ Nova nota fiscal"}
+                    </button>
+                  </div>
+
+                  {addingNota && (
+                    <div style={formCardSt}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🧾 Nova nota fiscal</div>
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <div style={{flex:"2 1 200px"}}>
+                          <label style={lblSt}>Fornecedor</label>
+                          <input placeholder="Ex: Insumos Agro LTDA" value={newNota.fornecedor} onChange={e=>setNewNota(p=>({...p,fornecedor:e.target.value}))} style={inpSt}/>
+                        </div>
+                        <div style={{flex:"1 1 140px"}}>
+                          <label style={lblSt}>Número da nota</label>
+                          <input placeholder="Nº" value={newNota.numero} onChange={e=>setNewNota(p=>({...p,numero:e.target.value}))} style={inpSt}/>
+                        </div>
+                        <div style={{flex:"1 1 140px"}}>
+                          <label style={lblSt}>Data</label>
+                          <input placeholder="dd/mm/aaaa" value={newNota.data} onChange={e=>setNewNota(p=>({...p,data:e.target.value}))} style={inpSt}/>
+                        </div>
+                      </div>
+
+                      <div style={{marginTop:18,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da nota</div>
+                      {newNota.itens.length>0 && (
+                        <div style={{overflowX:"auto",marginTop:8}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <thead>
+                            <tr style={{background:"#e0f2f1"}}>
+                              {["Produto","Preço unit.","Qtd.","Valor total",""].map(h=>(
+                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":h===""?"center":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {newNota.itens.map((it,idx)=>(
+                              <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
+                                <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome} {!it.produtoId && <span style={{fontSize:10,color:"#00838f"}}>(novo)</span>}</td>
+                                <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(it.precoUnitario)}/{it.unidade}</td>
+                                <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.quantidade,1)} {it.unidade}</td>
+                                <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{fmt(it.valorTotal)}</td>
+                                <td style={{padding:"6px 8px",textAlign:"center"}}>
+                                  <button onClick={()=>removeItemNota(idx)} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        </div>
+                      )}
+
+                      <div style={{background:"#f5f5f5",borderRadius:8,padding:12,marginTop:10}}>
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+                          <div style={{flex:"2 1 220px"}}>
+                            <label style={lblSt}>Produto</label>
+                            <select value={novoItemNota.produtoId} onChange={e=>setNovoItemNota(p=>({...p,produtoId:e.target.value}))} style={inpSt}>
+                              <option value="">+ Novo produto (digite abaixo)</option>
+                              {GRUPOS_ESTOQUE_INSUMOS.map(cat=>{
+                                const prods = insumosEstoqueRecords.filter(p=>p.categoria===cat).sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
+                                if (!prods.length) return null;
+                                return (
+                                  <optgroup key={cat} label={cat}>
+                                    {prods.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+                                  </optgroup>
+                                );
+                              })}
+                            </select>
+                          </div>
+                          {!novoItemNota.produtoId && (
+                            <>
+                            <div style={{flex:"2 1 180px"}}>
+                              <label style={lblSt}>Nome do novo produto</label>
+                              <input placeholder="Ex: Glifosato 480" value={novoItemNota.produtoNovoNome} onChange={e=>setNovoItemNota(p=>({...p,produtoNovoNome:e.target.value}))} style={inpSt}/>
+                            </div>
+                            <div style={{flex:"1 1 130px"}}>
+                              <label style={lblSt}>Categoria</label>
+                              <select value={novoItemNota.categoria} onChange={e=>setNovoItemNota(p=>({...p,categoria:e.target.value}))} style={inpSt}>
+                                {GRUPOS_ESTOQUE_INSUMOS.map(c=><option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div style={{flex:"1 1 90px"}}>
+                              <label style={lblSt}>Unid.</label>
+                              <select value={novoItemNota.unidade} onChange={e=>setNovoItemNota(p=>({...p,unidade:e.target.value}))} style={inpSt}>
+                                {UNIDADES_ESTOQUE_INSUMOS.map(u=><option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                            </>
+                          )}
+                          <div style={{flex:"1 1 130px"}}>
+                            <label style={lblSt}>Preço unitário</label>
+                            <input type="number" step="any" placeholder="R$" value={novoItemNota.precoUnitario} onChange={e=>setNovoItemNota(p=>({...p,precoUnitario:e.target.value}))} style={inpSt}/>
+                          </div>
+                          <div style={{flex:"1 1 110px"}}>
+                            <label style={lblSt}>Quantidade</label>
+                            <input type="number" step="any" value={novoItemNota.quantidade} onChange={e=>setNovoItemNota(p=>({...p,quantidade:e.target.value}))} style={inpSt}/>
+                          </div>
+                          <div style={{flex:"1 1 110px",fontSize:12,color:"#666"}}>Total: <strong>{fmt(precoAtualItem)}</strong></div>
+                          <button onClick={addItemNota} style={{padding:"9px 18px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                        </div>
+                      </div>
+
+                      <div style={{marginTop:14}}>
+                        <label style={lblSt}>Observação</label>
+                        <input value={newNota.obs} onChange={e=>setNewNota(p=>({...p,obs:e.target.value}))} style={inpSt}/>
+                      </div>
+
+                      {notaSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {notaSubmitError}</div>}
+
+                      <div style={{display:"flex",gap:10,marginTop:18}}>
+                        <button onClick={()=>{setAddingNota(false);setNotaSubmitError("");}}
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                        <button onClick={submitNota}
+                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar nota e dar entrada no estoque</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {notasOrdenadas.length===0 && (
+                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma nota fiscal lançada ainda.</div>
+                  )}
+                  {notasOrdenadas.map(n=>{
+                    const aberta = expandedNotaId===n.id;
+                    return (
+                      <div key={n.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                        <div onClick={()=>setExpandedNotaId(id=>id===n.id?null:n.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {n.fornecedor} {n.numero && `· NF ${n.numero}`}</div>
+                            <div style={{fontSize:11,color:"#888",marginTop:2}}>{n.data} · {(n.itens||[]).length} produto(s)</div>
+                          </div>
+                          <div style={{fontWeight:700,color:"#00695c"}}>{fmt(n.valorTotalNota)}</div>
+                        </div>
+                        {aberta && (
+                          <div style={{padding:"0 16px 14px"}}>
+                            <div style={{overflowX:"auto"}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                              <thead>
+                                <tr style={{background:"#f5f5f5"}}>
+                                  {["Produto","Preço unit.","Qtd.","Valor"].map(h=>(
+                                    <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#888",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(n.itens||[]).map((it,idx)=>(
+                                  <tr key={idx}>
+                                    <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(it.precoUnitario)}/{it.unidade}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.quantidade,1)} {it.unidade}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(it.valorTotal)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            </div>
+                            {n.obs && <div style={{marginTop:8,fontSize:12,color:"#888",fontStyle:"italic"}}>Obs: {n.obs}</div>}
+                            <button onClick={()=>{if(window.confirm("Remover esta nota? Isso não desfaz a entrada de estoque já feita."))deleteRecord(setNotasFiscaisRecords,n.id);}}
+                              style={{marginTop:10,padding:"6px 12px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover registro</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* ══ APLICAÇÕES ══ */}
+            {insumoSubTab==="aplicacoes" && (()=>{
+              const aplicacoesOrdenadas = [...aplicacoesRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+              const areaTotalAtual = areasRecords.filter(a=>novaAplicacao.areaIds.includes(a.id)).reduce((s,a)=>s+(a.areaHa||0),0);
+              return (
+                <div>
+                  {aplicacaoConfirmMsg && (
                     <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
-                        <div style={{fontWeight:700,color:"#e65100"}}>✓ Recomendação registrada — baixa dada em {recConfirmMsg.itens.length} produto(s).</div>
-                        <button onClick={()=>setRecConfirmMsg(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#e65100",fontSize:14}}>✕</button>
+                        <div style={{fontWeight:700,color:"#e65100"}}>✓ Aplicação realizada — baixa dada em {aplicacaoConfirmMsg.itens.length} produto(s).</div>
+                        <button onClick={()=>setAplicacaoConfirmMsg(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#e65100",fontSize:14}}>✕</button>
                       </div>
-                      {recConfirmMsg.itens.some(it=>it.faltante>0) ? (
+                      {aplicacaoConfirmMsg.itens.some(it=>it.faltante>0) ? (
                         <div style={{marginTop:8}}>
                           <div style={{fontSize:12,color:"#c62828",fontWeight:700,marginBottom:4}}>⚠ Produtos insuficientes — comprar antes de aplicar:</div>
-                          {recConfirmMsg.itens.filter(it=>it.faltante>0).map(it=>(
+                          {aplicacaoConfirmMsg.itens.filter(it=>it.faltante>0).map(it=>(
                             <div key={it.produtoId} style={{fontSize:12,color:"#c62828"}}>• Faltam {fmtN(it.faltante,1)} {it.unidade} de {it.nome}</div>
                           ))}
                         </div>
                       ) : <div style={{marginTop:8,fontSize:12,color:"#2e7d32"}}>✓ Estoque foi suficiente para todos os produtos.</div>}
+                      <div style={{marginTop:8,fontSize:13,fontWeight:700,color:"#e65100"}}>Custo total da aplicação: {fmt(aplicacaoConfirmMsg.itens.reduce((s,it)=>s+(it.custoTotal||0),0))}</div>
                     </div>
                   )}
 
                   <div style={{display:"flex",marginBottom:14}}>
-                    <button onClick={()=>{setAddingRecomendacao(a=>!a);setRecSubmitError("");setKmlMsg(null);setRecFormTab("produtos");}}
-                      style={{padding:"8px 16px",background:addingRecomendacao?"#eee":"#00838f",border:"none",borderRadius:6,color:addingRecomendacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                      {addingRecomendacao ? "✕ Cancelar" : "+ Nova recomendação"}
+                    <button onClick={()=>{setAddingAplicacao(a=>!a);setAplicacaoSubmitError("");setAplicacaoFormTab("produtos");}}
+                      style={{padding:"8px 16px",background:addingAplicacao?"#eee":"#00838f",border:"none",borderRadius:6,color:addingAplicacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {addingAplicacao ? "✕ Cancelar" : "+ Nova aplicação"}
                     </button>
                   </div>
 
-                  {addingRecomendacao && (
-                    <div style={{background:"#fff",borderRadius:10,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🌾 Nova recomendação de campo</div>
+                  {addingAplicacao && (
+                    <div style={formCardSt}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🚜 Nova aplicação (planejamento)</div>
 
-                      <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Arquivo KML da área (opcional)</label>
-                      <div style={{margin:"6px 0 4px"}}>
-                        <input type="file" accept=".kml" onChange={handleKmlUpload}/>
-                      </div>
-                      {kmlMsg && <div style={{fontSize:12,marginBottom:10,color:kmlMsg.ok?"#2e7d32":"#c62828"}}>{kmlMsg.texto}</div>}
-
-                      <div style={{display:"flex",gap:10,marginTop:10,flexWrap:"wrap"}}>
-                        <div style={{flex:"1 1 140px"}}>
-                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Data</label>
-                          <input placeholder="dd/mm/aaaa" value={novaRecomendacao.data} onChange={e=>setNovaRecomendacao(p=>({...p,data:e.target.value}))}
-                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
-                        </div>
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                         <div style={{flex:"2 1 220px"}}>
-                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Talhão / Área</label>
-                          <input placeholder="Ex: Lote 11" value={novaRecomendacao.talhao} onChange={e=>setNovaRecomendacao(p=>({...p,talhao:e.target.value}))}
-                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                          <label style={lblSt}>Safra (opcional)</label>
+                          <select value={novaAplicacao.cicloId} onChange={e=>setNovaAplicacao(p=>({...p,cicloId:e.target.value}))} style={inpSt}>
+                            <option value="">Sem safra vinculada</option>
+                            {ciclosRecords.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+                          </select>
                         </div>
-                        <div style={{flex:"1 1 120px"}}>
-                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Área (ha)</label>
-                          <input type="number" step="any" placeholder="ha" value={novaRecomendacao.areaHa} onChange={e=>setNovaRecomendacao(p=>({...p,areaHa:e.target.value}))}
-                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        <div style={{flex:"1 1 160px"}}>
+                          <label style={lblSt}>Data planejada</label>
+                          <input placeholder="dd/mm/aaaa" value={novaAplicacao.dataPlanejada} onChange={e=>setNovaAplicacao(p=>({...p,dataPlanejada:e.target.value}))} style={inpSt}/>
                         </div>
+                      </div>
+
+                      <div style={{marginTop:14}}>
+                        <label style={lblSt}>Áreas a aplicar</label>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                          {areasRecords.map(a=>{
+                            const sel = novaAplicacao.areaIds.includes(a.id);
+                            return (
+                              <button key={a.id} onClick={()=>toggleAreaAplicacao(a.id)}
+                                style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${sel?"#00838f":"#ddd"}`,background:sel?"#00838f":"#fff",color:sel?"#fff":"#555",fontSize:12,cursor:"pointer"}}>
+                                {sel?"✓ ":""}{a.nome} ({fmtN(a.areaHa,1)} ha)
+                              </button>
+                            );
+                          })}
+                          {areasRecords.length===0 && <div style={{color:"#bbb",fontSize:12}}>Cadastre áreas primeiro, na aba "Áreas".</div>}
+                        </div>
+                        {areaTotalAtual>0 && <div style={{fontSize:12,color:"#00695c",marginTop:8,fontWeight:600}}>Área total selecionada: {fmtN(areaTotalAtual,1)} ha</div>}
                       </div>
 
                       <div style={{display:"flex",gap:6,marginTop:20}}>
-                        <button onClick={()=>setRecFormTab("produtos")}
-                          style={{padding:"7px 14px",background:recFormTab==="produtos"?"#00838f":"#fff",border:`1px solid ${recFormTab==="produtos"?"#00838f":"#ddd"}`,borderRadius:20,color:recFormTab==="produtos"?"#fff":"#555",fontSize:12,fontWeight:recFormTab==="produtos"?700:400,cursor:"pointer"}}>Produtos</button>
-                        <button onClick={()=>setRecFormTab("calda")}
-                          style={{padding:"7px 14px",background:recFormTab==="calda"?"#00838f":"#fff",border:`1px solid ${recFormTab==="calda"?"#00838f":"#ddd"}`,borderRadius:20,color:recFormTab==="calda"?"#fff":"#555",fontSize:12,fontWeight:recFormTab==="calda"?700:400,cursor:"pointer"}}>🧪 Cálculo de Calda</button>
+                        <button onClick={()=>setAplicacaoFormTab("produtos")}
+                          style={{padding:"7px 14px",background:aplicacaoFormTab==="produtos"?"#00838f":"#fff",border:`1px solid ${aplicacaoFormTab==="produtos"?"#00838f":"#ddd"}`,borderRadius:20,color:aplicacaoFormTab==="produtos"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="produtos"?700:400,cursor:"pointer"}}>Produtos</button>
+                        <button onClick={()=>setAplicacaoFormTab("calda")}
+                          style={{padding:"7px 14px",background:aplicacaoFormTab==="calda"?"#00838f":"#fff",border:`1px solid ${aplicacaoFormTab==="calda"?"#00838f":"#ddd"}`,borderRadius:20,color:aplicacaoFormTab==="calda"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="calda"?700:400,cursor:"pointer"}}>🧪 Cálculo de Calda</button>
                       </div>
 
-                      {recFormTab==="produtos" && (<>
-                      <div style={{marginTop:14,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da recomendação</div>
-                      {novaRecomendacao.itens.length>0 && (
+                      {aplicacaoFormTab==="produtos" && (<>
+                      <div style={{marginTop:14,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da aplicação (mesma dose em todas as áreas selecionadas)</div>
+                      {novaAplicacao.itens.length>0 && (
                         <div style={{overflowX:"auto",marginTop:8}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                           <thead>
@@ -3939,8 +4579,8 @@ function App() {
                             </tr>
                           </thead>
                           <tbody>
-                            {novaRecomendacao.itens.map((it,idx)=>{
-                              const qtdTotal = it.dose*areaHaAtual;
+                            {novaAplicacao.itens.map((it,idx)=>{
+                              const qtdTotal = it.dose*areaTotalAtual;
                               const produtoAtual = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
                               const estoqueAtual = produtoAtual ? (produtoAtual.quantidade||0) : 0;
                               const faltante = Math.max(0, qtdTotal-estoqueAtual);
@@ -3956,7 +4596,7 @@ function App() {
                                       : <span style={{color:"#2e7d32"}}>✓ Suficiente</span>}
                                   </td>
                                   <td style={{padding:"6px 8px",textAlign:"center"}}>
-                                    <button onClick={()=>removeItemRec(idx)} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                    <button onClick={()=>removeItemAplicacao(idx)} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                                   </td>
                                 </tr>
                               );
@@ -3968,9 +4608,8 @@ function App() {
 
                       <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"flex-end"}}>
                         <div style={{flex:"2 1 220px"}}>
-                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Produto</label>
-                          <select value={novoItemRec.produtoId} onChange={e=>setNovoItemRec(p=>({...p,produtoId:e.target.value}))}
-                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}>
+                          <label style={lblSt}>Produto</label>
+                          <select value={novoItemAplicacao.produtoId} onChange={e=>setNovoItemAplicacao(p=>({...p,produtoId:e.target.value}))} style={inpSt}>
                             <option value="">Selecione...</option>
                             {GRUPOS_ESTOQUE_INSUMOS.map(cat=>{
                               const prods = insumosEstoqueRecords.filter(p=>p.categoria===cat).sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
@@ -3984,40 +4623,37 @@ function App() {
                           </select>
                         </div>
                         <div style={{flex:"1 1 140px"}}>
-                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Dose (por ha)</label>
-                          <input type="number" step="any" placeholder="Ex: 2,5" value={novoItemRec.dose} onChange={e=>setNovoItemRec(p=>({...p,dose:e.target.value}))}
-                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                          <label style={lblSt}>Dose (por ha)</label>
+                          <input type="number" step="any" placeholder="Ex: 2,5" value={novoItemAplicacao.dose} onChange={e=>setNovoItemAplicacao(p=>({...p,dose:e.target.value}))} style={inpSt}/>
                         </div>
-                        <button onClick={addItemRec} style={{padding:"8px 16px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                        <button onClick={addItemAplicacao} style={{padding:"8px 16px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
                       </div>
                       </>)}
 
-                      {recFormTab==="calda" && (()=>{
-                        const vazaoAtual = parseFloat(novaRecomendacao.vazao)||0;
-                        const capacidadeAtual = parseFloat(novaRecomendacao.capacidadeTanque)||0;
+                      {aplicacaoFormTab==="calda" && (()=>{
+                        const vazaoAtual = parseFloat(novaAplicacao.vazao)||0;
+                        const capacidadeAtual = parseFloat(novaAplicacao.capacidadeTanque)||0;
                         const areaPorTanque = (vazaoAtual>0 && capacidadeAtual>0) ? capacidadeAtual/vazaoAtual : 0;
-                        const numTanques = areaPorTanque>0 ? areaHaAtual/areaPorTanque : 0;
+                        const numTanques = areaPorTanque>0 ? areaTotalAtual/areaPorTanque : 0;
                         const tanquesCheios = Math.floor(numTanques);
-                        const sobraHa = areaPorTanque>0 ? areaHaAtual - tanquesCheios*areaPorTanque : 0;
+                        const sobraHa = areaPorTanque>0 ? areaTotalAtual - tanquesCheios*areaPorTanque : 0;
                         return (
                           <div style={{marginTop:14}}>
-                            {areaHaAtual<=0 && (
-                              <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>⚠ Informe a área (ha) acima — envie o KML ou digite manualmente — pra calcular a calda.</div>
+                            {areaTotalAtual<=0 && (
+                              <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>⚠ Selecione ao menos uma área acima pra calcular a calda.</div>
                             )}
                             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                               <div style={{flex:"1 1 160px"}}>
-                                <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Vazão (L/ha)</label>
-                                <input type="number" step="any" placeholder="Ex: 150" value={novaRecomendacao.vazao} onChange={e=>setNovaRecomendacao(p=>({...p,vazao:e.target.value}))}
-                                  style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                                <label style={lblSt}>Vazão (L/ha)</label>
+                                <input type="number" step="any" placeholder="Ex: 150" value={novaAplicacao.vazao} onChange={e=>setNovaAplicacao(p=>({...p,vazao:e.target.value}))} style={inpSt}/>
                               </div>
                               <div style={{flex:"1 1 160px"}}>
-                                <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Capacidade do tanque (L)</label>
-                                <input type="number" step="any" placeholder="Ex: 2000" value={novaRecomendacao.capacidadeTanque} onChange={e=>setNovaRecomendacao(p=>({...p,capacidadeTanque:e.target.value}))}
-                                  style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                                <label style={lblSt}>Capacidade do tanque (L)</label>
+                                <input type="number" step="any" placeholder="Ex: 2000" value={novaAplicacao.capacidadeTanque} onChange={e=>setNovaAplicacao(p=>({...p,capacidadeTanque:e.target.value}))} style={inpSt}/>
                               </div>
                             </div>
 
-                            {areaPorTanque>0 && areaHaAtual>0 && (
+                            {areaPorTanque>0 && areaTotalAtual>0 && (
                               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginTop:14}}>
                                 <div style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px"}}>
                                   <div style={{fontSize:10,color:"#00695c",textTransform:"uppercase",letterSpacing:1}}>Área por tanque</div>
@@ -4032,10 +4668,10 @@ function App() {
                               </div>
                             )}
 
-                            {novaRecomendacao.itens.length===0 && (
+                            {novaAplicacao.itens.length===0 && (
                               <div style={{marginTop:14,fontSize:12,color:"#bbb"}}>Adicione produtos na aba "Produtos" pra ver a quantidade por tanque de cada um.</div>
                             )}
-                            {novaRecomendacao.itens.length>0 && areaPorTanque>0 && (
+                            {novaAplicacao.itens.length>0 && areaPorTanque>0 && (
                               <div style={{overflowX:"auto",marginTop:14}}>
                               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                                 <thead>
@@ -4046,12 +4682,12 @@ function App() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {novaRecomendacao.itens.map((it,idx)=>(
+                                  {novaAplicacao.itens.map((it,idx)=>(
                                     <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
                                       <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
                                       <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
                                       <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmtN(it.dose*areaPorTanque,3)} {it.unidade}</td>
-                                      <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(it.dose*areaHaAtual,1)} {it.unidade}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(it.dose*areaTotalAtual,1)} {it.unidade}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -4063,78 +4699,207 @@ function App() {
                       })()}
 
                       <div style={{marginTop:16}}>
-                        <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Observação</label>
-                        <input value={novaRecomendacao.obs} onChange={e=>setNovaRecomendacao(p=>({...p,obs:e.target.value}))}
-                          style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        <label style={lblSt}>Observação</label>
+                        <input value={novaAplicacao.obs} onChange={e=>setNovaAplicacao(p=>({...p,obs:e.target.value}))} style={inpSt}/>
                       </div>
 
-                      {recSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {recSubmitError}</div>}
+                      {aplicacaoSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {aplicacaoSubmitError}</div>}
 
                       <div style={{display:"flex",gap:10,marginTop:18}}>
-                        <button onClick={()=>{setAddingRecomendacao(false);setRecSubmitError("");setKmlMsg(null);setRecFormTab("produtos");}}
+                        <button onClick={resetFormAplicacao}
                           style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
-                        <button onClick={confirmarRecomendacao}
+                        <button onClick={salvarAplicacaoPlanejada}
                           style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                          ✓ Confirmar e dar baixa no estoque
+                          📋 Salvar como Planejado
                         </button>
                       </div>
                     </div>
                   )}
 
-                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>📋 Recomendações registradas</div>
-                  {recsOrdenadas.length===0 && (
-                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma recomendação registrada ainda.</div>
-                  )}
-                  {recsOrdenadas.map(rec=>{
-                    const temFaltante = (rec.itens||[]).some(it=>it.faltante>0);
-                    const aberta = expandedRecId===rec.id;
+                  {realizandoAplicacaoId && (()=>{
+                    const ap = aplicacoesRecords.find(a=>a.id===realizandoAplicacaoId);
+                    if (!ap) return null;
                     return (
-                      <div key={rec.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
-                        <div onClick={()=>setExpandedRecId(id=>id===rec.id?null:rec.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                          <div>
-                            <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {rec.talhao}</div>
-                            <div style={{fontSize:11,color:"#888",marginTop:2}}>{rec.data} · {fmtN(rec.areaHa,1)} ha · {(rec.itens||[]).length} produto(s)</div>
+                      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20}}>
+                        <div style={{background:"#fff",borderRadius:14,padding:28,width:380,boxShadow:"0 24px 80px rgba(0,0,0,0.3)"}}>
+                          <div style={{fontSize:16,fontWeight:800,color:"#1a3a1a",marginBottom:6}}>✓ Realizar aplicação</div>
+                          <div style={{fontSize:12,color:"#666",marginBottom:16}}>{(ap.areaNomes||[]).join(", ")} — {fmtN(ap.areaTotalHa,1)} ha. Isso vai dar baixa nos produtos e calcular o custo.</div>
+                          <label style={lblSt}>Data de realização</label>
+                          <input placeholder="dd/mm/aaaa" value={dataRealizarInput} onChange={e=>setDataRealizarInput(e.target.value)} style={inpSt}/>
+                          <div style={{display:"flex",gap:10,marginTop:20}}>
+                            <button onClick={()=>setRealizandoAplicacaoId(null)} style={{flex:1,padding:"11px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                            <button onClick={confirmarRealizarAplicacao} style={{flex:1,padding:"11px",background:"#2e7d32",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
                           </div>
-                          {temFaltante && <span style={{color:"#c62828",fontSize:11,fontWeight:700}}>⚠ Faltou produto</span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {aplicacoesOrdenadas.length===0 && (
+                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma aplicação cadastrada ainda.</div>
+                  )}
+                  {aplicacoesOrdenadas.map(ap=>{
+                    const aberta = expandedAplicacaoId===ap.id;
+                    const realizado = ap.status==="Realizado";
+                    const custoTotalAp = realizado ? (ap.itens||[]).reduce((s,it)=>s+(it.custoTotal||0),0) : 0;
+                    const temFaltante = realizado && (ap.itens||[]).some(it=>it.faltante>0);
+                    const ciclo = ciclosRecords.find(c=>c.id===ap.cicloId);
+                    return (
+                      <div key={ap.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                        <div onClick={()=>setExpandedAplicacaoId(id=>id===ap.id?null:ap.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {(ap.areaNomes||[]).join(", ")||"Área sem nome"}</div>
+                            <div style={{fontSize:11,color:"#888",marginTop:2}}>
+                              {ciclo && `${ciclo.nome} · `}{fmtN(ap.areaTotalHa,1)} ha · Planejado: {ap.dataPlanejada}{ap.dataRealizada && ` · Realizado: ${ap.dataRealizada}`} · {(ap.itens||[]).length} produto(s)
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                            {temFaltante && <span style={{color:"#c62828",fontSize:11,fontWeight:700}}>⚠ Faltou produto</span>}
+                            {realizado && <span style={{fontSize:12,fontWeight:700,color:"#00695c"}}>{fmt(custoTotalAp)}</span>}
+                            <span style={{padding:"3px 10px",borderRadius:12,fontSize:10,fontWeight:700,background:realizado?"#e8f5e9":"#fff3e0",color:realizado?"#2e7d32":"#e65100"}}>{ap.status}</span>
+                          </div>
                         </div>
                         {aberta && (
                           <div style={{padding:"0 16px 14px"}}>
-                            {rec.areaPorTanqueHa>0 && (
+                            {ap.areaPorTanqueHa>0 && (
                               <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>
-                                🧪 Calda: {fmtN(rec.vazao,0)} L/ha · tanque de {fmtN(rec.capacidadeTanque,0)} L → {fmtN(rec.areaPorTanqueHa,2)} ha/tanque · {fmtN(rec.areaHa/rec.areaPorTanqueHa,2)} tanques necessários
+                                🧪 Calda: {fmtN(ap.vazao,0)} L/ha · tanque de {fmtN(ap.capacidadeTanque,0)} L → {fmtN(ap.areaPorTanqueHa,2)} ha/tanque · {fmtN(ap.areaTotalHa/ap.areaPorTanqueHa,2)} tanques necessários
                               </div>
                             )}
                             <div style={{overflowX:"auto"}}>
                             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                               <thead>
                                 <tr style={{background:"#f5f5f5"}}>
-                                  {["Produto","Dose/ha",...(rec.areaPorTanqueHa>0?["Qtd./tanque"]:[]),"Total baixado","Estoque depois","Faltou"].map(h=>(
+                                  {["Produto","Dose/ha",...(ap.areaPorTanqueHa>0?["Qtd./tanque"]:[]),"Qtd. total",...(realizado?["Custo unit.","Custo total","Faltou"]:[])].map(h=>(
                                     <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#888",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
-                                {(rec.itens||[]).map((it,idx)=>(
+                                {(ap.itens||[]).map((it,idx)=>(
                                   <tr key={idx}>
                                     <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
-                                    {rec.areaPorTanqueHa>0 && <td style={{padding:"6px 8px",textAlign:"right",color:"#00695c",fontWeight:700}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
+                                    {ap.areaPorTanqueHa>0 && <td style={{padding:"6px 8px",textAlign:"right",color:"#00695c",fontWeight:700}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.qtdTotal,1)} {it.unidade}</td>
-                                    <td style={{padding:"6px 8px",textAlign:"right",color:it.estoqueDepois<0?"#c62828":"#888"}}>{fmtN(it.estoqueDepois,1)} {it.unidade}</td>
-                                    <td style={{padding:"6px 8px",textAlign:"right",color:it.faltante>0?"#c62828":"#2e7d32",fontWeight:it.faltante>0?700:400}}>{it.faltante>0?`${fmtN(it.faltante,1)} ${it.unidade}`:"—"}</td>
+                                    {realizado && <>
+                                      <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmt(it.custoUnitario)}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{fmt(it.custoTotal)}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",color:it.faltante>0?"#c62828":"#2e7d32",fontWeight:it.faltante>0?700:400}}>{it.faltante>0?`${fmtN(it.faltante,1)} ${it.unidade}`:"—"}</td>
+                                    </>}
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                             </div>
-                            {rec.obs && <div style={{marginTop:8,fontSize:12,color:"#888",fontStyle:"italic"}}>Obs: {rec.obs}</div>}
-                            <button onClick={()=>{if(window.confirm("Remover este registro de recomendação? Isso não devolve o estoque baixado."))deleteRecord(setRecomendacoesRecords,rec.id);}}
-                              style={{marginTop:10,padding:"6px 12px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover registro</button>
+                            {ap.obs && <div style={{marginTop:8,fontSize:12,color:"#888",fontStyle:"italic"}}>Obs: {ap.obs}</div>}
+                            <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                              {!realizado && (
+                                <button onClick={()=>iniciarRealizarAplicacao(ap.id)} style={{padding:"7px 14px",background:"#2e7d32",border:"none",color:"#fff",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Realizar aplicação</button>
+                              )}
+                              <button onClick={()=>imprimirAplicacao(ap.id)} style={{padding:"7px 14px",background:"none",border:"1px solid #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>🖨️ Gerar PDF</button>
+                              <button onClick={()=>{if(window.confirm(realizado?"Remover este registro? Isso não devolve o estoque baixado.":"Remover esta aplicação planejada?"))deleteRecord(setAplicacoesRecords,ap.id);}}
+                                style={{padding:"7px 14px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover</button>
+                            </div>
                           </div>
                         )}
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()}
+
+            {/* ══ CUSTOS ══ */}
+            {insumoSubTab==="custos" && (()=>{
+              const aplicacoesRealizadas = aplicacoesRecords.filter(a=>a.status==="Realizado");
+              const custoTotalGeral = aplicacoesRealizadas.reduce((s,a)=>s+(a.itens||[]).reduce((s2,it)=>s2+(it.custoTotal||0),0),0);
+
+              const custoPorCategoria = {};
+              aplicacoesRealizadas.forEach(a=>(a.itens||[]).forEach(it=>{
+                custoPorCategoria[it.categoria] = (custoPorCategoria[it.categoria]||0) + (it.custoTotal||0);
+              }));
+
+              const custoPorArea = {};
+              aplicacoesRealizadas.forEach(a=>{
+                const areaTotal = a.areaTotalHa||0;
+                const custoAplicacao = (a.itens||[]).reduce((s,it)=>s+(it.custoTotal||0),0);
+                if (areaTotal<=0 || !(a.areaIds||[]).length) return;
+                a.areaIds.forEach(areaId=>{
+                  const area = areasRecords.find(x=>x.id===areaId);
+                  const areaHa = area ? (area.areaHa||0) : (areaTotal/a.areaIds.length);
+                  const proporcao = areaHa/areaTotal;
+                  custoPorArea[areaId] = (custoPorArea[areaId]||0) + custoAplicacao*proporcao;
+                });
+              });
+              const linhasPorArea = Object.entries(custoPorArea).map(([areaId,custo])=>{
+                const area = areasRecords.find(a=>a.id===areaId);
+                return { areaId, nome: area?area.nome:"Área removida", areaHa: area?area.areaHa:0, custo };
+              }).sort((a,b)=>b.custo-a.custo);
+
+              return (
+                <div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Aplicações realizadas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{aplicacoesRealizadas.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Custo total</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmt(custoTotalGeral)}</div></div>
+                  </div>
+
+                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>Custo por categoria</div>
+                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:20}}>
+                    <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#e0f2f1"}}>
+                          <th style={{padding:"7px 9px",textAlign:"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Categoria</th>
+                          <th style={{padding:"7px 9px",textAlign:"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Custo</th>
+                          <th style={{padding:"7px 9px",textAlign:"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>% do total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {GRUPOS_ESTOQUE_INSUMOS.filter(cat=>custoPorCategoria[cat]).map(cat=>(
+                          <tr key={cat}>
+                            <td style={{padding:"6px 9px"}}>
+                              <span style={{padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,color:"#fff",background:COR_GRUPO_ESTOQUE[cat]}}>{cat}</span>
+                            </td>
+                            <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700}}>{fmt(custoPorCategoria[cat])}</td>
+                            <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{custoTotalGeral>0?fmtN(custoPorCategoria[cat]/custoTotalGeral*100,1):0}%</td>
+                          </tr>
+                        ))}
+                        {Object.keys(custoPorCategoria).length===0 && (
+                          <tr><td colSpan={3} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma aplicação realizada ainda.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
+
+                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>Custo por área</div>
+                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                    <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#e0f2f1"}}>
+                          {["Área","Ha","Custo total","Custo/ha"].map(h=>(
+                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Área"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linhasPorArea.map(l=>(
+                          <tr key={l.areaId}>
+                            <td style={{padding:"6px 9px",fontWeight:600}}>{l.nome}</td>
+                            <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{fmtN(l.areaHa,1)}</td>
+                            <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700}}>{fmt(l.custo)}</td>
+                            <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{l.areaHa>0?fmt(l.custo/l.areaHa):"—"}</td>
+                          </tr>
+                        ))}
+                        {linhasPorArea.length===0 && (
+                          <tr><td colSpan={4} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma aplicação realizada ainda.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
@@ -5331,6 +6096,55 @@ function App() {
 
     </div>
     </div>
+
+    {printAplicacaoId && (()=>{
+      const ap = aplicacoesRecords.find(a=>a.id===printAplicacaoId);
+      if (!ap) return null;
+      const ciclo = ciclosRecords.find(c=>c.id===ap.cicloId);
+      return (
+        <div className="print-only" style={{padding:30,fontFamily:"system-ui,sans-serif",color:"#111"}}>
+          <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>🚜 Recomendação de Aplicação</div>
+          <div style={{fontSize:12,color:"#666",marginBottom:16}}>GC Agro{ciclo?` · ${ciclo.nome}`:""}</div>
+          <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20,fontSize:13}}>
+            <tbody>
+              <tr><td style={{padding:"4px 0",fontWeight:700,width:160}}>Área(s):</td><td>{(ap.areaNomes||[]).join(", ")}</td></tr>
+              <tr><td style={{padding:"4px 0",fontWeight:700}}>Área total:</td><td>{fmtN(ap.areaTotalHa,1)} ha</td></tr>
+              <tr><td style={{padding:"4px 0",fontWeight:700}}>Data planejada:</td><td>{ap.dataPlanejada}</td></tr>
+              {ap.dataRealizada && <tr><td style={{padding:"4px 0",fontWeight:700}}>Data realizada:</td><td>{ap.dataRealizada}</td></tr>}
+              <tr><td style={{padding:"4px 0",fontWeight:700}}>Status:</td><td>{ap.status}</td></tr>
+              {ap.areaPorTanqueHa>0 && (
+                <tr><td style={{padding:"4px 0",fontWeight:700}}>Calda:</td><td>{fmtN(ap.vazao,0)} L/ha · tanque {fmtN(ap.capacidadeTanque,0)} L · {fmtN(ap.areaTotalHa/ap.areaPorTanqueHa,2)} tanques</td></tr>
+              )}
+            </tbody>
+          </table>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{borderBottom:"2px solid #333"}}>
+                {["Produto","Dose/ha",...(ap.areaPorTanqueHa>0?["Qtd./tanque"]:[]),"Qtd. total"].map(h=>(
+                  <th key={h} style={{padding:"6px 4px",textAlign:h==="Produto"?"left":"right"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(ap.itens||[]).map((it,idx)=>(
+                <tr key={idx} style={{borderBottom:"1px solid #ddd"}}>
+                  <td style={{padding:"6px 4px",fontWeight:600}}>{it.nome}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
+                  {ap.areaPorTanqueHa>0 && <td style={{padding:"6px 4px",textAlign:"right"}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
+                  <td style={{padding:"6px 4px",textAlign:"right",fontWeight:700}}>{fmtN(it.qtdTotal,1)} {it.unidade}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {ap.obs && <div style={{marginTop:16,fontSize:13}}><strong>Observação:</strong> {ap.obs}</div>}
+          <div style={{marginTop:60,display:"flex",gap:60,fontSize:12}}>
+            <div style={{flex:1,borderTop:"1px solid #333",paddingTop:6}}>Responsável técnico</div>
+            <div style={{flex:1,borderTop:"1px solid #333",paddingTop:6}}>Aplicador</div>
+          </div>
+        </div>
+      );
+    })()}
+    </>
   );
 }
 
