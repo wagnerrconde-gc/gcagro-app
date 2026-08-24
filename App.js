@@ -66,7 +66,8 @@ const KEY_ESTOQUE_INSUMOS = "gcagro_estoque_insumos_v1";
 
 // Estoque de Insumos: grupos e cor de cada um (badge nas tabelas)
 const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
-const COR_GRUPO_ESTOQUE = { Defensivos:"#c62828", Adubos:"#8d6e63", Foliares:"#2e7d32", Sementes:"#f9a825" };
+const COR_GRUPO_ESTOQUE = { Defensivos:"#8c3a3a", Adubos:"#6b5847", Foliares:"#3f6b46", Sementes:"#8a6d1f" };
+const COR_GRUPO_BG = { Defensivos:"#f3e9e9", Adubos:"#efe9e2", Foliares:"#e9efe9", Sementes:"#f3efe0" };
 const UNIDADES_ESTOQUE_INSUMOS = ["L","KG","TN","sc","doses","un"];
 const KEY_AREAS = "gcagro_areas_v1";
 const KEY_CICLOS = "gcagro_ciclos_v1";
@@ -3941,20 +3942,20 @@ function App() {
         }));
 
         const SUBTABS_INSUMOS = [
-          ["estoque","📦 Estoque"], ["areas","🗺️ Áreas"], ["safras","🌱 Safras"],
-          ["notas","🧾 Notas Fiscais"], ["aplicacoes","🚜 Aplicações"], ["custos","💰 Custos"],
+          ["estoque","Estoque"], ["areas","Áreas"], ["safras","Safras"],
+          ["notas","Notas Fiscais"], ["aplicacoes","Aplicações"], ["custos","Custos"],
         ];
-        const cardSt = {background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
+        const cardSt = {background:"#fff",borderRadius:6,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
         const lblSt = {fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1};
         const inpSt = {width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"};
-        const formCardSt = {background:"#fff",borderRadius:10,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
+        const formCardSt = {background:"#fff",borderRadius:6,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
 
         return (
           <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
               {SUBTABS_INSUMOS.map(([id,label])=>(
                 <button key={id} onClick={()=>setInsumoSubTab(id)}
-                  style={{padding:"8px 16px",background:insumoSubTab===id?"#00838f":"#fff",border:`1px solid ${insumoSubTab===id?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab===id?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab===id?700:400,cursor:"pointer"}}>{label}</button>
+                  style={{padding:"8px 16px",background:insumoSubTab===id?"#334155":"#fff",border:`1px solid ${insumoSubTab===id?"#334155":"#ddd"}`,borderRadius:4,color:insumoSubTab===id?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab===id?700:400,cursor:"pointer"}}>{label}</button>
               ))}
             </div>
 
@@ -3973,24 +3974,24 @@ function App() {
             <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
               {["Todas",...GRUPOS_ESTOQUE_INSUMOS].map(cat=>(
                 <button key={cat} onClick={()=>setInsumoEstoqueCatFiltro(cat)}
-                  style={{padding:"6px 14px",background:insumoEstoqueCatFiltro===cat?(COR_GRUPO_ESTOQUE[cat]||"#00838f"):"#fff",
-                    border:`1px solid ${insumoEstoqueCatFiltro===cat?(COR_GRUPO_ESTOQUE[cat]||"#00838f"):"#ddd"}`,borderRadius:20,
-                    color:insumoEstoqueCatFiltro===cat?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:insumoEstoqueCatFiltro===cat?700:400}}>{cat}</button>
+                  style={{padding:"6px 14px",background:insumoEstoqueCatFiltro===cat?"#334155":"#fff",
+                    border:`1px solid ${insumoEstoqueCatFiltro===cat?"#334155":"#ccc"}`,borderRadius:4,
+                    color:insumoEstoqueCatFiltro===cat?"#fff":"#444",fontSize:12,cursor:"pointer",fontWeight:insumoEstoqueCatFiltro===cat?700:400}}>{cat}</button>
               ))}
             </div>
 
             <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-              <input placeholder="🔎 Buscar por nome..." value={insumoEstoqueBusca} onChange={e=>setInsumoEstoqueBusca(e.target.value)}
+              <input placeholder="Buscar por nome..." value={insumoEstoqueBusca} onChange={e=>setInsumoEstoqueBusca(e.target.value)}
                 style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
               <button onClick={()=>{setAddingInsumoEstoque(a=>!a);setInsumoEstoqueSubmitError("");}}
-                style={{padding:"6px 14px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
               <button onClick={()=>{setAddingMovimentacao(a=>!a);setMovimentacaoSubmitError("");}}
-                style={{padding:"6px 14px",background:"none",border:"1px dashed #607d8b",color:"#607d8b",borderRadius:6,fontSize:11,cursor:"pointer"}}>⚖️ Ajuste manual</button>
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>Ajuste manual</button>
             </div>
 
             {addingMovimentacao && (
               <div style={formCardSt}>
-                <div style={{fontWeight:700,fontSize:12,color:"#607d8b",marginBottom:10}}>⚖️ Ajuste manual de estoque (entrada/saída avulsa)</div>
+                <div style={{fontWeight:700,fontSize:12,color:"#334155",marginBottom:10}}>Ajuste manual de estoque (entrada/saída avulsa)</div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
                   <div style={{flex:"2 1 220px"}}>
                     <label style={lblSt}>Produto</label>
@@ -4016,19 +4017,19 @@ function App() {
                     <label style={lblSt}>Motivo</label>
                     <input placeholder="Ex: acerto de contagem" value={newMovimentacao.motivo} onChange={e=>setNewMovimentacao(p=>({...p,motivo:e.target.value}))} style={inpSt}/>
                   </div>
-                  <button onClick={submitMovimentacao} style={{padding:"9px 18px",background:"#607d8b",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+                  <button onClick={submitMovimentacao} style={{padding:"9px 18px",background:"#334155",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
                 </div>
                 {movimentacaoSubmitError && <div style={{marginTop:8,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {movimentacaoSubmitError}</div>}
               </div>
             )}
 
-            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+            <div style={{background:"#fff",borderRadius:6,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
               <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
-                  <tr style={{background:"#e0f2f1"}}>
+                  <tr style={{background:"#f1f5f9"}}>
                     {["Categoria","Produto","Unid.","Qtd.","Custo méd.","Vencimento","Obs",""].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."||h==="Custo méd."?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."||h==="Custo méd."?"right":h===""?"center":"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -4039,7 +4040,7 @@ function App() {
                     return (
                       <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                         <td style={{padding:"6px 9px"}}>
-                          <span style={{padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,color:"#fff",background:COR_GRUPO_ESTOQUE[r.categoria]||"#888"}}>{r.categoria}</span>
+                          <span style={{padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:600,color:COR_GRUPO_ESTOQUE[r.categoria]||"#555",background:COR_GRUPO_BG[r.categoria]||"#eee",border:`1px solid ${COR_GRUPO_ESTOQUE[r.categoria]||"#ccc"}33`}}>{r.categoria}</span>
                         </td>
                         <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"nome",val)}/></td>
                         <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="unidade" value={r.unidade} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"unidade",val)}/></td>
@@ -4076,7 +4077,7 @@ function App() {
                       <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newInsumoEstoque.vencimento} onChange={e=>setNewInsumoEstoque(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newInsumoEstoque.obs} onChange={e=>setNewInsumoEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
-                        <button onClick={submitInsumoEstoque} style={{background:"#00838f",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={submitInsumoEstoque} style={{background:"#334155",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
                         <button onClick={()=>{setAddingInsumoEstoque(false);setInsumoEstoqueSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
                       </td>
                     </tr>
@@ -4094,14 +4095,14 @@ function App() {
 
             {movimentacoesEstoqueRecords.length>0 && (
               <div style={{marginTop:20}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#607d8b",marginBottom:10}}>⚖️ Últimos ajustes manuais</div>
-                <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#334155",marginBottom:10}}>Últimos ajustes manuais</div>
+                <div style={{background:"#fff",borderRadius:6,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
                   <div style={{overflowX:"auto"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                     <thead>
-                      <tr style={{background:"#eceff1"}}>
+                      <tr style={{background:"#f1f5f9"}}>
                         {["Data","Produto","Tipo","Qtd.","Antes","Depois","Motivo"].map(h=>(
-                          <th key={h} style={{padding:"6px 8px",textAlign:h==="Qtd."||h==="Antes"||h==="Depois"?"right":"left",color:"#607d8b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                          <th key={h} style={{padding:"6px 8px",textAlign:h==="Qtd."||h==="Antes"||h==="Depois"?"right":"left",color:"#334155",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -4132,20 +4133,20 @@ function App() {
               return (
                 <div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Áreas cadastradas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{areasRecords.length}</div></div>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Área total</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmtN(areaTotalCadastrada,1)} ha</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Áreas cadastradas</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{areasRecords.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Área total</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{fmtN(areaTotalCadastrada,1)} ha</div></div>
                   </div>
 
                   <div style={{display:"flex",marginBottom:14}}>
                     <button onClick={()=>{setAddingArea(a=>!a);setAreaSubmitError("");setAreaKmlMsg(null);}}
-                      style={{padding:"8px 16px",background:addingArea?"#eee":"#00838f",border:"none",borderRadius:6,color:addingArea?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      style={{padding:"8px 16px",background:addingArea?"#eee":"#334155",border:"none",borderRadius:6,color:addingArea?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                       {addingArea ? "✕ Cancelar" : "+ Nova área"}
                     </button>
                   </div>
 
                   {addingArea && (
                     <div style={formCardSt}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🗺️ Nova área (talhão)</div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:14}}>Nova área (talhão)</div>
                       <label style={lblSt}>Arquivo KML (opcional — se tiver mais de um talhão, importa todos de uma vez)</label>
                       <div style={{margin:"6px 0 4px"}}>
                         <input type="file" accept=".kml" onChange={handleAreaKmlUpload}/>
@@ -4168,20 +4169,20 @@ function App() {
                       {areaSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {areaSubmitError}</div>}
                       <div style={{display:"flex",gap:10,marginTop:18}}>
                         <button onClick={()=>{setAddingArea(false);setAreaSubmitError("");setAreaKmlMsg(null);}}
-                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
                         <button onClick={submitArea}
-                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar área</button>
+                          style={{flex:1,padding:"12px 20px",background:"#334155",border:"none",borderRadius:4,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar área</button>
                       </div>
                     </div>
                   )}
 
-                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                  <div style={{background:"#fff",borderRadius:6,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
                     <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead>
-                        <tr style={{background:"#e0f2f1"}}>
+                        <tr style={{background:"#f1f5f9"}}>
                           {["Área","Ha","Obs",""].map(h=>(
-                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Ha"?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Ha"?"right":h===""?"center":"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -4214,14 +4215,14 @@ function App() {
                 <div>
                   <div style={{display:"flex",marginBottom:14}}>
                     <button onClick={()=>{setAddingCiclo(a=>!a);setCicloSubmitError("");}}
-                      style={{padding:"8px 16px",background:addingCiclo?"#eee":"#00838f",border:"none",borderRadius:6,color:addingCiclo?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      style={{padding:"8px 16px",background:addingCiclo?"#eee":"#334155",border:"none",borderRadius:6,color:addingCiclo?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                       {addingCiclo ? "✕ Cancelar" : "+ Nova safra"}
                     </button>
                   </div>
 
                   {addingCiclo && (
                     <div style={formCardSt}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🌱 Nova safra</div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:14}}>Nova safra</div>
                       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                         <div style={{flex:"2 1 220px"}}>
                           <label style={lblSt}>Nome da safra</label>
@@ -4246,7 +4247,7 @@ function App() {
                             const sel = newCiclo.areaIds.includes(a.id);
                             return (
                               <button key={a.id} onClick={()=>toggleAreaCiclo(a.id)}
-                                style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${sel?"#2e7d32":"#ddd"}`,background:sel?"#2e7d32":"#fff",color:sel?"#fff":"#555",fontSize:12,cursor:"pointer"}}>
+                                style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${sel?"#334155":"#ccc"}`,background:sel?"#334155":"#fff",color:sel?"#fff":"#444",fontSize:12,cursor:"pointer"}}>
                                 {sel?"✓ ":""}{a.nome} ({fmtN(a.areaHa,1)} ha)
                               </button>
                             );
@@ -4264,15 +4265,15 @@ function App() {
 
                       <div style={{display:"flex",gap:10,marginTop:18}}>
                         <button onClick={()=>{setAddingCiclo(false);setCicloSubmitError("");}}
-                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
                         <button onClick={submitCiclo}
-                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar safra</button>
+                          style={{flex:1,padding:"12px 20px",background:"#334155",border:"none",borderRadius:4,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar safra</button>
                       </div>
                     </div>
                   )}
 
                   {ciclosOrdenados.length===0 && (
-                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma safra cadastrada ainda.</div>
+                    <div style={{background:"#fff",borderRadius:6,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma safra cadastrada ainda.</div>
                   )}
                   {ciclosOrdenados.map(c=>{
                     const areasDoCiclo = areasRecords.filter(a=>(c.areaIds||[]).includes(a.id));
@@ -4282,15 +4283,15 @@ function App() {
                       .reduce((s,ap)=>s+(ap.itens||[]).reduce((s2,it)=>s2+(it.custoTotal||0),0),0);
                     const aberto = expandedCicloId===c.id;
                     return (
-                      <div key={c.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                      <div key={c.id} style={{background:"#fff",borderRadius:6,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
                         <div onClick={()=>setExpandedCicloId(id=>id===c.id?null:c.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                           <div>
                             <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberto?"▼":"▶"} {c.nome}</div>
                             <div style={{fontSize:11,color:"#888",marginTop:2}}>{c.cultura} · {fmtN(areaTotalCiclo,1)} ha em {areasDoCiclo.length} área(s) · {aplicacoesDoCiclo.length} aplicação(ões)</div>
                           </div>
                           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                            {custoTotalCiclo>0 && <span style={{fontSize:12,fontWeight:700,color:"#00695c"}}>{fmt(custoTotalCiclo)}</span>}
-                            <span style={{padding:"3px 10px",borderRadius:12,fontSize:10,fontWeight:700,background:c.status==="Ativa"?"#e8f5e9":"#eee",color:c.status==="Ativa"?"#2e7d32":"#888"}}>{c.status}</span>
+                            {custoTotalCiclo>0 && <span style={{fontSize:12,fontWeight:700,color:"#1e293b"}}>{fmt(custoTotalCiclo)}</span>}
+                            <span style={{padding:"3px 10px",borderRadius:4,fontSize:10,fontWeight:700,background:c.status==="Ativa"?"#e8f5e9":"#eee",color:c.status==="Ativa"?"#2e7d32":"#888"}}>{c.status}</span>
                           </div>
                         </div>
                         {aberto && (
@@ -4321,20 +4322,20 @@ function App() {
               return (
                 <div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Notas lançadas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{notasFiscaisRecords.length}</div></div>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Valor total comprado</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmt(totalGeralNotas)}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Notas lançadas</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{notasFiscaisRecords.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Valor total comprado</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{fmt(totalGeralNotas)}</div></div>
                   </div>
 
                   <div style={{display:"flex",marginBottom:14}}>
                     <button onClick={()=>{setAddingNota(a=>!a);setNotaSubmitError("");}}
-                      style={{padding:"8px 16px",background:addingNota?"#eee":"#00838f",border:"none",borderRadius:6,color:addingNota?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      style={{padding:"8px 16px",background:addingNota?"#eee":"#334155",border:"none",borderRadius:6,color:addingNota?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                       {addingNota ? "✕ Cancelar" : "+ Nova nota fiscal"}
                     </button>
                   </div>
 
                   {addingNota && (
                     <div style={formCardSt}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🧾 Nova nota fiscal</div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:14}}>Nova nota fiscal</div>
                       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                         <div style={{flex:"2 1 200px"}}>
                           <label style={lblSt}>Fornecedor</label>
@@ -4350,21 +4351,21 @@ function App() {
                         </div>
                       </div>
 
-                      <div style={{marginTop:18,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da nota</div>
+                      <div style={{marginTop:18,fontWeight:700,fontSize:12,color:"#1e293b"}}>Produtos da nota</div>
                       {newNota.itens.length>0 && (
                         <div style={{overflowX:"auto",marginTop:8}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                           <thead>
-                            <tr style={{background:"#e0f2f1"}}>
+                            <tr style={{background:"#f1f5f9"}}>
                               {["Produto","Preço unit.","Qtd.","Valor total",""].map(h=>(
-                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":h===""?"center":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":h===""?"center":"right",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {newNota.itens.map((it,idx)=>(
                               <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
-                                <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome} {!it.produtoId && <span style={{fontSize:10,color:"#00838f"}}>(novo)</span>}</td>
+                                <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome} {!it.produtoId && <span style={{fontSize:10,color:"#334155"}}>(novo)</span>}</td>
                                 <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(it.precoUnitario)}/{it.unidade}</td>
                                 <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.quantidade,1)} {it.unidade}</td>
                                 <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{fmt(it.valorTotal)}</td>
@@ -4378,7 +4379,7 @@ function App() {
                         </div>
                       )}
 
-                      <div style={{background:"#f5f5f5",borderRadius:8,padding:12,marginTop:10}}>
+                      <div style={{background:"#f5f5f5",borderRadius:4,padding:12,marginTop:10}}>
                         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
                           <div style={{flex:"2 1 220px"}}>
                             <label style={lblSt}>Produto</label>
@@ -4424,7 +4425,7 @@ function App() {
                             <input type="number" step="any" value={novoItemNota.quantidade} onChange={e=>setNovoItemNota(p=>({...p,quantidade:e.target.value}))} style={inpSt}/>
                           </div>
                           <div style={{flex:"1 1 110px",fontSize:12,color:"#666"}}>Total: <strong>{fmt(precoAtualItem)}</strong></div>
-                          <button onClick={addItemNota} style={{padding:"9px 18px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                          <button onClick={addItemNota} style={{padding:"9px 18px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
                         </div>
                       </div>
 
@@ -4437,26 +4438,26 @@ function App() {
 
                       <div style={{display:"flex",gap:10,marginTop:18}}>
                         <button onClick={()=>{setAddingNota(false);setNotaSubmitError("");}}
-                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
                         <button onClick={submitNota}
-                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar nota e dar entrada no estoque</button>
+                          style={{flex:1,padding:"12px 20px",background:"#334155",border:"none",borderRadius:4,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>✓ Salvar nota e dar entrada no estoque</button>
                       </div>
                     </div>
                   )}
 
                   {notasOrdenadas.length===0 && (
-                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma nota fiscal lançada ainda.</div>
+                    <div style={{background:"#fff",borderRadius:6,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma nota fiscal lançada ainda.</div>
                   )}
                   {notasOrdenadas.map(n=>{
                     const aberta = expandedNotaId===n.id;
                     return (
-                      <div key={n.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                      <div key={n.id} style={{background:"#fff",borderRadius:6,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
                         <div onClick={()=>setExpandedNotaId(id=>id===n.id?null:n.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                           <div>
                             <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {n.fornecedor} {n.numero && `· NF ${n.numero}`}</div>
                             <div style={{fontSize:11,color:"#888",marginTop:2}}>{n.data} · {(n.itens||[]).length} produto(s)</div>
                           </div>
-                          <div style={{fontWeight:700,color:"#00695c"}}>{fmt(n.valorTotalNota)}</div>
+                          <div style={{fontWeight:700,color:"#1e293b"}}>{fmt(n.valorTotalNota)}</div>
                         </div>
                         {aberta && (
                           <div style={{padding:"0 16px 14px"}}>
@@ -4500,7 +4501,7 @@ function App() {
               return (
                 <div>
                   {aplicacaoConfirmMsg && (
-                    <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+                    <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:6,padding:"14px 16px",marginBottom:16}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
                         <div style={{fontWeight:700,color:"#e65100"}}>✓ Aplicação realizada — baixa dada em {aplicacaoConfirmMsg.itens.length} produto(s).</div>
                         <button onClick={()=>setAplicacaoConfirmMsg(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#e65100",fontSize:14}}>✕</button>
@@ -4519,14 +4520,14 @@ function App() {
 
                   <div style={{display:"flex",marginBottom:14}}>
                     <button onClick={()=>{setAddingAplicacao(a=>!a);setAplicacaoSubmitError("");setAplicacaoFormTab("produtos");}}
-                      style={{padding:"8px 16px",background:addingAplicacao?"#eee":"#00838f",border:"none",borderRadius:6,color:addingAplicacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      style={{padding:"8px 16px",background:addingAplicacao?"#eee":"#334155",border:"none",borderRadius:6,color:addingAplicacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                       {addingAplicacao ? "✕ Cancelar" : "+ Nova aplicação"}
                     </button>
                   </div>
 
                   {addingAplicacao && (
                     <div style={formCardSt}>
-                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🚜 Nova aplicação (planejamento)</div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1e293b",marginBottom:14}}>Nova aplicação (planejamento)</div>
 
                       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                         <div style={{flex:"2 1 220px"}}>
@@ -4549,32 +4550,32 @@ function App() {
                             const sel = novaAplicacao.areaIds.includes(a.id);
                             return (
                               <button key={a.id} onClick={()=>toggleAreaAplicacao(a.id)}
-                                style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${sel?"#00838f":"#ddd"}`,background:sel?"#00838f":"#fff",color:sel?"#fff":"#555",fontSize:12,cursor:"pointer"}}>
+                                style={{padding:"6px 12px",borderRadius:4,border:`1px solid ${sel?"#334155":"#ddd"}`,background:sel?"#334155":"#fff",color:sel?"#fff":"#555",fontSize:12,cursor:"pointer"}}>
                                 {sel?"✓ ":""}{a.nome} ({fmtN(a.areaHa,1)} ha)
                               </button>
                             );
                           })}
                           {areasRecords.length===0 && <div style={{color:"#bbb",fontSize:12}}>Cadastre áreas primeiro, na aba "Áreas".</div>}
                         </div>
-                        {areaTotalAtual>0 && <div style={{fontSize:12,color:"#00695c",marginTop:8,fontWeight:600}}>Área total selecionada: {fmtN(areaTotalAtual,1)} ha</div>}
+                        {areaTotalAtual>0 && <div style={{fontSize:12,color:"#1e293b",marginTop:8,fontWeight:600}}>Área total selecionada: {fmtN(areaTotalAtual,1)} ha</div>}
                       </div>
 
                       <div style={{display:"flex",gap:6,marginTop:20}}>
                         <button onClick={()=>setAplicacaoFormTab("produtos")}
-                          style={{padding:"7px 14px",background:aplicacaoFormTab==="produtos"?"#00838f":"#fff",border:`1px solid ${aplicacaoFormTab==="produtos"?"#00838f":"#ddd"}`,borderRadius:20,color:aplicacaoFormTab==="produtos"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="produtos"?700:400,cursor:"pointer"}}>Produtos</button>
+                          style={{padding:"7px 14px",background:aplicacaoFormTab==="produtos"?"#334155":"#fff",border:`1px solid ${aplicacaoFormTab==="produtos"?"#334155":"#ddd"}`,borderRadius:4,color:aplicacaoFormTab==="produtos"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="produtos"?700:400,cursor:"pointer"}}>Produtos</button>
                         <button onClick={()=>setAplicacaoFormTab("calda")}
-                          style={{padding:"7px 14px",background:aplicacaoFormTab==="calda"?"#00838f":"#fff",border:`1px solid ${aplicacaoFormTab==="calda"?"#00838f":"#ddd"}`,borderRadius:20,color:aplicacaoFormTab==="calda"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="calda"?700:400,cursor:"pointer"}}>🧪 Cálculo de Calda</button>
+                          style={{padding:"7px 14px",background:aplicacaoFormTab==="calda"?"#334155":"#fff",border:`1px solid ${aplicacaoFormTab==="calda"?"#334155":"#ddd"}`,borderRadius:4,color:aplicacaoFormTab==="calda"?"#fff":"#555",fontSize:12,fontWeight:aplicacaoFormTab==="calda"?700:400,cursor:"pointer"}}>Cálculo de Calda</button>
                       </div>
 
                       {aplicacaoFormTab==="produtos" && (<>
-                      <div style={{marginTop:14,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da aplicação (mesma dose em todas as áreas selecionadas)</div>
+                      <div style={{marginTop:14,fontWeight:700,fontSize:12,color:"#1e293b"}}>Produtos da aplicação (mesma dose em todas as áreas selecionadas)</div>
                       {novaAplicacao.itens.length>0 && (
                         <div style={{overflowX:"auto",marginTop:8}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                           <thead>
-                            <tr style={{background:"#e0f2f1"}}>
+                            <tr style={{background:"#f1f5f9"}}>
                               {["Produto","Dose/ha","Total p/ área","Estoque atual","Situação",""].map(h=>(
-                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Dose/ha"||h==="Total p/ área"||h==="Estoque atual"?"right":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Dose/ha"||h==="Total p/ área"||h==="Estoque atual"?"right":"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -4626,7 +4627,7 @@ function App() {
                           <label style={lblSt}>Dose (por ha)</label>
                           <input type="number" step="any" placeholder="Ex: 2,5" value={novoItemAplicacao.dose} onChange={e=>setNovoItemAplicacao(p=>({...p,dose:e.target.value}))} style={inpSt}/>
                         </div>
-                        <button onClick={addItemAplicacao} style={{padding:"8px 16px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                        <button onClick={addItemAplicacao} style={{padding:"8px 16px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
                       </div>
                       </>)}
 
@@ -4655,13 +4656,13 @@ function App() {
 
                             {areaPorTanque>0 && areaTotalAtual>0 && (
                               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginTop:14}}>
-                                <div style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px"}}>
-                                  <div style={{fontSize:10,color:"#00695c",textTransform:"uppercase",letterSpacing:1}}>Área por tanque</div>
-                                  <div style={{fontSize:16,fontWeight:800,color:"#00695c"}}>{fmtN(areaPorTanque,2)} ha</div>
+                                <div style={{background:"#f1f5f9",borderRadius:4,padding:"10px 12px"}}>
+                                  <div style={{fontSize:10,color:"#1e293b",textTransform:"uppercase",letterSpacing:1}}>Área por tanque</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:"#1e293b"}}>{fmtN(areaPorTanque,2)} ha</div>
                                 </div>
-                                <div style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px"}}>
-                                  <div style={{fontSize:10,color:"#00695c",textTransform:"uppercase",letterSpacing:1}}>Tanques necessários</div>
-                                  <div style={{fontSize:16,fontWeight:800,color:"#00695c"}}>
+                                <div style={{background:"#f1f5f9",borderRadius:4,padding:"10px 12px"}}>
+                                  <div style={{fontSize:10,color:"#1e293b",textTransform:"uppercase",letterSpacing:1}}>Tanques necessários</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:"#1e293b"}}>
                                     {fmtN(numTanques,2)} {sobraHa>0.001 ? `(${tanquesCheios} cheio${tanquesCheios===1?"":"s"} + ${fmtN(sobraHa,2)} ha)` : ""}
                                   </div>
                                 </div>
@@ -4675,9 +4676,9 @@ function App() {
                               <div style={{overflowX:"auto",marginTop:14}}>
                               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                                 <thead>
-                                  <tr style={{background:"#e0f2f1"}}>
+                                  <tr style={{background:"#f1f5f9"}}>
                                     {["Produto","Dose/ha","Qtd. por tanque","Qtd. total"].map(h=>(
-                                      <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                      <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                                     ))}
                                   </tr>
                                 </thead>
@@ -4686,7 +4687,7 @@ function App() {
                                     <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
                                       <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
                                       <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
-                                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmtN(it.dose*areaPorTanque,3)} {it.unidade}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:"#1e293b"}}>{fmtN(it.dose*areaPorTanque,3)} {it.unidade}</td>
                                       <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(it.dose*areaTotalAtual,1)} {it.unidade}</td>
                                     </tr>
                                   ))}
@@ -4707,10 +4708,10 @@ function App() {
 
                       <div style={{display:"flex",gap:10,marginTop:18}}>
                         <button onClick={resetFormAplicacao}
-                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
                         <button onClick={salvarAplicacaoPlanejada}
-                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                          📋 Salvar como Planejado
+                          style={{flex:1,padding:"12px 20px",background:"#334155",border:"none",borderRadius:4,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                          Salvar como Planejado
                         </button>
                       </div>
                     </div>
@@ -4727,8 +4728,8 @@ function App() {
                           <label style={lblSt}>Data de realização</label>
                           <input placeholder="dd/mm/aaaa" value={dataRealizarInput} onChange={e=>setDataRealizarInput(e.target.value)} style={inpSt}/>
                           <div style={{display:"flex",gap:10,marginTop:20}}>
-                            <button onClick={()=>setRealizandoAplicacaoId(null)} style={{flex:1,padding:"11px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
-                            <button onClick={confirmarRealizarAplicacao} style={{flex:1,padding:"11px",background:"#2e7d32",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+                            <button onClick={()=>setRealizandoAplicacaoId(null)} style={{flex:1,padding:"11px",background:"#f5f5f5",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                            <button onClick={confirmarRealizarAplicacao} style={{flex:1,padding:"11px",background:"#2e7d32",border:"none",borderRadius:4,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
                           </div>
                         </div>
                       </div>
@@ -4736,7 +4737,7 @@ function App() {
                   })()}
 
                   {aplicacoesOrdenadas.length===0 && (
-                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma aplicação cadastrada ainda.</div>
+                    <div style={{background:"#fff",borderRadius:6,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma aplicação cadastrada ainda.</div>
                   )}
                   {aplicacoesOrdenadas.map(ap=>{
                     const aberta = expandedAplicacaoId===ap.id;
@@ -4745,7 +4746,7 @@ function App() {
                     const temFaltante = realizado && (ap.itens||[]).some(it=>it.faltante>0);
                     const ciclo = ciclosRecords.find(c=>c.id===ap.cicloId);
                     return (
-                      <div key={ap.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                      <div key={ap.id} style={{background:"#fff",borderRadius:6,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
                         <div onClick={()=>setExpandedAplicacaoId(id=>id===ap.id?null:ap.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                           <div>
                             <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {(ap.areaNomes||[]).join(", ")||"Área sem nome"}</div>
@@ -4755,15 +4756,15 @@ function App() {
                           </div>
                           <div style={{display:"flex",gap:8,alignItems:"center"}}>
                             {temFaltante && <span style={{color:"#c62828",fontSize:11,fontWeight:700}}>⚠ Faltou produto</span>}
-                            {realizado && <span style={{fontSize:12,fontWeight:700,color:"#00695c"}}>{fmt(custoTotalAp)}</span>}
-                            <span style={{padding:"3px 10px",borderRadius:12,fontSize:10,fontWeight:700,background:realizado?"#e8f5e9":"#fff3e0",color:realizado?"#2e7d32":"#e65100"}}>{ap.status}</span>
+                            {realizado && <span style={{fontSize:12,fontWeight:700,color:"#1e293b"}}>{fmt(custoTotalAp)}</span>}
+                            <span style={{padding:"3px 10px",borderRadius:4,fontSize:10,fontWeight:700,background:realizado?"#e8f5e9":"#fff3e0",color:realizado?"#2e7d32":"#e65100"}}>{ap.status}</span>
                           </div>
                         </div>
                         {aberta && (
                           <div style={{padding:"0 16px 14px"}}>
                             {ap.areaPorTanqueHa>0 && (
-                              <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>
-                                🧪 Calda: {fmtN(ap.vazao,0)} L/ha · tanque de {fmtN(ap.capacidadeTanque,0)} L → {fmtN(ap.areaPorTanqueHa,2)} ha/tanque · {fmtN(ap.areaTotalHa/ap.areaPorTanqueHa,2)} tanques necessários
+                              <div style={{fontSize:12,color:"#1e293b",marginBottom:8}}>
+                                Calda: {fmtN(ap.vazao,0)} L/ha · tanque de {fmtN(ap.capacidadeTanque,0)} L → {fmtN(ap.areaPorTanqueHa,2)} ha/tanque · {fmtN(ap.areaTotalHa/ap.areaPorTanqueHa,2)} tanques necessários
                               </div>
                             )}
                             <div style={{overflowX:"auto"}}>
@@ -4780,7 +4781,7 @@ function App() {
                                   <tr key={idx}>
                                     <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
-                                    {ap.areaPorTanqueHa>0 && <td style={{padding:"6px 8px",textAlign:"right",color:"#00695c",fontWeight:700}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
+                                    {ap.areaPorTanqueHa>0 && <td style={{padding:"6px 8px",textAlign:"right",color:"#1e293b",fontWeight:700}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.qtdTotal,1)} {it.unidade}</td>
                                     {realizado && <>
                                       <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmt(it.custoUnitario)}</td>
@@ -4797,7 +4798,7 @@ function App() {
                               {!realizado && (
                                 <button onClick={()=>iniciarRealizarAplicacao(ap.id)} style={{padding:"7px 14px",background:"#2e7d32",border:"none",color:"#fff",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Realizar aplicação</button>
                               )}
-                              <button onClick={()=>imprimirAplicacao(ap.id)} style={{padding:"7px 14px",background:"none",border:"1px solid #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>🖨️ Gerar PDF</button>
+                              <button onClick={()=>imprimirAplicacao(ap.id)} style={{padding:"7px 14px",background:"none",border:"1px solid #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>Gerar PDF</button>
                               <button onClick={()=>{if(window.confirm(realizado?"Remover este registro? Isso não devolve o estoque baixado.":"Remover esta aplicação planejada?"))deleteRecord(setAplicacoesRecords,ap.id);}}
                                 style={{padding:"7px 14px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover</button>
                             </div>
@@ -4840,26 +4841,26 @@ function App() {
               return (
                 <div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Aplicações realizadas</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{aplicacoesRealizadas.length}</div></div>
-                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Custo total</div><div style={{fontSize:18,fontWeight:800,color:"#00838f"}}>{fmt(custoTotalGeral)}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Aplicações realizadas</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{aplicacoesRealizadas.length}</div></div>
+                    <div style={cardSt}><div style={{fontSize:11,color:"#888"}}>Custo total</div><div style={{fontSize:18,fontWeight:800,color:"#334155"}}>{fmt(custoTotalGeral)}</div></div>
                   </div>
 
-                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>Custo por categoria</div>
-                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:20}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#1e293b",marginBottom:10}}>Custo por categoria</div>
+                  <div style={{background:"#fff",borderRadius:6,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:20}}>
                     <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead>
-                        <tr style={{background:"#e0f2f1"}}>
-                          <th style={{padding:"7px 9px",textAlign:"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Categoria</th>
-                          <th style={{padding:"7px 9px",textAlign:"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Custo</th>
-                          <th style={{padding:"7px 9px",textAlign:"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>% do total</th>
+                        <tr style={{background:"#f1f5f9"}}>
+                          <th style={{padding:"7px 9px",textAlign:"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Categoria</th>
+                          <th style={{padding:"7px 9px",textAlign:"right",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>Custo</th>
+                          <th style={{padding:"7px 9px",textAlign:"right",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>% do total</th>
                         </tr>
                       </thead>
                       <tbody>
                         {GRUPOS_ESTOQUE_INSUMOS.filter(cat=>custoPorCategoria[cat]).map(cat=>(
                           <tr key={cat}>
                             <td style={{padding:"6px 9px"}}>
-                              <span style={{padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,color:"#fff",background:COR_GRUPO_ESTOQUE[cat]}}>{cat}</span>
+                              <span style={{padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:600,color:COR_GRUPO_ESTOQUE[cat],background:COR_GRUPO_BG[cat],border:`1px solid ${COR_GRUPO_ESTOQUE[cat]}33`}}>{cat}</span>
                             </td>
                             <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700}}>{fmt(custoPorCategoria[cat])}</td>
                             <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{custoTotalGeral>0?fmtN(custoPorCategoria[cat]/custoTotalGeral*100,1):0}%</td>
@@ -4873,14 +4874,14 @@ function App() {
                     </div>
                   </div>
 
-                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>Custo por área</div>
-                  <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#1e293b",marginBottom:10}}>Custo por área</div>
+                  <div style={{background:"#fff",borderRadius:6,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
                     <div style={{overflowX:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead>
-                        <tr style={{background:"#e0f2f1"}}>
+                        <tr style={{background:"#f1f5f9"}}>
                           {["Área","Ha","Custo total","Custo/ha"].map(h=>(
-                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Área"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>{h}</th>
+                            <th key={h} style={{padding:"7px 9px",textAlign:h==="Área"?"left":"right",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -6103,7 +6104,7 @@ function App() {
       const ciclo = ciclosRecords.find(c=>c.id===ap.cicloId);
       return (
         <div className="print-only" style={{padding:30,fontFamily:"system-ui,sans-serif",color:"#111"}}>
-          <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>🚜 Recomendação de Aplicação</div>
+          <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>Recomendação de Aplicação</div>
           <div style={{fontSize:12,color:"#666",marginBottom:16}}>GC Agro{ciclo?` · ${ciclo.nome}`:""}</div>
           <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20,fontSize:13}}>
             <tbody>
