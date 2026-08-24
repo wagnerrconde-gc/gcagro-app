@@ -68,6 +68,48 @@ const KEY_ESTOQUE_INSUMOS = "gcagro_estoque_insumos_v1";
 const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
 const COR_GRUPO_ESTOQUE = { Defensivos:"#c62828", Adubos:"#8d6e63", Foliares:"#2e7d32", Sementes:"#f9a825" };
 const UNIDADES_ESTOQUE_INSUMOS = ["L","KG","TN","sc","doses","un"];
+const KEY_RECOMENDACOES = "gcagro_recomendacoes_v1";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KML — cálculo de área (ha) de talhões enviados como arquivo .kml
+// ─────────────────────────────────────────────────────────────────────────────
+// Área geodésica aproximada de um polígono lat/lon (fórmula padrão de excesso esférico,
+// boa o bastante pra talhões de fazenda — não serve pra polígonos muito grandes).
+function areaPoligonoHa(pontosLonLat) {
+  const R = 6378137; // raio médio da Terra, em metros
+  const rad = d => d * Math.PI / 180;
+  let area = 0;
+  const n = pontosLonLat.length;
+  for (let i = 0; i < n; i++) {
+    const [lon1, lat1] = pontosLonLat[i];
+    const [lon2, lat2] = pontosLonLat[(i + 1) % n];
+    area += rad(lon2 - lon1) * (2 + Math.sin(rad(lat1)) + Math.sin(rad(lat2)));
+  }
+  return Math.abs(area * R * R / 2) / 10000; // m² → ha
+}
+// Extrai polígonos (Placemarks) de um KML e retorna [{nome, areaHa}, ...].
+// Não desconta "buracos" (innerBoundaryIs) — soma todas as coordinates de cada Placemark.
+function parseKML(xmlText) {
+  const dom = new DOMParser().parseFromString(xmlText, "text/xml");
+  if (dom.getElementsByTagName("parsererror").length) throw new Error("XML inválido");
+  const placemarks = Array.from(dom.getElementsByTagName("Placemark"));
+  const talhoes = [];
+  placemarks.forEach((pm, idx) => {
+    const nameEl = pm.getElementsByTagName("name")[0];
+    const nome = nameEl ? nameEl.textContent.trim() : "";
+    const coordsEls = Array.from(pm.getElementsByTagName("coordinates"));
+    let areaHa = 0;
+    coordsEls.forEach(ce => {
+      const pts = ce.textContent.trim().split(/\s+/).map(p => {
+        const [lon, lat] = p.split(",").map(Number);
+        return [lon, lat];
+      }).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (pts.length >= 3) areaHa += areaPoligonoHa(pts);
+    });
+    if (areaHa > 0) talhoes.push({ nome: nome || `Talhão ${idx + 1}`, areaHa });
+  });
+  return talhoes;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -1340,6 +1382,17 @@ function App() {
   const [insumoEstoqueSubmitError, setInsumoEstoqueSubmitError] = useState("");
   const [insumoEstoqueBusca, setInsumoEstoqueBusca] = useState("");
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
+  const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // "estoque" | "recomendacoes"
+
+  // ── Recomendações de Campo (dá baixa automática no Estoque de Insumos) ──
+  const [recomendacoesRecords, setRecomendacoesRecords] = useState(() => loadLS(KEY_RECOMENDACOES, []));
+  const [addingRecomendacao, setAddingRecomendacao] = useState(false);
+  const [novaRecomendacao, setNovaRecomendacao] = useState({data:"",talhao:"",areaHa:"",itens:[],obs:""});
+  const [novoItemRec, setNovoItemRec] = useState({produtoId:"",dose:""});
+  const [recSubmitError, setRecSubmitError] = useState("");
+  const [recConfirmMsg, setRecConfirmMsg] = useState(null);
+  const [expandedRecId, setExpandedRecId] = useState(null);
+  const [kmlMsg, setKmlMsg] = useState(null);
 
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
@@ -1393,6 +1446,7 @@ function App() {
   useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
   useFirebaseSync("gcagro/estoque_pecas", pecasRecords, setPecasRecords);
   useFirebaseSync("gcagro/estoque_insumos", insumosEstoqueRecords, setInsumosEstoqueRecords);
+  useFirebaseSync("gcagro/recomendacoes", recomendacoesRecords, setRecomendacoesRecords);
   // Histórico de baixas: nó com push-ids (não um array simples), então lê direto em vez de useFirebaseSync.
   useEffect(() => {
     if (!fbDb) return;
@@ -1426,6 +1480,7 @@ function App() {
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
   useEffect(() => { saveLS(KEY_ESTOQUE_PECAS, pecasRecords); }, [pecasRecords]);
   useEffect(() => { saveLS(KEY_ESTOQUE_INSUMOS, insumosEstoqueRecords); }, [insumosEstoqueRecords]);
+  useEffect(() => { saveLS(KEY_RECOMENDACOES, recomendacoesRecords); }, [recomendacoesRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
   useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
@@ -1944,7 +1999,7 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
-      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords,
+      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords, recomendacoesRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1992,6 +2047,7 @@ function App() {
         if (b.chuvaRecords) setChuvaRecords(b.chuvaRecords);
         if (b.pecasRecords) setPecasRecords(b.pecasRecords);
         if (b.insumosEstoqueRecords) setInsumosEstoqueRecords(b.insumosEstoqueRecords);
+        if (b.recomendacoesRecords) setRecomendacoesRecords(b.recomendacoesRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -2180,6 +2236,75 @@ function App() {
     setInsumoEstoqueSubmitError("");
     setAddingInsumoEstoque(false);
   }
+
+  // ── Recomendações de Campo ──
+  function handleKmlUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const talhoes = parseKML(ev.target.result);
+        if (!talhoes.length) { setKmlMsg({ok:false, texto:"Não encontrei nenhuma área (polígono) nesse KML."}); return; }
+        const areaTotal = talhoes.reduce((s,t)=>s+t.areaHa,0);
+        const nomes = talhoes.map(t=>t.nome).join(" + ");
+        setNovaRecomendacao(p=>({...p, talhao: nomes, areaHa: areaTotal.toFixed(2)}));
+        setKmlMsg({ok:true, texto:`✓ ${talhoes.length} área(s) lida(s): ${fmtN(areaTotal,1)} ha no total.`});
+      } catch {
+        setKmlMsg({ok:false, texto:"Não consegui ler esse arquivo KML."});
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+  function addItemRec() {
+    if (!novoItemRec.produtoId || !novoItemRec.dose) { setRecSubmitError("Selecione o produto e a dose por hectare."); return; }
+    const produto = insumosEstoqueRecords.find(p=>p.id===novoItemRec.produtoId);
+    if (!produto) return;
+    setNovaRecomendacao(p=>({...p, itens:[...p.itens, {
+      produtoId: produto.id, nome: produto.nome, categoria: produto.categoria, unidade: produto.unidade,
+      dose: parseFloat(novoItemRec.dose)||0
+    }]}));
+    setNovoItemRec({produtoId:"",dose:""});
+    setRecSubmitError("");
+  }
+  function removeItemRec(idx) {
+    setNovaRecomendacao(p=>({...p, itens: p.itens.filter((_,i)=>i!==idx)}));
+  }
+  function confirmarRecomendacao() {
+    const areaHa = parseFloat(novaRecomendacao.areaHa)||0;
+    if (areaHa<=0) { setRecSubmitError("Informe a área em hectares (envie o KML ou digite manualmente)."); return; }
+    if (!novaRecomendacao.itens.length) { setRecSubmitError("Adicione ao menos um produto à recomendação."); return; }
+
+    const itensProcessados = novaRecomendacao.itens.map(it => {
+      const produto = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
+      const qtdTotal = it.dose*areaHa;
+      const estoqueAntes = produto ? (produto.quantidade||0) : 0;
+      const estoqueDepois = estoqueAntes - qtdTotal;
+      const faltante = Math.max(0, qtdTotal-estoqueAntes);
+      return { produtoId: it.produtoId, nome: it.nome, categoria: it.categoria, unidade: it.unidade,
+        dose: it.dose, qtdTotal, estoqueAntes, estoqueDepois, faltante };
+    });
+
+    setInsumosEstoqueRecords(recs => recs.map(r => {
+      const item = itensProcessados.find(it=>it.produtoId===r.id);
+      return item ? {...r, quantidade: item.estoqueDepois} : r;
+    }));
+
+    addRecord(setRecomendacoesRecords, {
+      data: novaRecomendacao.data.trim() || new Date().toLocaleDateString("pt-BR"),
+      talhao: novaRecomendacao.talhao.trim() || "Área sem nome",
+      areaHa, itens: itensProcessados, obs: novaRecomendacao.obs.trim()
+    });
+
+    setRecConfirmMsg({ itens: itensProcessados });
+    setNovaRecomendacao({ data:"", talhao:"", areaHa:"", itens:[], obs:"" });
+    setNovoItemRec({ produtoId:"", dose:"" });
+    setKmlMsg(null);
+    setRecSubmitError("");
+    setAddingRecomendacao(false);
+  }
+
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -3627,6 +3752,14 @@ function App() {
 
         return (
           <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"flex",gap:6,marginBottom:16}}>
+              <button onClick={()=>setInsumoSubTab("estoque")}
+                style={{padding:"8px 16px",background:insumoSubTab==="estoque"?"#00838f":"#fff",border:`1px solid ${insumoSubTab==="estoque"?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab==="estoque"?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab==="estoque"?700:400,cursor:"pointer"}}>📦 Estoque</button>
+              <button onClick={()=>setInsumoSubTab("recomendacoes")}
+                style={{padding:"8px 16px",background:insumoSubTab==="recomendacoes"?"#00838f":"#fff",border:`1px solid ${insumoSubTab==="recomendacoes"?"#00838f":"#ddd"}`,borderRadius:20,color:insumoSubTab==="recomendacoes"?"#fff":"#555",fontSize:12,fontWeight:insumoSubTab==="recomendacoes"?700:400,cursor:"pointer"}}>🌾 Recomendações de Campo</button>
+            </div>
+
+            {insumoSubTab==="estoque" && (<>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:14}}>
               {totaisPorCategoria.map(t=>(
                 <div key={t.categoria} onClick={()=>setInsumoEstoqueCatFiltro(t.categoria)}
@@ -3723,6 +3856,199 @@ function App() {
               </table>
               </div>
             </div>
+            </>)}
+
+            {insumoSubTab==="recomendacoes" && (()=>{
+              const recsOrdenadas = [...recomendacoesRecords].sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+              const areaHaAtual = parseFloat(novaRecomendacao.areaHa)||0;
+              return (
+                <div>
+                  {recConfirmMsg && (
+                    <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                        <div style={{fontWeight:700,color:"#e65100"}}>✓ Recomendação registrada — baixa dada em {recConfirmMsg.itens.length} produto(s).</div>
+                        <button onClick={()=>setRecConfirmMsg(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#e65100",fontSize:14}}>✕</button>
+                      </div>
+                      {recConfirmMsg.itens.some(it=>it.faltante>0) ? (
+                        <div style={{marginTop:8}}>
+                          <div style={{fontSize:12,color:"#c62828",fontWeight:700,marginBottom:4}}>⚠ Produtos insuficientes — comprar antes de aplicar:</div>
+                          {recConfirmMsg.itens.filter(it=>it.faltante>0).map(it=>(
+                            <div key={it.produtoId} style={{fontSize:12,color:"#c62828"}}>• Faltam {fmtN(it.faltante,1)} {it.unidade} de {it.nome}</div>
+                          ))}
+                        </div>
+                      ) : <div style={{marginTop:8,fontSize:12,color:"#2e7d32"}}>✓ Estoque foi suficiente para todos os produtos.</div>}
+                    </div>
+                  )}
+
+                  <div style={{display:"flex",marginBottom:14}}>
+                    <button onClick={()=>{setAddingRecomendacao(a=>!a);setRecSubmitError("");setKmlMsg(null);}}
+                      style={{padding:"8px 16px",background:addingRecomendacao?"#eee":"#00838f",border:"none",borderRadius:6,color:addingRecomendacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                      {addingRecomendacao ? "✕ Cancelar" : "+ Nova recomendação"}
+                    </button>
+                  </div>
+
+                  {addingRecomendacao && (
+                    <div style={{background:"#fff",borderRadius:10,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                      <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:14}}>🌾 Nova recomendação de campo</div>
+
+                      <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Arquivo KML da área (opcional)</label>
+                      <div style={{margin:"6px 0 4px"}}>
+                        <input type="file" accept=".kml" onChange={handleKmlUpload}/>
+                      </div>
+                      {kmlMsg && <div style={{fontSize:12,marginBottom:10,color:kmlMsg.ok?"#2e7d32":"#c62828"}}>{kmlMsg.texto}</div>}
+
+                      <div style={{display:"flex",gap:10,marginTop:10,flexWrap:"wrap"}}>
+                        <div style={{flex:"1 1 140px"}}>
+                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Data</label>
+                          <input placeholder="dd/mm/aaaa" value={novaRecomendacao.data} onChange={e=>setNovaRecomendacao(p=>({...p,data:e.target.value}))}
+                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        </div>
+                        <div style={{flex:"2 1 220px"}}>
+                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Talhão / Área</label>
+                          <input placeholder="Ex: Lote 11" value={novaRecomendacao.talhao} onChange={e=>setNovaRecomendacao(p=>({...p,talhao:e.target.value}))}
+                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        </div>
+                        <div style={{flex:"1 1 120px"}}>
+                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Área (ha)</label>
+                          <input type="number" step="any" placeholder="ha" value={novaRecomendacao.areaHa} onChange={e=>setNovaRecomendacao(p=>({...p,areaHa:e.target.value}))}
+                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        </div>
+                      </div>
+
+                      <div style={{marginTop:18,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da recomendação</div>
+                      {novaRecomendacao.itens.length>0 && (
+                        <div style={{overflowX:"auto",marginTop:8}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <thead>
+                            <tr style={{background:"#e0f2f1"}}>
+                              {["Produto","Dose/ha","Total p/ área","Estoque atual","Situação",""].map(h=>(
+                                <th key={h} style={{padding:"6px 8px",textAlign:h==="Dose/ha"||h==="Total p/ área"||h==="Estoque atual"?"right":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {novaRecomendacao.itens.map((it,idx)=>{
+                              const qtdTotal = it.dose*areaHaAtual;
+                              const produtoAtual = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
+                              const estoqueAtual = produtoAtual ? (produtoAtual.quantidade||0) : 0;
+                              const faltante = Math.max(0, qtdTotal-estoqueAtual);
+                              return (
+                                <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
+                                  <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
+                                  <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
+                                  <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700}}>{fmtN(qtdTotal,1)} {it.unidade}</td>
+                                  <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(estoqueAtual,1)} {it.unidade}</td>
+                                  <td style={{padding:"6px 8px"}}>
+                                    {faltante>0
+                                      ? <span style={{color:"#c62828",fontWeight:700}}>⚠ Faltam {fmtN(faltante,1)} {it.unidade}</span>
+                                      : <span style={{color:"#2e7d32"}}>✓ Suficiente</span>}
+                                  </td>
+                                  <td style={{padding:"6px 8px",textAlign:"center"}}>
+                                    <button onClick={()=>removeItemRec(idx)} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        </div>
+                      )}
+
+                      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+                        <div style={{flex:"2 1 220px"}}>
+                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Produto</label>
+                          <select value={novoItemRec.produtoId} onChange={e=>setNovoItemRec(p=>({...p,produtoId:e.target.value}))}
+                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}>
+                            <option value="">Selecione...</option>
+                            {GRUPOS_ESTOQUE_INSUMOS.map(cat=>{
+                              const prods = insumosEstoqueRecords.filter(p=>p.categoria===cat).sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
+                              if (!prods.length) return null;
+                              return (
+                                <optgroup key={cat} label={cat}>
+                                  {prods.map(p=><option key={p.id} value={p.id}>{p.nome} ({fmtN(p.quantidade,1)} {p.unidade} em estoque)</option>)}
+                                </optgroup>
+                              );
+                            })}
+                          </select>
+                        </div>
+                        <div style={{flex:"1 1 140px"}}>
+                          <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Dose (por ha)</label>
+                          <input type="number" step="any" placeholder="Ex: 2,5" value={novoItemRec.dose} onChange={e=>setNovoItemRec(p=>({...p,dose:e.target.value}))}
+                            style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                        </div>
+                        <button onClick={addItemRec} style={{padding:"8px 16px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
+                      </div>
+
+                      <div style={{marginTop:16}}>
+                        <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Observação</label>
+                        <input value={novaRecomendacao.obs} onChange={e=>setNovaRecomendacao(p=>({...p,obs:e.target.value}))}
+                          style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                      </div>
+
+                      {recSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {recSubmitError}</div>}
+
+                      <div style={{display:"flex",gap:10,marginTop:18}}>
+                        <button onClick={()=>{setAddingRecomendacao(false);setRecSubmitError("");setKmlMsg(null);}}
+                          style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
+                        <button onClick={confirmarRecomendacao}
+                          style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                          ✓ Confirmar e dar baixa no estoque
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{fontSize:13,fontWeight:700,color:"#00695c",marginBottom:10}}>📋 Recomendações registradas</div>
+                  {recsOrdenadas.length===0 && (
+                    <div style={{background:"#fff",borderRadius:10,padding:20,textAlign:"center",color:"#bbb",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>Nenhuma recomendação registrada ainda.</div>
+                  )}
+                  {recsOrdenadas.map(rec=>{
+                    const temFaltante = (rec.itens||[]).some(it=>it.faltante>0);
+                    const aberta = expandedRecId===rec.id;
+                    return (
+                      <div key={rec.id} style={{background:"#fff",borderRadius:10,marginBottom:8,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",overflow:"hidden"}}>
+                        <div onClick={()=>setExpandedRecId(id=>id===rec.id?null:rec.id)} style={{padding:"12px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontWeight:700,color:"#1a3a1a"}}>{aberta?"▼":"▶"} {rec.talhao}</div>
+                            <div style={{fontSize:11,color:"#888",marginTop:2}}>{rec.data} · {fmtN(rec.areaHa,1)} ha · {(rec.itens||[]).length} produto(s)</div>
+                          </div>
+                          {temFaltante && <span style={{color:"#c62828",fontSize:11,fontWeight:700}}>⚠ Faltou produto</span>}
+                        </div>
+                        {aberta && (
+                          <div style={{padding:"0 16px 14px"}}>
+                            <div style={{overflowX:"auto"}}>
+                            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                              <thead>
+                                <tr style={{background:"#f5f5f5"}}>
+                                  {["Produto","Dose/ha","Total baixado","Estoque depois","Faltou"].map(h=>(
+                                    <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#888",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(rec.itens||[]).map((it,idx)=>(
+                                  <tr key={idx}>
+                                    <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.qtdTotal,1)} {it.unidade}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right",color:it.estoqueDepois<0?"#c62828":"#888"}}>{fmtN(it.estoqueDepois,1)} {it.unidade}</td>
+                                    <td style={{padding:"6px 8px",textAlign:"right",color:it.faltante>0?"#c62828":"#2e7d32",fontWeight:it.faltante>0?700:400}}>{it.faltante>0?`${fmtN(it.faltante,1)} ${it.unidade}`:"—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            </div>
+                            {rec.obs && <div style={{marginTop:8,fontSize:12,color:"#888",fontStyle:"italic"}}>Obs: {rec.obs}</div>}
+                            <button onClick={()=>{if(window.confirm("Remover este registro de recomendação? Isso não devolve o estoque baixado."))deleteRecord(setRecomendacoesRecords,rec.id);}}
+                              style={{marginTop:10,padding:"6px 12px",background:"none",border:"1px solid #e57373",color:"#e57373",borderRadius:6,fontSize:11,cursor:"pointer"}}>Remover registro</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
