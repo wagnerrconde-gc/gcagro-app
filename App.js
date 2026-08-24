@@ -62,6 +62,12 @@ const KEY_COMISSAO_COM = "gcagro_comissao_com_v1";
 const KEY_COMISSAO_GERENTE = "gcagro_comissao_gerente_v1";
 const KEY_CHUVA = "gcagro_chuva_v1";
 const KEY_ESTOQUE_PECAS = "gcagro_estoque_pecas_v1";
+const KEY_ESTOQUE_INSUMOS = "gcagro_estoque_insumos_v1";
+
+// Estoque de Insumos: grupos e cor de cada um (badge nas tabelas)
+const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
+const COR_GRUPO_ESTOQUE = { Defensivos:"#c62828", Adubos:"#8d6e63", Foliares:"#2e7d32", Sementes:"#f9a825" };
+const UNIDADES_ESTOQUE_INSUMOS = ["L","KG","TN","sc","doses","un"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FORNECEDORES
@@ -83,7 +89,7 @@ const ADMIN_PASSWORD = "GCagro26#";
 
 // Telas liberadas pro papel "equipe" (chefe de equipe / funcionário) — todo o resto
 // (financeiro, vendas, cotação, programação, planejamento, safras...) é só do dono.
-const EQUIPE_VIEWS = ["pecas"];
+const EQUIPE_VIEWS = ["pecas","insumos"];
 function loadRole() { try { return localStorage.getItem("gcagro_role"); } catch { return null; } }
 function saveRole(role) { try { role ? localStorage.setItem("gcagro_role", role) : localStorage.removeItem("gcagro_role"); } catch {} }
 
@@ -1327,6 +1333,14 @@ function App() {
   // no Firebase como nós com push-id (evita duas baixas simultâneas se sobrescreverem).
   const [pecasHistorico, setPecasHistorico] = useState([]);
 
+  // ── Estoque de Insumos (defensivos, adubos, foliares e sementes) ──
+  const [insumosEstoqueRecords, setInsumosEstoqueRecords] = useState(() => loadLS(KEY_ESTOQUE_INSUMOS, []));
+  const [addingInsumoEstoque, setAddingInsumoEstoque] = useState(false);
+  const [newInsumoEstoque, setNewInsumoEstoque] = useState({categoria:GRUPOS_ESTOQUE_INSUMOS[0],nome:"",unidade:"L",quantidade:"",localizacao:"",vencimento:"",obs:""});
+  const [insumoEstoqueSubmitError, setInsumoEstoqueSubmitError] = useState("");
+  const [insumoEstoqueBusca, setInsumoEstoqueBusca] = useState("");
+  const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
+
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
   useEffect(() => { saveLS(KEY_PROG+"_inverno", dataInverno); }, [dataInverno]);
@@ -1378,6 +1392,7 @@ function App() {
   useFirebaseSync("gcagro/comissao_gerente", gerenteNome, setGerenteNome);
   useFirebaseSync("gcagro/chuva", chuvaRecords, setChuvaRecords);
   useFirebaseSync("gcagro/estoque_pecas", pecasRecords, setPecasRecords);
+  useFirebaseSync("gcagro/estoque_insumos", insumosEstoqueRecords, setInsumosEstoqueRecords);
   // Histórico de baixas: nó com push-ids (não um array simples), então lê direto em vez de useFirebaseSync.
   useEffect(() => {
     if (!fbDb) return;
@@ -1410,6 +1425,7 @@ function App() {
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
   useEffect(() => { saveLS(KEY_VENDAS, vendasRecords); }, [vendasRecords]);
   useEffect(() => { saveLS(KEY_ESTOQUE_PECAS, pecasRecords); }, [pecasRecords]);
+  useEffect(() => { saveLS(KEY_ESTOQUE_INSUMOS, insumosEstoqueRecords); }, [insumosEstoqueRecords]);
   useEffect(() => { saveLS(KEY_FINANCEIRO, financeiroRecords); }, [financeiroRecords]);
   useEffect(() => { saveLS(KEY_COMISSAO_ADIANT, comissaoAdiant); }, [comissaoAdiant]);
   useEffect(() => { saveLS(KEY_COMISSAO_COM, comissaoRecords); }, [comissaoRecords]);
@@ -1928,7 +1944,7 @@ function App() {
       cotAdubProdVerao, cotAdubProdInv, cotSemProdVerao, cotSemProdInv, cotInsumoProdVerao, cotInsumoProdInv,
       fornecedoresAdub, fornecedoresIns, sementesFornecedores,
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
-      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords,
+      comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords,
     };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
@@ -1975,6 +1991,7 @@ function App() {
         if (b.gerenteNome) setGerenteNome(b.gerenteNome);
         if (b.chuvaRecords) setChuvaRecords(b.chuvaRecords);
         if (b.pecasRecords) setPecasRecords(b.pecasRecords);
+        if (b.insumosEstoqueRecords) setInsumosEstoqueRecords(b.insumosEstoqueRecords);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
@@ -2154,6 +2171,15 @@ function App() {
     setPecaSubmitError("");
     setAddingPeca(false);
   }
+  function submitInsumoEstoque() {
+    if (!newInsumoEstoque.nome.trim()) { setInsumoEstoqueSubmitError("Preencha o Nome do produto para adicionar."); return; }
+    addRecord(setInsumosEstoqueRecords, { categoria:newInsumoEstoque.categoria, nome:newInsumoEstoque.nome.trim(),
+      unidade:newInsumoEstoque.unidade, quantidade:parseFloat(newInsumoEstoque.quantidade)||0,
+      localizacao:newInsumoEstoque.localizacao.trim(), vencimento:newInsumoEstoque.vencimento.trim(), obs:newInsumoEstoque.obs.trim() });
+    setNewInsumoEstoque({categoria:newInsumoEstoque.categoria,nome:"",unidade:newInsumoEstoque.unidade,quantidade:"",localizacao:"",vencimento:"",obs:""});
+    setInsumoEstoqueSubmitError("");
+    setAddingInsumoEstoque(false);
+  }
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
     const quantidade = parseFloat(newCompra.quantidade)||0;
@@ -2243,6 +2269,7 @@ function App() {
     { id:"comissoes",      label:"Comissões",             icon:"🤝", group:null },
     { id:"chuva",          label:"Pluviometria",          icon:"🌧️", group:null },
     { id:"pecas",          label:"Estoque de Peças",      icon:"🔧", group:null },
+    { id:"insumos",        label:"Estoque de Insumos",    icon:"🧪", group:null },
     { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
     { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
     { id:"backup",         label:"Backup",                icon:"💾", group:null },
@@ -2422,6 +2449,7 @@ function App() {
           { id:"comissoes",   label:"Comissões",           icon:"🤝", color:"#8d6e63" },
           { id:"chuva",       label:"Pluviometria",        icon:"🌧️", color:"#0288D1" },
           { id:"pecas",       label:"Estoque de Peças",    icon:"🔧", color:"#5d4037" },
+          { id:"insumos",     label:"Estoque de Insumos",  icon:"🧪", color:"#00838f" },
           { id:"fornecedores",label:"Fornecedores",        icon:"👥", color:"#1565C0" },
           { id:"safras",      label:"Safras",              icon:"🗂️", color:"#37474f" },
           { id:"backup",      label:"Backup",              icon:"💾", color:"#455a64" },
@@ -3571,6 +3599,125 @@ function App() {
                   ))}
                   {pecasHistorico.length===0 && (
                     <tr><td colSpan={7} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma baixa registrada ainda.</td></tr>
+                  )}
+                </tbody>
+              </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════
+          ESTOQUE DE INSUMOS (defensivos, adubos, foliares, sementes)
+      ══════════════════════════════════════════════════════ */}
+      {appView==="insumos" && (()=>{
+        const busca = insumoEstoqueBusca.trim().toLowerCase();
+        const hoje = new Date(); hoje.setHours(0,0,0,0);
+        const itensFiltrados = insumosEstoqueRecords.filter(r =>
+          (insumoEstoqueCatFiltro==="Todas" || r.categoria===insumoEstoqueCatFiltro) &&
+          (!busca ||
+            (r.nome||"").toLowerCase().includes(busca) ||
+            (r.localizacao||"").toLowerCase().includes(busca))
+        ).sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"") || (a.nome||"").localeCompare(b.nome||""));
+
+        const totaisPorCategoria = GRUPOS_ESTOQUE_INSUMOS.map(cat => ({
+          categoria: cat, count: insumosEstoqueRecords.filter(r=>r.categoria===cat).length
+        }));
+
+        return (
+          <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:14}}>
+              {totaisPorCategoria.map(t=>(
+                <div key={t.categoria} onClick={()=>setInsumoEstoqueCatFiltro(t.categoria)}
+                  style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",
+                    border:insumoEstoqueCatFiltro===t.categoria?`2px solid ${COR_GRUPO_ESTOQUE[t.categoria]}`:"2px solid transparent"}}>
+                  <div style={{fontSize:11,color:"#888"}}>{t.categoria}</div>
+                  <div style={{fontSize:18,fontWeight:800,color:COR_GRUPO_ESTOQUE[t.categoria]}}>{t.count}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {["Todas",...GRUPOS_ESTOQUE_INSUMOS].map(cat=>(
+                <button key={cat} onClick={()=>setInsumoEstoqueCatFiltro(cat)}
+                  style={{padding:"6px 14px",background:insumoEstoqueCatFiltro===cat?(COR_GRUPO_ESTOQUE[cat]||"#00838f"):"#fff",
+                    border:`1px solid ${insumoEstoqueCatFiltro===cat?(COR_GRUPO_ESTOQUE[cat]||"#00838f"):"#ddd"}`,borderRadius:20,
+                    color:insumoEstoqueCatFiltro===cat?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:insumoEstoqueCatFiltro===cat?700:400}}>{cat}</button>
+              ))}
+            </div>
+
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+              <input placeholder="🔎 Buscar por nome ou localização..." value={insumoEstoqueBusca} onChange={e=>setInsumoEstoqueBusca(e.target.value)}
+                style={{flex:"1 1 260px",padding:"8px 12px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+              <button onClick={()=>{setAddingInsumoEstoque(a=>!a);setInsumoEstoqueSubmitError("");}}
+                style={{padding:"6px 14px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+              <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{background:"#e0f2f1"}}>
+                    {["Categoria","Produto","Unid.","Qtd.","Localização","Vencimento","Obs",""].map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."?"right":h===""?"center":"left",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {itensFiltrados.map((r,i)=>{
+                    const venc = parseDataBR(r.vencimento);
+                    const vencido = venc && venc<hoje;
+                    return (
+                      <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                        <td style={{padding:"6px 9px"}}>
+                          <span style={{padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,color:"#fff",background:COR_GRUPO_ESTOQUE[r.categoria]||"#888"}}>{r.categoria}</span>
+                        </td>
+                        <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"nome",val)}/></td>
+                        <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="unidade" value={r.unidade} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"unidade",val)}/></td>
+                        <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,1)} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"quantidade",val,true)}/></td>
+                        <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="localizacao" value={r.localizacao} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"localizacao",val)}/></td>
+                        <td style={{padding:"6px 9px",color:vencido?"#c62828":"#888",fontWeight:vencido?700:400}}>
+                          <RecEditCell recKey={"insumoEstoque|"+r.id} field="vencimento" value={r.vencimento} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"vencimento",val)}/>
+                          {vencido && " ⚠"}
+                        </td>
+                        <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="obs" value={r.obs} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"obs",val)}/></td>
+                        <td style={{padding:"6px 4px",textAlign:"center"}}>
+                          <button onClick={()=>{if(window.confirm("Remover este item do estoque?"))deleteRecord(setInsumosEstoqueRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {addingInsumoEstoque && (
+                    <tr style={{background:"#fffde7"}}>
+                      <td style={{padding:"5px 6px"}}>
+                        <select value={newInsumoEstoque.categoria} onChange={e=>setNewInsumoEstoque(p=>({...p,categoria:e.target.value}))}
+                          style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          {GRUPOS_ESTOQUE_INSUMOS.map(c=><option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Nome do produto" value={newInsumoEstoque.nome} onChange={e=>setNewInsumoEstoque(p=>({...p,nome:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <select value={newInsumoEstoque.unidade} onChange={e=>setNewInsumoEstoque(p=>({...p,unidade:e.target.value}))}
+                          style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
+                          {UNIDADES_ESTOQUE_INSUMOS.map(u=><option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newInsumoEstoque.quantidade} onChange={e=>setNewInsumoEstoque(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Ex: Galpão 2" value={newInsumoEstoque.localizacao} onChange={e=>setNewInsumoEstoque(p=>({...p,localizacao:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newInsumoEstoque.vencimento} onChange={e=>setNewInsumoEstoque(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newInsumoEstoque.obs} onChange={e=>setNewInsumoEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <button onClick={submitInsumoEstoque} style={{background:"#00838f",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
+                        <button onClick={()=>{setAddingInsumoEstoque(false);setInsumoEstoqueSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
+                      </td>
+                    </tr>
+                  )}
+                  {addingInsumoEstoque && insumoEstoqueSubmitError && (
+                    <tr style={{background:"#fffde7"}}><td colSpan={8} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
+                  )}
+                  {itensFiltrados.length===0 && !addingInsumoEstoque && (
+                    <tr><td colSpan={8} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
                   )}
                 </tbody>
               </table>
