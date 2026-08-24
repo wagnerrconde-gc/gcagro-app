@@ -1281,7 +1281,7 @@ function App() {
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
   const [addingCompra, setAddingCompra]     = useState(false);
   const [custoCompraMsg, setCustoCompraMsg] = useState(null);
-  const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
+  const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:"",tratamento:""});
   const [comprasSafraSel, setComprasSafraSel] = useState(null);
   const [comprasCatSel, setComprasCatSel]     = useState(null);
   const [novaPastaNome, setNovaPastaNome]     = useState("");
@@ -2189,8 +2189,9 @@ function App() {
     const precoUnitario = parseFloat(newCompra.precoUnitario)||0;
     addRecord(setComprasRecords, { safra:newCompra.safra.trim()||safraAtiva, categoria:newCompra.categoria.trim()||"Adubação",
       produto:newCompra.produto.trim(), unidade:newCompra.unidade, quantidade, precoUnitario,
-      valorTotal:precoUnitario*quantidade, fornecedor:newCompra.fornecedor.trim(), data:newCompra.data.trim(), obs:newCompra.obs.trim() });
-    setNewCompra({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:""});
+      valorTotal:precoUnitario*quantidade, fornecedor:newCompra.fornecedor.trim(), data:newCompra.data.trim(), obs:newCompra.obs.trim(),
+      tratamento:newCompra.tratamento.trim() });
+    setNewCompra({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:"",tratamento:""});
     setAddingCompra(false);
   }
 
@@ -4017,8 +4018,10 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {["Data Compra","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""].map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
+                    {(comprasCatSel==="Sementes"
+                      ? ["Data Compra","Produto","Tratamento de Sementes","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
+                      : ["Data Compra","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]).map(h=>(
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Tratamento de Sementes","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -4027,6 +4030,9 @@ function App() {
                     <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
+                      {comprasCatSel==="Sementes" && (
+                        <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
+                      )}
                       <td style={{padding:"6px 9px",textAlign:"right"}}>
                         <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
@@ -4052,6 +4058,9 @@ function App() {
                     <tr style={{background:"#fffde7"}}>
                       <td style={{padding:"5px 6px"}}><input placeholder="Data Compra" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      {comprasCatSel==="Sementes" && (
+                        <td style={{padding:"5px 6px"}}><input placeholder="Tratamento de Sementes" value={newCompra.tratamento} onChange={e=>setNewCompra(p=>({...p,tratamento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      )}
                       <td style={{padding:"5px 6px"}}>
                         <select value={newCompra.unidade} onChange={e=>setNewCompra(p=>({...p,unidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
                           <option value="TN">TN</option>
@@ -4075,7 +4084,7 @@ function App() {
                     </tr>
                   )}
                   {comprasRecordsFiltrados.length===0 && !addingCompra && (
-                    <tr><td colSpan={9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente.</td></tr>
+                    <tr><td colSpan={comprasCatSel==="Sementes"?10:9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente.</td></tr>
                   )}
                 </tbody>
               </table>
