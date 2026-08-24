@@ -146,6 +146,12 @@ const ICON_PATHS = {
     <path d="M10 5.5V14.5"/>
     <path d="M12.3 7.6C12.1 6.6 11.1 6 10 6C8.7 6 7.5 6.7 7.5 7.9C7.5 10.3 12.5 9.2 12.5 12.1C12.5 13.4 11.3 14 10 14C8.9 14 7.9 13.5 7.7 12.5"/>
   </>,
+  grid: <>
+    <rect x="3.5" y="3.5" width="6" height="6" rx="1"/>
+    <rect x="10.5" y="3.5" width="6" height="6" rx="1"/>
+    <rect x="3.5" y="10.5" width="6" height="6" rx="1"/>
+    <rect x="10.5" y="10.5" width="6" height="6" rx="1"/>
+  </>,
 };
 function Icon({ name, size=17 }) {
   return (
@@ -2251,30 +2257,30 @@ function App() {
   const navBg = appView==="dashboard" ? "#1a5c2e" : isCotView ? "#0d1e36" : appView.startsWith("prog_inv")||appView.startsWith("resumo_inv") ? "#2c1810" : colors.bg;
 
   const MAIN_TABS = [
-    { id:"dashboard",      label:"Dashboard",           icon:"📊", group:null },
-    { id:"prog_verao",     label:"Verão",                icon:"🌱", group:"Programação" },
-    { id:"prog_inv",       label:"Inverno",               icon:"🌾", group:"Programação" },
-    { id:"resumo_verao",   label:"Resumo Verão",          icon:"📈", group:"Resumos" },
-    { id:"resumo_inv",     label:"Resumo Inverno",        icon:"📈", group:"Resumos" },
-    { id:"cot_verao_adub", label:"Cot. Adub. Verão",      icon:"🌱", group:"Cotação" },
-    { id:"cot_verao_sem",  label:"Cot. Sementes Verão",   icon:"🌾", group:"Cotação" },
-    { id:"cot_verao_ins",  label:"Cot. Insumos Verão",    icon:"💰", group:"Cotação" },
-    { id:"cot_inv_adub",   label:"Cot. Adub. Inverno",    icon:"🌱", group:"Cotação" },
-    { id:"cot_inv_sem",    label:"Cot. Sementes Inverno", icon:"🌾", group:"Cotação" },
-    { id:"cot_inv_ins",    label:"Cot. Insumos Inverno",  icon:"💰", group:"Cotação" },
-    { id:"plan_verao",     label:"Plano Verão",           icon:"🗺️", group:"Planejamento" },
-    { id:"plan_inv",       label:"Plano Inverno",         icon:"🗺️", group:"Planejamento" },
-    { id:"ts_verao",       label:"TS / Kit Sulco Verão",  icon:"🌾", group:"Planejamento" },
-    { id:"ts_inv",         label:"TS / Kit Sulco Inverno",icon:"🌾", group:"Planejamento" },
-    { id:"colheita",       label:"Colheita",              icon:"🌾", group:null },
-    { id:"vendas",         label:"Vendas",                icon:"💰", group:null },
-    { id:"compras",        label:"Compras",               icon:"🛒", group:null },
-    { id:"financeiro",     label:"Operações Financeiras", icon:"💹", group:null },
-    { id:"comissoes",      label:"Comissões",             icon:"🤝", group:null },
-    { id:"chuva",          label:"Pluviometria",          icon:"🌧️", group:null },
-    { id:"fornecedores",   label:"Fornecedores",          icon:"👥", group:null },
-    { id:"safras",         label:"Safras",                icon:"🗂️", group:null },
-    { id:"backup",         label:"Backup",                icon:"💾", group:null },
+    { id:"dashboard",      label:"Dashboard",           icon:"grid", group:null },
+    { id:"prog_verao",     label:"Verão",                icon:"sprout", group:"Programação" },
+    { id:"prog_inv",       label:"Inverno",               icon:"wheat", group:"Programação" },
+    { id:"resumo_verao",   label:"Resumo Verão",          icon:"trend", group:"Resumos" },
+    { id:"resumo_inv",     label:"Resumo Inverno",        icon:"trend", group:"Resumos" },
+    { id:"cot_verao_adub", label:"Cot. Adub. Verão",      icon:"sprout", group:"Cotação" },
+    { id:"cot_verao_sem",  label:"Cot. Sementes Verão",   icon:"wheat", group:"Cotação" },
+    { id:"cot_verao_ins",  label:"Cot. Insumos Verão",    icon:"coin", group:"Cotação" },
+    { id:"cot_inv_adub",   label:"Cot. Adub. Inverno",    icon:"sprout", group:"Cotação" },
+    { id:"cot_inv_sem",    label:"Cot. Sementes Inverno", icon:"wheat", group:"Cotação" },
+    { id:"cot_inv_ins",    label:"Cot. Insumos Inverno",  icon:"coin", group:"Cotação" },
+    { id:"plan_verao",     label:"Plano Verão",           icon:"map", group:"Planejamento" },
+    { id:"plan_inv",       label:"Plano Inverno",         icon:"map", group:"Planejamento" },
+    { id:"ts_verao",       label:"TS / Kit Sulco Verão",  icon:"wheat", group:"Planejamento" },
+    { id:"ts_inv",         label:"TS / Kit Sulco Inverno",icon:"wheat", group:"Planejamento" },
+    { id:"colheita",       label:"Colheita",              icon:"wheat", group:null },
+    { id:"vendas",         label:"Vendas",                icon:"trend", group:null },
+    { id:"compras",        label:"Compras",               icon:"cart", group:null },
+    { id:"financeiro",     label:"Operações Financeiras", icon:"chart", group:null },
+    { id:"comissoes",      label:"Comissões",             icon:"percent", group:null },
+    { id:"chuva",          label:"Pluviometria",          icon:"drop", group:null },
+    { id:"fornecedores",   label:"Fornecedores",          icon:"users", group:null },
+    { id:"safras",         label:"Safras",                icon:"folder", group:null },
+    { id:"backup",         label:"Backup",                icon:"save", group:null },
   ];
 
   // ── Set cotContext when entering cot views ──
@@ -2364,7 +2370,7 @@ function App() {
                   style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:2,
                     background:active?"rgba(255,255,255,0.14)":"transparent",border:"none",borderRadius:8,
                     color:"#fff",fontSize:13,fontWeight:active?700:400,cursor:"pointer"}}>
-                  <span style={{fontSize:15}}>{t.icon}</span><span>{t.label}</span>
+                  <Icon name={t.icon} size={15}/><span>{t.label}</span>
                 </button>
               </div>
             );
