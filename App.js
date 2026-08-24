@@ -1387,12 +1387,13 @@ function App() {
   // ── Recomendações de Campo (dá baixa automática no Estoque de Insumos) ──
   const [recomendacoesRecords, setRecomendacoesRecords] = useState(() => loadLS(KEY_RECOMENDACOES, []));
   const [addingRecomendacao, setAddingRecomendacao] = useState(false);
-  const [novaRecomendacao, setNovaRecomendacao] = useState({data:"",talhao:"",areaHa:"",itens:[],obs:""});
+  const [novaRecomendacao, setNovaRecomendacao] = useState({data:"",talhao:"",areaHa:"",vazao:"",capacidadeTanque:"",itens:[],obs:""});
   const [novoItemRec, setNovoItemRec] = useState({produtoId:"",dose:""});
   const [recSubmitError, setRecSubmitError] = useState("");
   const [recConfirmMsg, setRecConfirmMsg] = useState(null);
   const [expandedRecId, setExpandedRecId] = useState(null);
   const [kmlMsg, setKmlMsg] = useState(null);
+  const [recFormTab, setRecFormTab] = useState("produtos"); // "produtos" | "calda"
 
   // ── Auto-save ──
   useEffect(() => { saveLS(KEY_PROG+"_verao", dataVerao); }, [dataVerao]);
@@ -2276,14 +2277,19 @@ function App() {
     if (areaHa<=0) { setRecSubmitError("Informe a área em hectares (envie o KML ou digite manualmente)."); return; }
     if (!novaRecomendacao.itens.length) { setRecSubmitError("Adicione ao menos um produto à recomendação."); return; }
 
+    const vazao = parseFloat(novaRecomendacao.vazao)||0;
+    const capacidadeTanque = parseFloat(novaRecomendacao.capacidadeTanque)||0;
+    const areaPorTanqueHa = (vazao>0 && capacidadeTanque>0) ? capacidadeTanque/vazao : 0;
+
     const itensProcessados = novaRecomendacao.itens.map(it => {
       const produto = insumosEstoqueRecords.find(p=>p.id===it.produtoId);
       const qtdTotal = it.dose*areaHa;
+      const qtdPorTanque = areaPorTanqueHa>0 ? it.dose*areaPorTanqueHa : null;
       const estoqueAntes = produto ? (produto.quantidade||0) : 0;
       const estoqueDepois = estoqueAntes - qtdTotal;
       const faltante = Math.max(0, qtdTotal-estoqueAntes);
       return { produtoId: it.produtoId, nome: it.nome, categoria: it.categoria, unidade: it.unidade,
-        dose: it.dose, qtdTotal, estoqueAntes, estoqueDepois, faltante };
+        dose: it.dose, qtdTotal, qtdPorTanque, estoqueAntes, estoqueDepois, faltante };
     });
 
     setInsumosEstoqueRecords(recs => recs.map(r => {
@@ -2294,15 +2300,17 @@ function App() {
     addRecord(setRecomendacoesRecords, {
       data: novaRecomendacao.data.trim() || new Date().toLocaleDateString("pt-BR"),
       talhao: novaRecomendacao.talhao.trim() || "Área sem nome",
-      areaHa, itens: itensProcessados, obs: novaRecomendacao.obs.trim()
+      areaHa, vazao, capacidadeTanque, areaPorTanqueHa,
+      itens: itensProcessados, obs: novaRecomendacao.obs.trim()
     });
 
     setRecConfirmMsg({ itens: itensProcessados });
-    setNovaRecomendacao({ data:"", talhao:"", areaHa:"", itens:[], obs:"" });
+    setNovaRecomendacao({ data:"", talhao:"", areaHa:"", vazao:"", capacidadeTanque:"", itens:[], obs:"" });
     setNovoItemRec({ produtoId:"", dose:"" });
     setKmlMsg(null);
     setRecSubmitError("");
     setAddingRecomendacao(false);
+    setRecFormTab("produtos");
   }
 
   function submitCompra() {
@@ -3877,7 +3885,7 @@ function App() {
                   )}
 
                   <div style={{display:"flex",marginBottom:14}}>
-                    <button onClick={()=>{setAddingRecomendacao(a=>!a);setRecSubmitError("");setKmlMsg(null);}}
+                    <button onClick={()=>{setAddingRecomendacao(a=>!a);setRecSubmitError("");setKmlMsg(null);setRecFormTab("produtos");}}
                       style={{padding:"8px 16px",background:addingRecomendacao?"#eee":"#00838f",border:"none",borderRadius:6,color:addingRecomendacao?"#555":"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                       {addingRecomendacao ? "✕ Cancelar" : "+ Nova recomendação"}
                     </button>
@@ -3911,7 +3919,15 @@ function App() {
                         </div>
                       </div>
 
-                      <div style={{marginTop:18,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da recomendação</div>
+                      <div style={{display:"flex",gap:6,marginTop:20}}>
+                        <button onClick={()=>setRecFormTab("produtos")}
+                          style={{padding:"7px 14px",background:recFormTab==="produtos"?"#00838f":"#fff",border:`1px solid ${recFormTab==="produtos"?"#00838f":"#ddd"}`,borderRadius:20,color:recFormTab==="produtos"?"#fff":"#555",fontSize:12,fontWeight:recFormTab==="produtos"?700:400,cursor:"pointer"}}>Produtos</button>
+                        <button onClick={()=>setRecFormTab("calda")}
+                          style={{padding:"7px 14px",background:recFormTab==="calda"?"#00838f":"#fff",border:`1px solid ${recFormTab==="calda"?"#00838f":"#ddd"}`,borderRadius:20,color:recFormTab==="calda"?"#fff":"#555",fontSize:12,fontWeight:recFormTab==="calda"?700:400,cursor:"pointer"}}>🧪 Cálculo de Calda</button>
+                      </div>
+
+                      {recFormTab==="produtos" && (<>
+                      <div style={{marginTop:14,fontWeight:700,fontSize:12,color:"#00695c"}}>Produtos da recomendação</div>
                       {novaRecomendacao.itens.length>0 && (
                         <div style={{overflowX:"auto",marginTop:8}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -3974,6 +3990,77 @@ function App() {
                         </div>
                         <button onClick={addItemRec} style={{padding:"8px 16px",background:"none",border:"1px dashed #00838f",color:"#00838f",borderRadius:6,fontSize:12,cursor:"pointer"}}>+ Adicionar</button>
                       </div>
+                      </>)}
+
+                      {recFormTab==="calda" && (()=>{
+                        const vazaoAtual = parseFloat(novaRecomendacao.vazao)||0;
+                        const capacidadeAtual = parseFloat(novaRecomendacao.capacidadeTanque)||0;
+                        const areaPorTanque = (vazaoAtual>0 && capacidadeAtual>0) ? capacidadeAtual/vazaoAtual : 0;
+                        const numTanques = areaPorTanque>0 ? areaHaAtual/areaPorTanque : 0;
+                        const tanquesCheios = Math.floor(numTanques);
+                        const sobraHa = areaPorTanque>0 ? areaHaAtual - tanquesCheios*areaPorTanque : 0;
+                        return (
+                          <div style={{marginTop:14}}>
+                            {areaHaAtual<=0 && (
+                              <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>⚠ Informe a área (ha) acima — envie o KML ou digite manualmente — pra calcular a calda.</div>
+                            )}
+                            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                              <div style={{flex:"1 1 160px"}}>
+                                <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Vazão (L/ha)</label>
+                                <input type="number" step="any" placeholder="Ex: 150" value={novaRecomendacao.vazao} onChange={e=>setNovaRecomendacao(p=>({...p,vazao:e.target.value}))}
+                                  style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                              </div>
+                              <div style={{flex:"1 1 160px"}}>
+                                <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Capacidade do tanque (L)</label>
+                                <input type="number" step="any" placeholder="Ex: 2000" value={novaRecomendacao.capacidadeTanque} onChange={e=>setNovaRecomendacao(p=>({...p,capacidadeTanque:e.target.value}))}
+                                  style={{width:"100%",padding:"8px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6,marginTop:4,boxSizing:"border-box"}}/>
+                              </div>
+                            </div>
+
+                            {areaPorTanque>0 && areaHaAtual>0 && (
+                              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginTop:14}}>
+                                <div style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px"}}>
+                                  <div style={{fontSize:10,color:"#00695c",textTransform:"uppercase",letterSpacing:1}}>Área por tanque</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:"#00695c"}}>{fmtN(areaPorTanque,2)} ha</div>
+                                </div>
+                                <div style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px"}}>
+                                  <div style={{fontSize:10,color:"#00695c",textTransform:"uppercase",letterSpacing:1}}>Tanques necessários</div>
+                                  <div style={{fontSize:16,fontWeight:800,color:"#00695c"}}>
+                                    {fmtN(numTanques,2)} {sobraHa>0.001 ? `(${tanquesCheios} cheio${tanquesCheios===1?"":"s"} + ${fmtN(sobraHa,2)} ha)` : ""}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {novaRecomendacao.itens.length===0 && (
+                              <div style={{marginTop:14,fontSize:12,color:"#bbb"}}>Adicione produtos na aba "Produtos" pra ver a quantidade por tanque de cada um.</div>
+                            )}
+                            {novaRecomendacao.itens.length>0 && areaPorTanque>0 && (
+                              <div style={{overflowX:"auto",marginTop:14}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                                <thead>
+                                  <tr style={{background:"#e0f2f1"}}>
+                                    {["Produto","Dose/ha","Qtd. por tanque","Qtd. total"].map(h=>(
+                                      <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {novaRecomendacao.itens.map((it,idx)=>(
+                                    <tr key={idx} style={{background:idx%2===0?"#fff":"#fafafa"}}>
+                                      <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmtN(it.dose*areaPorTanque,3)} {it.unidade}</td>
+                                      <td style={{padding:"6px 8px",textAlign:"right",color:"#888"}}>{fmtN(it.dose*areaHaAtual,1)} {it.unidade}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div style={{marginTop:16}}>
                         <label style={{fontSize:11,color:"#888",textTransform:"uppercase",letterSpacing:1}}>Observação</label>
@@ -3984,7 +4071,7 @@ function App() {
                       {recSubmitError && <div style={{marginTop:12,color:"#c62828",fontSize:12,fontWeight:600}}>⚠ {recSubmitError}</div>}
 
                       <div style={{display:"flex",gap:10,marginTop:18}}>
-                        <button onClick={()=>{setAddingRecomendacao(false);setRecSubmitError("");setKmlMsg(null);}}
+                        <button onClick={()=>{setAddingRecomendacao(false);setRecSubmitError("");setKmlMsg(null);setRecFormTab("produtos");}}
                           style={{padding:"12px 20px",background:"#f5f5f5",border:"none",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",color:"#666"}}>Cancelar</button>
                         <button onClick={confirmarRecomendacao}
                           style={{flex:1,padding:"12px 20px",background:"#00838f",border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
@@ -4012,11 +4099,16 @@ function App() {
                         </div>
                         {aberta && (
                           <div style={{padding:"0 16px 14px"}}>
+                            {rec.areaPorTanqueHa>0 && (
+                              <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>
+                                🧪 Calda: {fmtN(rec.vazao,0)} L/ha · tanque de {fmtN(rec.capacidadeTanque,0)} L → {fmtN(rec.areaPorTanqueHa,2)} ha/tanque · {fmtN(rec.areaHa/rec.areaPorTanqueHa,2)} tanques necessários
+                              </div>
+                            )}
                             <div style={{overflowX:"auto"}}>
                             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                               <thead>
                                 <tr style={{background:"#f5f5f5"}}>
-                                  {["Produto","Dose/ha","Total baixado","Estoque depois","Faltou"].map(h=>(
+                                  {["Produto","Dose/ha",...(rec.areaPorTanqueHa>0?["Qtd./tanque"]:[]),"Total baixado","Estoque depois","Faltou"].map(h=>(
                                     <th key={h} style={{padding:"6px 8px",textAlign:h==="Produto"?"left":"right",color:"#888",fontSize:10,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                                   ))}
                                 </tr>
@@ -4026,6 +4118,7 @@ function App() {
                                   <tr key={idx}>
                                     <td style={{padding:"6px 8px",fontWeight:600}}>{it.nome}</td>
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.dose,3)} {it.unidade}</td>
+                                    {rec.areaPorTanqueHa>0 && <td style={{padding:"6px 8px",textAlign:"right",color:"#00695c",fontWeight:700}}>{it.qtdPorTanque!=null?`${fmtN(it.qtdPorTanque,3)} ${it.unidade}`:"—"}</td>}
                                     <td style={{padding:"6px 8px",textAlign:"right"}}>{fmtN(it.qtdTotal,1)} {it.unidade}</td>
                                     <td style={{padding:"6px 8px",textAlign:"right",color:it.estoqueDepois<0?"#c62828":"#888"}}>{fmtN(it.estoqueDepois,1)} {it.unidade}</td>
                                     <td style={{padding:"6px 8px",textAlign:"right",color:it.faltante>0?"#c62828":"#2e7d32",fontWeight:it.faltante>0?700:400}}>{it.faltante>0?`${fmtN(it.faltante,1)} ${it.unidade}`:"—"}</td>
