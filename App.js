@@ -79,7 +79,7 @@ const FORN_INSUMOS_INICIAL = ["Trisolo","Agrocerrado","Terrena","Tchê","AgroBra
 const FORN_ADUBACAO_INICIAL = ["Yara","ADM","Calcário Noroeste","Agro Brasil","Plano Agronegócios","Valoriza","Produttiva","Nascente"].map(nome=>({nome,telefone:"",token:genToken(nome)}));
 const FORN_COLORS  = ["#1565C0","#2E7D32","#B71C1C","#6A1B9A","#E65100","#00695C","#37474F","#4E342E"];
 
-const ADMIN_PASSWORD = "gcagro2526";
+const ADMIN_PASSWORD = "GCagro26#";
 
 // Telas liberadas pro papel "equipe" (chefe de equipe / funcionário) — todo o resto
 // (financeiro, vendas, cotação, programação, planejamento, safras...) é só do dono.
