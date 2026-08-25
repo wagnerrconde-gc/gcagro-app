@@ -144,6 +144,12 @@ function saveRole(role) { try { role ? localStorage.setItem("gcagro_role", role)
 // ─────────────────────────────────────────────────────────────────────────────
 // COLORS & ICONS
 // ─────────────────────────────────────────────────────────────────────────────
+// Extrai os nomes de revenda de um campo "fornecedor" de Compras — que pode ser um nome
+// simples (lançamento manual) ou uma combinação tipo "Yara (30 dias) + Valoriza (à vista)"
+// (quando a cotação foi fechada dividida entre fornecedores).
+function revendasDoFornecedor(str) {
+  return (str||"").split(" + ").map(s=>s.replace(/\s*\([^)]*\)\s*$/,"").trim()).filter(Boolean);
+}
 function hexA(hex, alpha) {
   const h = hex.replace("#","");
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
@@ -1360,6 +1366,8 @@ function App() {
   const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:"",tratamento:""});
   const [comprasSafraSel, setComprasSafraSel] = useState(null);
   const [comprasCatSel, setComprasCatSel]     = useState(null);
+  const [comprasModoNav, setComprasModoNav]   = useState("categoria"); // "categoria" | "revenda"
+  const [comprasRevendaSel, setComprasRevendaSel] = useState(null);
   const [novaPastaNome, setNovaPastaNome]     = useState("");
 
   // ── UI ──
@@ -2249,10 +2257,28 @@ function App() {
     return Object.values(map).sort((a,b)=> b.count-a.count || a.categoria.localeCompare(b.categoria));
   }, [comprasRecords, comprasSafraSel]);
 
+  const comprasRevendasList = useMemo(() => {
+    if (!comprasSafraSel) return [];
+    const map = {};
+    comprasRecords.filter(r=>r.safra===comprasSafraSel).forEach(r => {
+      revendasDoFornecedor(r.fornecedor).forEach(revenda => {
+        if (!map[revenda]) map[revenda] = { revenda, total:0, count:0 };
+        map[revenda].total += r.valorTotal;
+        map[revenda].count += 1;
+      });
+    });
+    return Object.values(map).sort((a,b)=> b.total-a.total || a.revenda.localeCompare(b.revenda));
+  }, [comprasRecords, comprasSafraSel]);
+
   const comprasRecordsFiltrados = useMemo(() => {
-    if (!comprasSafraSel || !comprasCatSel) return [];
+    if (!comprasSafraSel) return [];
+    if (comprasModoNav==="revenda") {
+      if (!comprasRevendaSel) return [];
+      return comprasRecords.filter(r=>r.safra===comprasSafraSel && revendasDoFornecedor(r.fornecedor).includes(comprasRevendaSel));
+    }
+    if (!comprasCatSel) return [];
     return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
-  }, [comprasRecords, comprasSafraSel, comprasCatSel]);
+  }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel]);
 
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -5499,15 +5525,19 @@ function App() {
 
           {/* Breadcrumb */}
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
-            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);}}
+            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);setComprasRevendaSel(null);setComprasModoNav("categoria");}}
               style={{cursor:"pointer",fontWeight:comprasSafraSel?600:800,color:"#00695c"}}>🛒 Compras</span>
             {comprasSafraSel && (<>
               <span style={{color:"#bbb"}}>›</span>
-              <span onClick={()=>setComprasCatSel(null)} style={{cursor:"pointer",fontWeight:comprasCatSel?600:800,color:"#00695c"}}>📁 Compras</span>
+              <span onClick={()=>{setComprasCatSel(null);setComprasRevendaSel(null);}} style={{cursor:"pointer",fontWeight:(comprasCatSel||comprasRevendaSel)?600:800,color:"#00695c"}}>📁 Compras</span>
             </>)}
             {comprasCatSel && (<>
               <span style={{color:"#bbb"}}>›</span>
               <span style={{fontWeight:800,color:"#00695c"}}>{CATEGORIA_COMPRA_ICONS[comprasCatSel]||"📁"} {comprasCatSel}</span>
+            </>)}
+            {comprasRevendaSel && (<>
+              <span style={{color:"#bbb"}}>›</span>
+              <span style={{fontWeight:800,color:"#00695c"}}>🏪 {comprasRevendaSel}</span>
             </>)}
           </div>
 
@@ -5533,54 +5563,87 @@ function App() {
             </div>
           </>)}
 
-          {/* NÍVEL 1: pastas de categoria dentro da safra */}
-          {comprasSafraSel && !comprasCatSel && (<>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
-              {comprasCategoriasList.map(c=>(
-                <div key={c.categoria} onClick={()=>setComprasCatSel(c.categoria)}
-                  style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer"}}>
-                  <div style={{fontSize:24}}>{CATEGORIA_COMPRA_ICONS[c.categoria]||"📁"}</div>
-                  <div style={{fontWeight:700,fontSize:13,marginTop:6,color:"#1a3a1a"}}>{c.categoria}</div>
-                  <div style={{fontSize:11,color:"#888",marginTop:4}}>{c.count} lançamento{c.count===1?"":"s"}</div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(c.total)}</div>
+          {/* NÍVEL 1: pastas de categoria (ou de revenda) dentro da safra */}
+          {comprasSafraSel && !comprasCatSel && !comprasRevendaSel && (<>
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <button onClick={()=>setComprasModoNav("categoria")}
+                style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+                  background:comprasModoNav==="categoria"?"#00695c":"#e0f2f1",color:comprasModoNav==="categoria"?"#fff":"#00695c"}}>📁 Por categoria</button>
+              <button onClick={()=>setComprasModoNav("revenda")}
+                style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+                  background:comprasModoNav==="revenda"?"#00695c":"#e0f2f1",color:comprasModoNav==="revenda"?"#fff":"#00695c"}}>🏪 Por revenda</button>
+            </div>
+
+            {comprasModoNav==="categoria" ? (<>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+                {comprasCategoriasList.map(c=>(
+                  <div key={c.categoria} onClick={()=>setComprasCatSel(c.categoria)}
+                    style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer"}}>
+                    <div style={{fontSize:24}}>{CATEGORIA_COMPRA_ICONS[c.categoria]||"📁"}</div>
+                    <div style={{fontWeight:700,fontSize:13,marginTop:6,color:"#1a3a1a"}}>{c.categoria}</div>
+                    <div style={{fontSize:11,color:"#888",marginTop:4}}>{c.count} lançamento{c.count===1?"":"s"}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(c.total)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <input placeholder="Nova categoria (ex: Calcário/Corretivos)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
+                  style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
+                <button onClick={()=>{if(novaPastaNome.trim()){setComprasCatSel(novaPastaNome.trim());setNovaPastaNome("");}}}
+                  disabled={!novaPastaNome.trim()}
+                  style={{padding:"7px 14px",background:"#00695c",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de categoria</button>
+              </div>
+            </>) : (
+              comprasRevendasList.length===0 ? (
+                <div style={{background:"#fff",borderRadius:10,padding:"24px",textAlign:"center",color:"#999",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                  Nenhuma compra com revenda/fornecedor preenchido nesta safra ainda.
                 </div>
-              ))}
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <input placeholder="Nova categoria (ex: Calcário/Corretivos)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
-                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
-              <button onClick={()=>{if(novaPastaNome.trim()){setComprasCatSel(novaPastaNome.trim());setNovaPastaNome("");}}}
-                disabled={!novaPastaNome.trim()}
-                style={{padding:"7px 14px",background:"#00695c",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de categoria</button>
-            </div>
+              ) : (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+                  {comprasRevendasList.map(rv=>(
+                    <div key={rv.revenda} onClick={()=>setComprasRevendaSel(rv.revenda)}
+                      style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer"}}>
+                      <div style={{fontSize:24}}>🏪</div>
+                      <div style={{fontWeight:700,fontSize:13,marginTop:6,color:"#1a3a1a"}}>{rv.revenda}</div>
+                      <div style={{fontSize:11,color:"#888",marginTop:4}}>{rv.count} lançamento{rv.count===1?"":"s"}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(rv.total)}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </>)}
 
-          {/* NÍVEL 2: registros da safra + categoria selecionadas */}
-          {comprasSafraSel && comprasCatSel && (<>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
-                  style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
-                {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
-                  <button onClick={()=>{
-                      const relatorio = comprasCatSel==="Sementes"
-                        ? [...atualizarCustoSementesDoPlano(planVerao,true), ...atualizarCustoSementesDoPlano(planSafrinha,false)]
-                        : atualizarCustoPorCategoria(comprasCatSel);
-                      setCustoCompraMsg({categoria:comprasCatSel, relatorio});
-                      setTimeout(()=>setCustoCompraMsg(null), 8000);
-                    }}
-                    style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
+          {/* NÍVEL 2: registros da safra + categoria (ou revenda) selecionadas */}
+          {comprasSafraSel && (comprasCatSel || comprasRevendaSel) && (<>
+            {comprasCatSel ? (
+              <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
+                    style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+                  {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
+                    <button onClick={()=>{
+                        const relatorio = comprasCatSel==="Sementes"
+                          ? [...atualizarCustoSementesDoPlano(planVerao,true), ...atualizarCustoSementesDoPlano(planSafrinha,false)]
+                          : atualizarCustoPorCategoria(comprasCatSel);
+                        setCustoCompraMsg({categoria:comprasCatSel, relatorio});
+                        setTimeout(()=>setCustoCompraMsg(null), 8000);
+                      }}
+                      style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
+                  )}
+                </div>
+                <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
+                {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
+                  <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
+                    {custoCompraMsg.relatorio.length===0
+                      ? "Nenhum produto com compras suficientes nesta categoria pra calcular o custo médio."
+                      : custoCompraMsg.relatorio.map((r,i)=>`✓ ${r.produto||r.cultura}: ${fmt(r.precoMedio)}${r.produto?"/unid.":"/ha"}`).join("  •  ")}
+                  </div>
                 )}
               </div>
-              <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
-              {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
-                <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
-                  {custoCompraMsg.relatorio.length===0
-                    ? "Nenhum produto com compras suficientes nesta categoria pra calcular o custo médio."
-                    : custoCompraMsg.relatorio.map((r,i)=>`✓ ${r.produto||r.cultura}: ${fmt(r.precoMedio)}${r.produto?"/unid.":"/ha"}`).join("  •  ")}
-                </div>
-              )}
-            </div>
+            ) : (
+              <div style={{fontSize:11,color:"#999",marginBottom:14}}>Todas as compras dessa revenda nesta safra, de qualquer categoria — útil pra montar o próximo pedido.</div>
+            )}
 
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
               <div style={{overflowX:"auto"}}>
@@ -5589,8 +5652,10 @@ function App() {
                   <tr style={{background:"#e0f2f1"}}>
                     {(comprasCatSel==="Sementes"
                       ? ["Data Compra","Produto","Tratamento de Sementes","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
+                      : comprasRevendaSel
+                      ? ["Data Compra","Produto","Categoria","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
                       : ["Data Compra","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]).map(h=>(
-                      <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Tratamento de Sementes","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
+                      <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Tratamento de Sementes","Categoria","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -5601,6 +5666,9 @@ function App() {
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
                       {comprasCatSel==="Sementes" && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
+                      )}
+                      {comprasRevendaSel && (
+                        <td style={{padding:"6px 9px",color:"#666"}}><RecEditCell recKey={"compra|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setComprasRecords,r.id,"categoria",v)}/></td>
                       )}
                       <td style={{padding:"6px 9px",textAlign:"right"}}>
                         <select value={r.unidade} onChange={e=>updateRecordField(setComprasRecords,r.id,"unidade",e.target.value)} style={{padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
@@ -5653,7 +5721,9 @@ function App() {
                     </tr>
                   )}
                   {comprasRecordsFiltrados.length===0 && !addingCompra && (
-                    <tr><td colSpan={comprasCatSel==="Sementes"?10:9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente.</td></tr>
+                    <tr><td colSpan={9 + (comprasCatSel==="Sementes"?1:0) + (comprasRevendaSel?1:0)} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>
+                      {comprasRevendaSel ? "Nenhuma compra registrada dessa revenda ainda." : "Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente."}
+                    </td></tr>
                   )}
                 </tbody>
               </table>
