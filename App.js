@@ -355,13 +355,13 @@ function calcCultureTotals(culture) {
   const opSum   = Object.values(culture.op_costs||{}).reduce((s,v)=>s+v,0);
   return { insumos, opTotal:opSum, total: culture.area>0 ? insumos/culture.area + opSum : 0 };
 }
-// Produto já resolvido não precisa ser cotado de novo: já tem em estoque (marcado na obs)
-// ou já tem uma compra real registrada (preco_compra, o mesmo campo que já vem preenchido
-// quando uma cotação é fechada ou uma compra manual atualiza o custo — não usar preco_unit,
-// que é só a referência de planejamento e normalmente já vem preenchida em todo produto).
+// Produto já resolvido não precisa ser cotado de novo: já tem em estoque (marcado na obs),
+// já tem uma compra real registrada (preco_compra, preenchido quando uma cotação é fechada
+// ou uma compra manual atualiza o custo), ou já tem um preço unitário preenchido na própria
+// Programação (preenchido à mão, ex: preço fechado direto com o grupo de compras).
 function produtoJaResolvido(p) {
   const obs = (p.obs||"").trim().toLowerCase();
-  return obs.includes("estoque") || p.preco_compra!=null;
+  return obs.includes("estoque") || p.preco_compra!=null || (p.preco_unit>0);
 }
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
