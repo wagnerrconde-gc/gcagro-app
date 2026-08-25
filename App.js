@@ -363,11 +363,14 @@ function calcCultureTotals(culture) {
 }
 // Produto já resolvido não precisa ser cotado de novo: já tem em estoque (marcado na obs),
 // já tem uma compra real registrada (preco_compra, preenchido quando uma cotação é fechada
-// ou uma compra manual atualiza o custo), ou já tem um preço unitário preenchido na própria
-// Programação (preenchido à mão, ex: preço fechado direto com o grupo de compras).
+// ou uma compra manual atualiza o custo), ou já tem preço + revenda + vencimento preenchidos
+// à mão direto na Programação (ex: preço fechado com o grupo de compras) — o preço sozinho
+// não conta, porque o preço de referência já vem preenchido em praticamente todo produto
+// desde o planejamento; só quando os três estão preenchidos juntos é sinal de compra fechada.
 function produtoJaResolvido(p) {
   const obs = (p.obs||"").trim().toLowerCase();
-  return obs.includes("estoque") || p.preco_compra!=null || (p.preco_unit>0);
+  const fechadoNaPlanilha = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
+  return obs.includes("estoque") || p.preco_compra!=null || fechadoNaPlanilha;
 }
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
