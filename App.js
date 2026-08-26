@@ -682,19 +682,23 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
 }
 
 const ALIASES_ESTOQUE_INSUMOS = {
-  categoria:  ["categoria","grupo","tipo"],
-  nome:       ["nome","produto","item","insumo"],
-  unidade:    ["unidade","unid","un"],
-  quantidade: ["quantidade","qtd","estoque","saldo","quantidade_atual"],
-  vencimento: ["vencimento","validade","venc"],
-  obs:        ["obs","observacao","observacoes"],
+  categoria:       ["categoria","grupo","tipo"],
+  nome:            ["nome","produto","item","insumo"],
+  ingredienteAtivo:["ingrediente_ativo","ia","i_a","principio_ativo","formula"],
+  unidade:         ["unidade","unid","un"],
+  quantidade:      ["quantidade","qtd","estoque","saldo","quantidade_atual"],
+  valorTotal:      ["valor_total","valor","total","valor_r"],
+  obs:             ["obs","observacao","observacoes"],
 };
 function buildInsumoEstoqueRecord(m) {
   const nome = String(m.nome||"").trim();
   if (!nome) return null;
   const categoria = GRUPOS_ESTOQUE_INSUMOS.find(c => normalizarNome(c)===normalizarNome(m.categoria||"")) || GRUPOS_ESTOQUE_INSUMOS[0];
-  return { id:newId(), categoria, nome, unidade:String(m.unidade||"kg").trim(),
-    quantidade:toNum(m.quantidade), vencimento:String(m.vencimento||"").trim(), obs:String(m.obs||"").trim() };
+  const quantidade = toNum(m.quantidade);
+  const valorTotal = toNum(m.valorTotal);
+  return { id:newId(), categoria, nome, ingredienteAtivo:String(m.ingredienteAtivo||"").trim(), unidade:String(m.unidade||"kg").trim(),
+    quantidade, custoMedio: (valorTotal && quantidade) ? valorTotal/quantidade : 0,
+    vencimento:"", obs:String(m.obs||"").trim() };
 }
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
 function deleteRecord(setRecords, id) { setRecords(rs => rs.filter(r => r.id !== id)); }
@@ -1640,7 +1644,7 @@ function App() {
   // ── Estoque de Insumos (defensivos, adubos, foliares e sementes) ──
   const [insumosEstoqueRecords, setInsumosEstoqueRecords] = useState(() => loadLS(KEY_ESTOQUE_INSUMOS, []));
   const [addingInsumoEstoque, setAddingInsumoEstoque] = useState(false);
-  const [newInsumoEstoque, setNewInsumoEstoque] = useState({categoria:GRUPOS_ESTOQUE_INSUMOS[0],nome:"",unidade:"L",quantidade:"",vencimento:"",obs:""});
+  const [newInsumoEstoque, setNewInsumoEstoque] = useState({categoria:GRUPOS_ESTOQUE_INSUMOS[0],nome:"",ingredienteAtivo:"",unidade:"L",quantidade:"",vencimento:"",obs:""});
   const [insumoEstoqueSubmitError, setInsumoEstoqueSubmitError] = useState("");
   const [insumoEstoqueBusca, setInsumoEstoqueBusca] = useState("");
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
@@ -2620,9 +2624,10 @@ function App() {
   function submitInsumoEstoque() {
     if (!newInsumoEstoque.nome.trim()) { setInsumoEstoqueSubmitError("Preencha o Nome do produto para adicionar."); return; }
     addRecord(setInsumosEstoqueRecords, { categoria:newInsumoEstoque.categoria, nome:newInsumoEstoque.nome.trim(),
+      ingredienteAtivo:newInsumoEstoque.ingredienteAtivo.trim(),
       unidade:newInsumoEstoque.unidade, quantidade:parseFloat(newInsumoEstoque.quantidade)||0,
       vencimento:newInsumoEstoque.vencimento.trim(), obs:newInsumoEstoque.obs.trim() });
-    setNewInsumoEstoque({categoria:newInsumoEstoque.categoria,nome:"",unidade:newInsumoEstoque.unidade,quantidade:"",vencimento:"",obs:""});
+    setNewInsumoEstoque({categoria:newInsumoEstoque.categoria,nome:"",ingredienteAtivo:"",unidade:newInsumoEstoque.unidade,quantidade:"",vencimento:"",obs:""});
     setInsumoEstoqueSubmitError("");
     setAddingInsumoEstoque(false);
   }
@@ -4405,7 +4410,7 @@ function App() {
                 <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:640,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#334155",marginBottom:10}}>📥 Importar estoque de insumos (planilha)</div>
                   <div style={{fontSize:12,color:"#666",marginBottom:12}}>
-                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Categoria</b> (Defensivos/Adubos/Foliares/Sementes), <b>Nome</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Vencimento</b> (opcional), <b>Obs</b> (opcional). Cada linha vira um item novo no estoque.
+                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Categoria</b> (Defensivos/Adubos/Foliares/Sementes), <b>Nome</b>, <b>Ingrediente Ativo</b> (opcional), <b>Unidade</b>, <b>Quantidade</b>, <b>Valor Total</b> (opcional — calcula o custo médio por unidade), <b>Obs</b> (opcional). Cada linha vira um item novo no estoque.
                   </div>
                   {!importInsumoPreview ? (
                     <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
@@ -4425,7 +4430,7 @@ function App() {
                       <div style={{overflowX:"auto",marginBottom:14}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                           <thead><tr style={{background:"#f5f5f5"}}>
-                            {["Categoria","Nome","Unidade","Quantidade","Vencimento","Obs"].map(h=>(
+                            {["Categoria","Nome","Ing. Ativo","Unidade","Quantidade","Custo méd.","Obs"].map(h=>(
                               <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#888",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
                             ))}
                           </tr></thead>
@@ -4434,9 +4439,10 @@ function App() {
                               <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                                 <td style={{padding:"5px 7px"}}>{r.categoria}</td>
                                 <td style={{padding:"5px 7px",fontWeight:600}}>{r.nome}</td>
+                                <td style={{padding:"5px 7px",color:"#888"}}>{r.ingredienteAtivo||"—"}</td>
                                 <td style={{padding:"5px 7px"}}>{r.unidade}</td>
                                 <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtN(r.quantidade,2)}</td>
-                                <td style={{padding:"5px 7px"}}>{r.vencimento||"—"}</td>
+                                <td style={{padding:"5px 7px",textAlign:"right"}}>{r.custoMedio ? fmt(r.custoMedio) : "—"}</td>
                                 <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
                               </tr>
                             ))}
@@ -4499,7 +4505,7 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#f1f5f9"}}>
-                    {["Categoria","Produto","Unid.","Qtd.","Custo méd.","Vencimento","Obs",""].map(h=>(
+                    {["Categoria","Produto","Ing. Ativo","Unid.","Qtd.","Custo méd.","Vencimento","Obs",""].map(h=>(
                       <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."||h==="Custo méd."?"right":h===""?"center":"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
@@ -4514,6 +4520,7 @@ function App() {
                           <span style={{padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:600,color:COR_GRUPO_ESTOQUE[r.categoria]||"#555",background:COR_GRUPO_BG[r.categoria]||"#eee",border:`1px solid ${COR_GRUPO_ESTOQUE[r.categoria]||"#ccc"}33`}}>{r.categoria}</span>
                         </td>
                         <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="nome" value={r.nome} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"nome",val)}/></td>
+                        <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="ingredienteAtivo" value={r.ingredienteAtivo} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"ingredienteAtivo",val)}/></td>
                         <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="unidade" value={r.unidade} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"unidade",val)}/></td>
                         <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,1)} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"quantidade",val,true)}/></td>
                         <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{r.custoMedio ? fmt(r.custoMedio) : "—"}</td>
@@ -4537,6 +4544,7 @@ function App() {
                         </select>
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Nome do produto" value={newInsumoEstoque.nome} onChange={e=>setNewInsumoEstoque(p=>({...p,nome:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Ing. ativo" value={newInsumoEstoque.ingredienteAtivo} onChange={e=>setNewInsumoEstoque(p=>({...p,ingredienteAtivo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <select value={newInsumoEstoque.unidade} onChange={e=>setNewInsumoEstoque(p=>({...p,unidade:e.target.value}))}
                           style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
@@ -4554,10 +4562,10 @@ function App() {
                     </tr>
                   )}
                   {addingInsumoEstoque && insumoEstoqueSubmitError && (
-                    <tr style={{background:"#fffde7"}}><td colSpan={8} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
+                    <tr style={{background:"#fffde7"}}><td colSpan={9} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
                   )}
                   {itensFiltrados.length===0 && !addingInsumoEstoque && (
-                    <tr><td colSpan={8} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
+                    <tr><td colSpan={9} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
                   )}
                 </tbody>
               </table>
