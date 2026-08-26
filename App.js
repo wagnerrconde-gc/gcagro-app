@@ -1846,8 +1846,38 @@ function App() {
     setShowImportModal(false);
   }
   function updateField(catIdx, prodIdx, field, value) {
-    setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); const p=nd[activeCulture].categories[catIdx].products[prodIdx];
-      p[field]=["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value); return nd; });
+    // Quando o produto fica "fechado" (preço + revenda + vencimento preenchidos, direto na
+    // Programação, sem passar pela Cotação) já lança/atualiza o registro correspondente em
+    // Compras sozinho — do jeito que o Fechar Cotação já faz, só que pra quem compra fora do
+    // app (ex: fechando com um grupo de compras) e só digita o resultado aqui.
+    // Calculado fora do setData: o updater do setState não roda de forma síncrona, então não
+    // dá pra confiar em variável capturada de dentro dele pra decidir o que fazer em seguida.
+    const cat = data[activeCulture].categories[catIdx];
+    const pAtual = cat.products[prodIdx];
+    const novoValor = ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
+    const p = { ...pAtual, [field]: novoValor };
+    const fechado = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
+    let novoCompraId = null, compraNova = null, compraSync = null;
+    if (fechado) {
+      const qtd = p.dose>0 ? p.dose*p.area : p.area;
+      const unidadeCompra = p.unidade==="Tn"?"TN":p.unidade==="Lt"?"L":(p.unidade||"kg");
+      const categoriaCompra = cat.name==="Adubação" ? "Adubação "+(isVerao?"Verão":"Inverno")
+                            : cat.name==="Sementes" ? "Sementes"
+                            : "Químicos "+(isVerao?"Verão":"Inverno");
+      const campos = { produto:p.produto, unidade:unidadeCompra, quantidade:qtd,
+        precoUnitario:p.preco_unit, valorTotal:p.preco_unit*qtd, fornecedor:p.revenda, obs:p.vencimento, categoria:categoriaCompra };
+      if (p.compraId) { compraSync = { id:p.compraId, ...campos }; }
+      else { novoCompraId = newId(); compraNova = { id:novoCompraId, data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva, tratamento:"", ...campos }; }
+    }
+    setData(d=>{
+      const nd=JSON.parse(JSON.stringify(d));
+      const pp = nd[activeCulture].categories[catIdx].products[prodIdx];
+      pp[field] = novoValor;
+      if (novoCompraId && !pp.compraId) pp.compraId = novoCompraId;
+      return nd;
+    });
+    if (compraNova) setComprasRecords(rs => [...rs, compraNova]);
+    if (compraSync) setComprasRecords(rs => rs.map(r => r.id===compraSync.id ? {...r, ...compraSync} : r));
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
