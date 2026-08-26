@@ -1359,7 +1359,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
 
   function upd(id, field, val) { setData(d => d.map(r => r.id===id ? {...r,[field]:val} : r)); }
   function remover(id) { if (window.confirm("Remover este registro?")) setData(d => d.filter(r=>r.id!==id)); }
-  function adicionar() { setData(d => [...d, { id:newId(), cultura:"Soja", variedade:"", dose100kg:"", kitSulco:"", obs:"" }]); }
+  function adicionar(cultura) { setData(d => [...d, { id:newId(), cultura:cultura||"Soja", variedade:"", dose100kg:"", kitSulco:"", obs:"" }]); }
   function exportarWord() {
     let html = `<html><head><meta charset='utf-8'><style>
       body{font-family:Arial,sans-serif;margin:40px;color:#222;}
@@ -1449,6 +1449,9 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
                 </div>
               </div>
             ))}
+            <div style={{padding:"10px 14px"}}>
+              <button onClick={()=>adicionar(cult)} style={{background:"none",border:"1px dashed "+(cc.accent||"#999"),color:cc.accent||"#666",borderRadius:5,padding:"5px 12px",cursor:"pointer",fontSize:12}}>+ Adicionar variedade em {cult}</button>
+            </div>
           </div>
         );
       })}
