@@ -1912,7 +1912,21 @@ function App() {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].op_costs[key]=parseFloat(value)||0; return nd; });
   }
   function updateArea(value) {
-    setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].area=parseFloat(value)||0; return nd; });
+    const novaArea = parseFloat(value)||0;
+    setData(d=>{
+      const nd=JSON.parse(JSON.stringify(d));
+      const cultura = nd[activeCulture];
+      const areaAntiga = cultura.area;
+      cultura.area = novaArea;
+      // Acompanha a área de cada produto (Adubação, Sementes, TS, Kit Sulco, Foliares,
+      // Fungicidas, Inseticidas, Adjuvantes...) junto com a área total da cultura — mas só
+      // dos que ainda estavam seguindo a área total (área igual à antiga); um produto que já
+      // foi editado pra uma área diferente (ex: aplicado só numa parte da área) fica intocado.
+      (cultura.categories||[]).forEach(cat => {
+        (cat.products||[]).forEach(p => { if (p.area===areaAntiga) p.area = novaArea; });
+      });
+      return nd;
+    });
   }
   function updateKgSemente(value) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].kgSemente=parseFloat(value)||0; return nd; });
