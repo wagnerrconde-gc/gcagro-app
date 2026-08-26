@@ -159,6 +159,16 @@ function normalizarNome(str) {
     .replace(/[óòôõö]/g,"o").replace(/[úùûü]/g,"u").replace(/ç/g,"c").replace(/ñ/g,"n")
     .replace(/\s+/g," ");
 }
+// Normaliza nome de lote pra casar planilhas de terceiros (consultoria, grupo de compras) com
+// os nomes já cadastrados no Planejamento — trata "Pivô"/"Pivot"/"PC" e "Sequeiro"/"Seq" como
+// a mesma coisa, e ignora a palavra "Lote".
+function normalizarLote(str) {
+  return normalizarNome(str)
+    .replace(/\blote\b/g,"")
+    .replace(/\bpivot\b|\bpivo\b/g,"pc")
+    .replace(/\bsequeiro\b/g,"seq")
+    .replace(/\s+/g," ").trim();
+}
 function hexA(hex, alpha) {
   const h = hex.replace("#","");
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
@@ -1137,12 +1147,54 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
+  // ── Importar planilha (Lote,Texto) pra preencher um campo agronômico (Adubação, KCl...)
+  // em massa — usada quando a consultoria de fertilidade ou o grupo de compras manda uma
+  // recomendação/fechamento pra lançar no Planejamento sem digitar lote por lote. ──
+  const CAMPOS_IMPORTAVEIS = cols.filter(c => c[2]==="text" && !["lote","variedade","dataPlantio","previsaoColheita"].includes(c[0]));
+  const [showImportCsv, setShowImportCsv] = useState(false);
+  const [importCampo, setImportCampo] = useState(CAMPOS_IMPORTAVEIS[0]?.[0]);
+  const [importPreview, setImportPreview] = useState(null); // [{loteCsv, texto, matchIdx}]
+  const [importErro, setImportErro] = useState("");
+  async function handleImportCsvFile(file) {
+    setImportErro(""); setImportPreview(null);
+    try {
+      const rows = await readSpreadsheetRows(file);
+      const parsed = rows.map(row => {
+        const mapped = mapRowByAliases(row, { lote:["lote","talhao"], texto:["texto","valor","dose","adubacao","kcl"] });
+        return { loteCsv: (mapped.lote||"").toString().trim(), texto: (mapped.texto||"").toString().trim() };
+      }).filter(r => r.loteCsv);
+      if (!parsed.length) { setImportErro("Nenhuma linha reconhecida. O arquivo precisa ter colunas \"Lote\" e \"Texto\"."); return; }
+      const preview = parsed.map(r => {
+        const norm = normalizarLote(r.loteCsv);
+        const matchIdx = data.findIndex(d => normalizarLote(d.lote)===norm);
+        return { ...r, matchIdx };
+      });
+      setImportPreview(preview);
+    } catch (err) {
+      setImportErro("Erro ao ler o arquivo: " + err.message);
+    }
+  }
+  function confirmarImportCsv() {
+    setData(d => {
+      const nd = [...d];
+      importPreview.forEach(row => {
+        if (row.matchIdx!=null && row.matchIdx>=0) nd[row.matchIdx] = { ...nd[row.matchIdx], [importCampo]: row.texto };
+      });
+      return nd;
+    });
+    setShowImportCsv(false); setImportPreview(null);
+  }
+
   return (
     <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
+          {CAMPOS_IMPORTAVEIS.length>0 && (
+            <button onClick={()=>{setImportCampo(CAMPOS_IMPORTAVEIS[0][0]);setImportPreview(null);setImportErro("");setShowImportCsv(true);}}
+              style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
+          )}
           <button onClick={addLote} style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Lote</button>
         </div>
       </div>
@@ -1218,6 +1270,76 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           placeholder="Anotações e testes realizados durante a safra..."
           style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
       </div>
+
+      {showImportCsv && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#fff",borderRadius:12,padding:22,width:"min(720px,95vw)",maxHeight:"88vh",overflowY:"auto"}}>
+            <div style={{fontSize:16,fontWeight:800,color:cor,marginBottom:4}}>📥 Importar planilha pro Planejamento</div>
+            <div style={{fontSize:12,color:"#888",marginBottom:14}}>Arquivo .xlsx ou .csv com duas colunas: <b>Lote</b> e <b>Texto</b>. Cada lote reconhecido recebe o texto no campo escolhido abaixo.</div>
+
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:"#888",marginBottom:4}}>Campo a preencher</div>
+              <select value={importCampo} onChange={e=>{setImportCampo(e.target.value);setImportPreview(null);}}
+                style={{padding:"7px 10px",border:"1px solid #ccc",borderRadius:6,fontSize:13}}>
+                {CAMPOS_IMPORTAVEIS.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}
+              </select>
+            </div>
+
+            {!importPreview && (
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{ if(e.target.files[0]) handleImportCsvFile(e.target.files[0]); }}
+                style={{fontSize:12,marginBottom:10}}/>
+            )}
+            {importErro && <div style={{padding:"8px 12px",background:"#ffebee",color:"#c62828",borderRadius:6,fontSize:12,marginBottom:10}}>{importErro}</div>}
+
+            {importPreview && (<>
+              <div style={{fontSize:11,color:"#888",marginBottom:8}}>Confira o lote de cada linha antes de aplicar — corrija manualmente onde não bateu.</div>
+              <div style={{maxHeight:"40vh",overflowY:"auto",border:"1px solid #eee",borderRadius:8,marginBottom:14}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:"#f5f5f5"}}>
+                      <th style={{padding:"6px 8px",textAlign:"left"}}>Linha da planilha</th>
+                      <th style={{padding:"6px 8px",textAlign:"left"}}>Lote no Planejamento</th>
+                      <th style={{padding:"6px 8px",textAlign:"left"}}>Texto a aplicar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.map((row,i)=>(
+                      <tr key={i} style={{background:row.matchIdx<0?"#fff8e1":i%2===0?"#fff":"#fafafa"}}>
+                        <td style={{padding:"6px 8px",color:"#666"}}>{row.loteCsv}</td>
+                        <td style={{padding:"6px 8px"}}>
+                          <select value={row.matchIdx} onChange={e=>{
+                              const v = parseInt(e.target.value);
+                              setImportPreview(p => p.map((r,ri)=>ri===i?{...r,matchIdx:v}:r));
+                            }}
+                            style={{padding:"3px 5px",border:"1px solid #ccc",borderRadius:4,fontSize:12,width:"100%",
+                              background:row.matchIdx<0?"#fff3e0":"#fff"}}>
+                            <option value={-1}>— não encontrado, pular —</option>
+                            {data.map((d,di) => <option key={d.id||di} value={di}>{d.lote||"(sem nome)"}</option>)}
+                          </select>
+                        </td>
+                        <td style={{padding:"6px 8px",fontWeight:600}}>{row.texto}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{fontSize:11,color:"#999",marginBottom:12}}>
+                {importPreview.filter(r=>r.matchIdx>=0).length} de {importPreview.length} linha(s) serão aplicadas.
+              </div>
+            </>)}
+
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>{setShowImportCsv(false);setImportPreview(null);}} style={{padding:"8px 16px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+              {importPreview && (
+                <button onClick={confirmarImportCsv} disabled={!importPreview.some(r=>r.matchIdx>=0)}
+                  style={{padding:"8px 16px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",opacity:importPreview.some(r=>r.matchIdx>=0)?1:0.5}}>
+                  ✓ Aplicar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
