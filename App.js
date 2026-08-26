@@ -2063,15 +2063,18 @@ function App() {
     return merged.length - atual.length;
   }
 
-  // ── Custo médio de sementes: soma o valor pago em Compras e divide pela área plantada,
-  // alimentando o preço/ha da categoria "Sementes" na Programação (Verão ou Inverno) ──
+  // ── Custo médio de sementes: junta o valor pago em Compras de todas as variedades da
+  // cultura (Soja, Milho, Feijão) e divide pela Área total já cadastrada na Programação
+  // (não pela soma de área do Planejamento, que pode não estar em dia) — alimentando um
+  // preço médio único na categoria "Sementes" da Programação (Verão ou Inverno) ──
   function atualizarCustoSementesDoPlano(planData, isVerao) {
     const culturas = [...new Set(planData.map(r=>r.cultura).filter(Boolean))];
+    const dProg = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     let atualizados = 0;
     const relatorio = [];
     culturas.forEach(cultura => {
-      const areaTotal = planData.filter(r=>r.cultura===cultura).reduce((s,r)=>s+(parseFloat(r.area)||0),0);
+      const areaTotal = dProg[cultura]?.area || 0;
       if (!areaTotal) return;
       const variedades = new Set(planData.filter(r=>r.cultura===cultura && r.variedade)
         .map(r=>normalizarNome(r.variedade)));
