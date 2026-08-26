@@ -504,8 +504,8 @@ function splitSementesTS(cultureData) {
     const idx = (culture.categories || []).findIndex(c => c.name === "Sementes / TS");
     if (idx === -1) return;
     const cat = culture.categories[idx];
-    const sementes = cat.products.filter(p => p.produto.trim().toUpperCase().startsWith("SEMENTE"));
-    const ts = cat.products.filter(p => !p.produto.trim().toUpperCase().startsWith("SEMENTE"));
+    const sementes = (cat.products||[]).filter(p => p.produto.trim().toUpperCase().startsWith("SEMENTE"));
+    const ts = (cat.products||[]).filter(p => !p.produto.trim().toUpperCase().startsWith("SEMENTE"));
     const novas = [];
     if (sementes.length) novas.push({ name:"Sementes", products:sementes });
     if (ts.length) novas.push({ name:"TS", products:ts });
@@ -1963,11 +1963,12 @@ function App() {
       const origem = d[origemNome];
       const alvo = nd[activeCulture];
       const areaAlvo = alvo.area;
-      origem.categories.forEach(catOrigem=>{
-        let catAlvo = alvo.categories.find(c=>c.name===catOrigem.name);
+      (origem.categories||[]).forEach(catOrigem=>{
+        let catAlvo = (alvo.categories||[]).find(c=>c.name===catOrigem.name);
         if (!catAlvo) { catAlvo = { name:catOrigem.name, products:[] }; alvo.categories.push(catAlvo); }
+        if (!catAlvo.products) catAlvo.products = [];
         const nomesExistentes = new Set(catAlvo.products.map(p=>p.produto.trim().toLowerCase()));
-        catOrigem.products.forEach(p=>{
+        (catOrigem.products||[]).forEach(p=>{
           if (nomesExistentes.has(p.produto.trim().toLowerCase())) return;
           catAlvo.products.push({ ...p, area:areaAlvo, preco_compra:null, fornecedor_compra:null });
         });
@@ -2093,8 +2094,8 @@ function App() {
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(culture => {
-        culture.categories.forEach(cat => {
-          cat.products.forEach(p => {
+        (culture.categories||[]).forEach(cat => {
+          (cat.products||[]).forEach(p => {
             const nomeMatch = p.produto.trim().toLowerCase() === prodKey;
             const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
             if (nomeMatch || iaMatch) {
@@ -2161,7 +2162,7 @@ function App() {
     (safra==="verao" ? setCotSemProdVerao : setCotSemProdInv)(semMerged);
     (safra==="verao" ? setCotInsumoProdVerao : setCotInsumoProdInv)(insMerged);
     let jaResolvidos = 0;
-    Object.values(d).forEach(culture => culture.categories.forEach(cat => cat.products.forEach(p => {
+    Object.values(d).forEach(culture => (culture.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
       if (produtoJaResolvido(p)) jaResolvidos++;
     })));
     setGerarCotMsg({ adub: adubMerged.length-adubAtual.length, sem: semMerged.length-semAtual.length, ins: insMerged.length-insAtual.length, jaResolvidos });
@@ -2214,9 +2215,9 @@ function App() {
         relatorio.forEach(({cultura,precoMedio})=>{
           const c = nd[cultura];
           if (!c) return;
-          c.categories.forEach(cat=>{
+          (c.categories||[]).forEach(cat=>{
             if (cat.name!=="Sementes") return;
-            cat.products.forEach(p=>{ p.preco_unit = precoMedio; p.preco_compra = precoMedio; p.fornecedor_compra = "Compra manual"; });
+            (cat.products||[]).forEach(p=>{ p.preco_unit = precoMedio; p.preco_compra = precoMedio; p.fornecedor_compra = "Compra manual"; });
           });
         });
         return nd;
@@ -2255,19 +2256,19 @@ function App() {
     // num valor só preenchido lá dentro pra decidir o que devolver logo em seguida.
     const atingidos = new Set();
     Object.values(dAtual).forEach(cultura => {
-      cultura.categories.forEach(cat => {
+      (cultura.categories||[]).forEach(cat => {
         const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
         if (!relevante) return;
-        cat.products.forEach(p => { const match = procuraMatch(p); if (match) atingidos.add(match.produto); });
+        (cat.products||[]).forEach(p => { const match = procuraMatch(p); if (match) atingidos.add(match.produto); });
       });
     });
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(cultura => {
-        cultura.categories.forEach(cat => {
+        (cultura.categories||[]).forEach(cat => {
           const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
           if (!relevante) return;
-          cat.products.forEach(p => {
+          (cat.products||[]).forEach(p => {
             const match = procuraMatch(p);
             if (match) {
               p.preco_unit = match.precoMedio;
@@ -2303,8 +2304,8 @@ function App() {
     const copiaInverno = JSON.parse(JSON.stringify(dataInverno));
     [copiaVerao,copiaInverno].forEach(d=>{
       Object.values(d).forEach(c=>{
-        c.categories.forEach(cat=>{
-          cat.products.forEach(p=>{ p.preco_compra=null; p.fornecedor_compra=null; });
+        (c.categories||[]).forEach(cat=>{
+          (cat.products||[]).forEach(p=>{ p.preco_compra=null; p.fornecedor_compra=null; });
         });
       });
     });
@@ -2401,7 +2402,7 @@ function App() {
   }
 
   // ── Totais ──
-  const catTotals = useMemo(()=>culture.categories.map(cat=>cat.products.reduce((s,p)=>s+calcProdTotal(p,cat,culture),0)),[culture]);
+  const catTotals = useMemo(()=>(culture.categories||[]).map(cat=>(cat.products||[]).reduce((s,p)=>s+calcProdTotal(p,cat,culture),0)),[culture]);
   const insumoTotal = catTotals.reduce((a,b)=>a+b,0);
   const opTotal = Object.values(culture.op_costs||{}).reduce((a,b)=>a+b,0);
   const totalHa = culture.area>0 ? insumoTotal/culture.area + opTotal : 0;
@@ -3270,7 +3271,7 @@ function App() {
           </div>
 
           {/* Categories */}
-          {culture.categories.map((cat,catIdx)=>{
+          {(culture.categories||[]).map((cat,catIdx)=>{
             const isOpen = expandedCats[activeCulture+catIdx]!==false;
             const catTotal = catTotals[catIdx]||0;
             const icon = CAT_ICONS[cat.name]||"📦";
@@ -3283,7 +3284,7 @@ function App() {
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span>{icon}</span><span style={{fontWeight:700,fontSize:13}}>{cat.name}</span>
-                    <span style={{background:"rgba(255,255,255,0.2)",borderRadius:10,padding:"1px 7px",fontSize:10}}>{cat.products.length}</span>
+                    <span style={{background:"rgba(255,255,255,0.2)",borderRadius:10,padding:"1px 7px",fontSize:10}}>{(cat.products||[]).length}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontSize:13,fontWeight:700}}>{fmt(catTotal)}</span>
@@ -3302,7 +3303,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {cat.products.map((p,prodIdx)=>{
+                        {(cat.products||[]).map((p,prodIdx)=>{
                           const preco = p.preco_compra||p.preco_unit;
                           const qtd = isTS ? calcQtdTS(p,culture) : (p.dose>0?p.dose*p.area:p.area);
                           const total = qtd*preco;
@@ -6133,11 +6134,11 @@ function App() {
                         <div key={nome} style={{border:"1px solid #eee",borderRadius:8,padding:"10px 14px",opacity:c.ativo?1:0.5}}>
                           <div onClick={()=>setExpandedArqCulturas(p=>({...p,[key]:!open}))} style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,cursor:"pointer"}}>
                             <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{open?"▼":"▶"} {nome} {!c.ativo && "(inativa)"}</div>
-                            <div style={{fontSize:12,color:"#666"}}>{fmtN(c.area)} ha · {c.categories.length} categorias · {fmt(t.total)}/ha</div>
+                            <div style={{fontSize:12,color:"#666"}}>{fmtN(c.area)} ha · {(c.categories||[]).length} categorias · {fmt(t.total)}/ha</div>
                           </div>
                           {open && (
                             <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:10}}>
-                              {c.categories.map((cat,catIdx)=>{
+                              {(c.categories||[]).map((cat,catIdx)=>{
                                 const isTSarq = cat.name==="TS";
                                 const showIAarq = CAT_IA.has(cat.name);
                                 return (
@@ -6153,7 +6154,7 @@ function App() {
                                           </tr>
                                         </thead>
                                         <tbody>
-                                          {cat.products.map((p,pi)=>{
+                                          {(cat.products||[]).map((p,pi)=>{
                                             const qtd = isTSarq ? calcQtdTS(p,c) : (p.dose>0?p.dose*p.area:p.area);
                                             const preco = p.preco_compra||p.preco_unit;
                                             return (
@@ -6293,12 +6294,12 @@ function App() {
               <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:320,overflowY:"auto",marginBottom:16}}>
                 {outras.map(nome=>{
                   const c = data[nome];
-                  const nProdutos = c.categories.reduce((s,cat)=>s+cat.products.length,0);
+                  const nProdutos = (c.categories||[]).reduce((s,cat)=>s+(cat.products||[]).length,0);
                   return (
                     <button key={nome} onClick={()=>importarProdutosDeCultura(nome)} disabled={!nProdutos}
                       style={{textAlign:"left",padding:"10px 14px",background:nProdutos?"#f5f5f5":"#fafafa",border:"1px solid #e0e0e0",borderRadius:8,cursor:nProdutos?"pointer":"not-allowed",opacity:nProdutos?1:0.5}}>
                       <div style={{fontWeight:700,fontSize:14,color:"#1a3a1a"}}>{nome} {!c.ativo && <span style={{fontWeight:400,color:"#999"}}>(inativo)</span>}</div>
-                      <div style={{fontSize:12,color:"#888"}}>{c.categories.length} categorias · {nProdutos} produtos</div>
+                      <div style={{fontSize:12,color:"#888"}}>{(c.categories||[]).length} categorias · {nProdutos} produtos</div>
                     </button>
                   );
                 })}
