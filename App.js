@@ -150,6 +150,15 @@ function saveRole(role) { try { role ? localStorage.setItem("gcagro_role", role)
 function revendasDoFornecedor(str) {
   return (str||"").split(" + ").map(s=>s.replace(/\s*\([^)]*\)\s*$/,"").trim()).filter(Boolean);
 }
+// Normaliza nome de produto pra comparar Compras (digitado à mão) com Programação de forma
+// tolerante: ignora acento, maiúscula/minúscula e espaços extras — mas não mexe em pontuação
+// como "/" ou "-", que às vezes distingue produtos diferentes de propósito.
+function normalizarNome(str) {
+  return (str||"").trim().toLowerCase()
+    .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
+    .replace(/[óòôõö]/g,"o").replace(/[úùûü]/g,"u").replace(/ç/g,"c").replace(/ñ/g,"n")
+    .replace(/\s+/g," ");
+}
 function hexA(hex, alpha) {
   const h = hex.replace("#","");
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
@@ -2051,9 +2060,9 @@ function App() {
       const areaTotal = planData.filter(r=>r.cultura===cultura).reduce((s,r)=>s+(parseFloat(r.area)||0),0);
       if (!areaTotal) return;
       const variedades = new Set(planData.filter(r=>r.cultura===cultura && r.variedade)
-        .map(r=>r.variedade.trim().toLowerCase()));
+        .map(r=>normalizarNome(r.variedade)));
       if (!variedades.size) return;
-      const totalPago = comprasRecords.filter(r=>r.categoria==="Sementes" && variedades.has((r.produto||"").trim().toLowerCase()))
+      const totalPago = comprasRecords.filter(r=>r.categoria==="Sementes" && variedades.has(normalizarNome(r.produto)))
         .reduce((s,r)=>s+(r.valorTotal||0),0);
       if (!totalPago) return;
       const precoMedio = totalPago/areaTotal;
@@ -2083,11 +2092,12 @@ function App() {
   function atualizarCustoPorCategoria(categoriaCompra) {
     const isVerao = categoriaCompra.includes("Verão");
     const isAdub = categoriaCompra.startsWith("Adubação");
+    const dAtual = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra);
     const grupos = {};
     recs.forEach(r=>{
-      const key = (r.produto||"").trim().toLowerCase();
+      const key = normalizarNome(r.produto);
       if (!key || !r.quantidade) return;
       if (!grupos[key]) grupos[key] = { produto:r.produto.trim(), totalPago:0, totalQtd:0, fornecedores:new Set() };
       grupos[key].totalPago += r.valorTotal||0;
@@ -2096,7 +2106,22 @@ function App() {
     });
     const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
     if (!medias.length) return [];
+    function procuraMatch(p) {
+      const nomeKey = normalizarNome(p.produto);
+      const iaKey = normalizarNome(p.ingrediente_ativo);
+      return medias.find(m => normalizarNome(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
+    }
+    // Calculado com o estado ATUAL (fora do setState) pra poder devolver o relatório de forma
+    // síncrona — o updater do setState não roda de forma síncrona, então não dá pra confiar
+    // num valor só preenchido lá dentro pra decidir o que devolver logo em seguida.
     const atingidos = new Set();
+    Object.values(dAtual).forEach(cultura => {
+      cultura.categories.forEach(cat => {
+        const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
+        if (!relevante) return;
+        cat.products.forEach(p => { const match = procuraMatch(p); if (match) atingidos.add(match.produto); });
+      });
+    });
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(cultura => {
@@ -2104,15 +2129,12 @@ function App() {
           const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
           if (!relevante) return;
           cat.products.forEach(p => {
-            const nomeKey = p.produto.trim().toLowerCase();
-            const iaKey = (p.ingrediente_ativo||"").trim().toLowerCase();
-            const match = medias.find(m => m.produto.toLowerCase()===nomeKey || (iaKey && m.produto.toLowerCase()===iaKey));
+            const match = procuraMatch(p);
             if (match) {
               p.preco_unit = match.precoMedio;
               p.preco_compra = match.precoMedio;
               p.fornecedor_compra = "Compra manual";
               if (match.fornecedores && match.fornecedores.size) p.revenda = [...match.fornecedores].join(" + ");
-              atingidos.add(match.produto);
             }
           });
         });
