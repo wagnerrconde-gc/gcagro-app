@@ -276,6 +276,14 @@ const CAT_ICONS = {
   "Herbicidas - Dessecação e Pós":"💧","Foliares":"🍃","Fungicidas":"🔬",
   "Inseticidas":"🛡️","Óleos / Adjuvantes":"🧴",
 };
+// Larguras fixas (px) por coluna da tabela de produtos da Programação — compartilhadas entre
+// as tabelas de todas as categorias (Adubação, Sementes, TS...), que senão calculam a largura de
+// cada coluna de forma independente (auto, baseada no próprio conteúdo) e ficam desalinhadas
+// verticalmente entre si (ex: "Venc." de Sementes numa posição, "Venc." de TS em outra).
+const PROG_COL_W = {
+  "Produto":140,"I.A.":110,"Dose":60,"Kg semente/ha":100,"Área(ha)":65,"Qtd":55,"Unid.":55,
+  "Fase":75,"Obs":110,"Ref.(R$)":90,"Compra(R$)":100,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
+};
 // Categorias de Insumos/Defensivos (tudo que não é Adubação nem Sementes) e as que mostram
 // coluna de Ingrediente Ativo na Cotação — só faz sentido pra defensivos de verdade.
 const CATEGORIAS_INSUMOS = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas","Foliares","TS","Kit Sulco","Óleos / Adjuvantes"];
@@ -3279,6 +3287,10 @@ function App() {
             const isTS = cat.name === "TS";
             const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose", ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
             const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose", ...(isTS?["kgHa"]:[]), "area",null,null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
+            // table-layout:fixed obriga cada tabela a respeitar exatamente as larguras de PROG_COL_W,
+            // em vez de recalcular por conta própria conforme o conteúdo — é o que garante que a
+            // mesma coluna (ex: Venc.) fique na mesma posição em todas as categorias.
+            const progTableWidth = progHeaders.reduce((s,h)=>s+(PROG_COL_W[h]||0),0);
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -3294,11 +3306,11 @@ function App() {
                 </div>
                 {isOpen&&(
                   <div style={{overflowX:"auto"}}>
-                    <table style={{borderCollapse:"collapse",fontSize:11}}>
+                    <table style={{borderCollapse:"collapse",fontSize:11,tableLayout:"fixed",width:progTableWidth}}>
                       <thead>
                         <tr style={{background:colors.light}}>
                           {progHeaders.map(h=>(
-                            <th key={h} style={{padding:"6px 8px",textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
+                            <th key={h} style={{padding:"6px 8px",width:PROG_COL_W[h],textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -3311,13 +3323,13 @@ function App() {
                           const comprado = p.preco_compra!=null;
                           return (
                             <tr key={prodIdx} style={{background:bg}}>
-                              <td style={{padding:"6px 8px",textAlign:"center",fontWeight:600,whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
-                              {showIA && <td style={{padding:"6px 8px",textAlign:"center",color:"#666",fontSize:10,whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
-                              <td style={{padding:"6px 8px",textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>
-                              {isTS && <td style={{padding:"6px 8px",textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
-                              <td style={{padding:"6px 8px",textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#555",whiteSpace:"nowrap"}}>{fmtN(qtd,1)}</td>
-                              <td style={{padding:"6px 8px",textAlign:"center",whiteSpace:"nowrap"}}>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Produto"],textAlign:"center",fontWeight:600,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
+                              {showIA && <td style={{padding:"6px 8px",width:PROG_COL_W["I.A."],textAlign:"center",color:"#666",fontSize:10,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Dose"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>
+                              {isTS && <td style={{padding:"6px 8px",width:PROG_COL_W["Kg semente/ha"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Área(ha)"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Qtd"],textAlign:"center",color:"#555",whiteSpace:"nowrap"}}>{fmtN(qtd,1)}</td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Unid."],textAlign:"center",whiteSpace:"nowrap"}}>
                                 <select value={p.unidade||"kg"} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
                                   style={{padding:"2px 4px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
                                   <option value="kg">kg</option>
@@ -3325,15 +3337,15 @@ function App() {
                                   <option value="Tn">Tn</option>
                                 </select>
                               </td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#888",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#666",whiteSpace:"nowrap"}}>{culture.area>0?fmt(total/culture.area):"-"}</td>
-                              <td style={{padding:"6px 8px",textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
-                              <td style={{padding:"6px 8px",textAlign:"center",color:"#888",fontSize:10,whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
-                              <td style={{padding:"6px 4px",textAlign:"center"}}>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Fase"],textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Obs"],textAlign:"center",color:"#888",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Ref.(R$)"],textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Compra(R$)"],textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Total"],textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["R$/ha"],textAlign:"center",color:"#666",whiteSpace:"nowrap"}}>{culture.area>0?fmt(total/culture.area):"-"}</td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Revenda"],textAlign:"center",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Venc."],textAlign:"center",color:"#888",fontSize:10,whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
+                              <td style={{padding:"6px 4px",width:PROG_COL_W[""],textAlign:"center"}}>
                                 <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                               </td>
                             </tr>
