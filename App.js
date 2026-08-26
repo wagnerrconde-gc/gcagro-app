@@ -681,6 +681,21 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
     data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), pmg:toNum(m.pmg), obs:String(m.obs||"").trim() };
 }
 
+const ALIASES_ESTOQUE_INSUMOS = {
+  categoria:  ["categoria","grupo","tipo"],
+  nome:       ["nome","produto","item","insumo"],
+  unidade:    ["unidade","unid","un"],
+  quantidade: ["quantidade","qtd","estoque","saldo","quantidade_atual"],
+  vencimento: ["vencimento","validade","venc"],
+  obs:        ["obs","observacao","observacoes"],
+};
+function buildInsumoEstoqueRecord(m) {
+  const nome = String(m.nome||"").trim();
+  if (!nome) return null;
+  const categoria = GRUPOS_ESTOQUE_INSUMOS.find(c => normalizarNome(c)===normalizarNome(m.categoria||"")) || GRUPOS_ESTOQUE_INSUMOS[0];
+  return { id:newId(), categoria, nome, unidade:String(m.unidade||"kg").trim(),
+    quantidade:toNum(m.quantidade), vencimento:String(m.vencimento||"").trim(), obs:String(m.obs||"").trim() };
+}
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
 function deleteRecord(setRecords, id) { setRecords(rs => rs.filter(r => r.id !== id)); }
 function updateRecordField(setRecords, id, field, value, numeric=false) {
@@ -1631,6 +1646,9 @@ function App() {
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
   const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // estoque | areas | safras | notas | aplicacoes | custos
   const [kmlMsg, setKmlMsg] = useState(null);
+  const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
+  const [importInsumoPreview, setImportInsumoPreview] = useState(null);
+  const [importInsumoErro, setImportInsumoErro] = useState("");
 
   // ── Ajuste manual de estoque (entrada/saída avulsa, pra acerto) ──
   const [movimentacoesEstoqueRecords, setMovimentacoesEstoqueRecords] = useState(() => loadLS(KEY_MOVIMENTACOES_ESTOQUE, []));
@@ -4378,7 +4396,69 @@ function App() {
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
               <button onClick={()=>{setAddingMovimentacao(a=>!a);setMovimentacaoSubmitError("");}}
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>Ajuste manual</button>
+              <button onClick={()=>{setShowImportInsumoEstoque(true);setImportInsumoPreview(null);setImportInsumoErro("");}}
+                style={{padding:"6px 14px",background:"#e3f2fd",border:"none",color:"#1565C0",borderRadius:6,fontSize:11,cursor:"pointer"}}>📥 Importar planilha</button>
             </div>
+
+            {showImportInsumoEstoque && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+                <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:640,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#334155",marginBottom:10}}>📥 Importar estoque de insumos (planilha)</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Categoria</b> (Defensivos/Adubos/Foliares/Sementes), <b>Nome</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Vencimento</b> (opcional), <b>Obs</b> (opcional). Cada linha vira um item novo no estoque.
+                  </div>
+                  {!importInsumoPreview ? (
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
+                      const file = e.target.files[0]; if (!file) return;
+                      try {
+                        const rows = await readSpreadsheetRows(file);
+                        const registros = rows.map(row => buildInsumoEstoqueRecord(mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))).filter(Boolean);
+                        if (!registros.length) { setImportInsumoErro("⚠ Nenhuma linha reconhecida. Confira os nomes das colunas."); return; }
+                        setImportInsumoPreview(registros);
+                        setImportInsumoErro("");
+                      } catch (err) { setImportInsumoErro("❌ Erro ao ler o arquivo: "+err.message); }
+                      e.target.value = "";
+                    }} style={{marginBottom:10}}/>
+                  ) : (
+                    <>
+                      <div style={{fontSize:12,color:"#334155",marginBottom:8}}>{importInsumoPreview.length} item(ns) prontos pra importar:</div>
+                      <div style={{overflowX:"auto",marginBottom:14}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                          <thead><tr style={{background:"#f5f5f5"}}>
+                            {["Categoria","Nome","Unidade","Quantidade","Vencimento","Obs"].map(h=>(
+                              <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#888",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {importInsumoPreview.map((r,i)=>(
+                              <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                                <td style={{padding:"5px 7px"}}>{r.categoria}</td>
+                                <td style={{padding:"5px 7px",fontWeight:600}}>{r.nome}</td>
+                                <td style={{padding:"5px 7px"}}>{r.unidade}</td>
+                                <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtN(r.quantidade,2)}</td>
+                                <td style={{padding:"5px 7px"}}>{r.vencimento||"—"}</td>
+                                <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                  {importInsumoErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importInsumoErro}</div>}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                    <button onClick={()=>{setShowImportInsumoEstoque(false);setImportInsumoPreview(null);setImportInsumoErro("");}}
+                      style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+                    {importInsumoPreview && (
+                      <button onClick={()=>{
+                        setInsumosEstoqueRecords(rs => [...rs, ...importInsumoPreview]);
+                        setShowImportInsumoEstoque(false); setImportInsumoPreview(null); setImportInsumoErro("");
+                      }} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Importar {importInsumoPreview.length} item(ns)</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {addingMovimentacao && (
               <div style={formCardSt}>
