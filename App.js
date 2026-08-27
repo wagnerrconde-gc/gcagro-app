@@ -381,7 +381,8 @@ function calcQtdSementes(row) {
   const area = parseFloat(row.area)||0;
   if (!pop || !area) return 0;
   const unidade = row.unidadeQtd || (isSoja ? "bag" : "saco");
-  return (pop * 20000 * area) / SEMENTES_POR_UNIDADE[unidade];
+  // +3% de margem de segurança na área, pra não faltar semente.
+  return (pop * 20000 * area * 1.03) / SEMENTES_POR_UNIDADE[unidade];
 }
 function calcCultureTotals(culture) {
   const insumos = (culture.categories||[]).reduce((s,cat)=>s+(cat.products||[]).reduce((ss,p)=>ss+calcProdTotal(p,cat,culture),0),0);
@@ -1255,7 +1256,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                           </select>
                         ) : type==="calc" ? (
                           (()=>{ const qtd=calcQtdSementes(row); return (
-                            <div style={{padding:"3px 5px",textAlign:dataAlign||"center",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
+                            <div style={{padding:"3px 5px",textAlign:dataAlign||"center",fontWeight:qtd!=null?700:400,color:qtd!=null?cc.bg:"#bbb",minWidth:width||70}} title={qtd!=null?"Calculado: População × 20000 × Área × 1,03 (margem de 3%) ÷ sementes por unidade":"Fórmula disponível apenas para Soja e Milho"}>
                               {qtd!=null?fmtN(qtd,1):"—"}
                             </div>
                           );})()
