@@ -169,6 +169,16 @@ function normalizarLote(str) {
     .replace(/\bsequeiro\b/g,"seq")
     .replace(/\s+/g," ").trim();
 }
+// Classifica uma compra de semente por cultura a partir do nome do produto, seguindo a
+// convenção do usuário: só prefixa o nome com a cultura quando NÃO é Soja (ex: "Milho AS 1868");
+// sem prefixo reconhecido, cai em Soja por padrão. Usado tanto pra atualizar o custo na
+// Programação quanto pra exibir a média de preço por cultura em Compras.
+function classificarCulturaSemente(produto, culturas) {
+  const nome = normalizarNome(produto);
+  const porPrefixo = culturas.find(c => { const cn = normalizarNome(c); return nome===cn || nome.startsWith(cn+" "); });
+  if (porPrefixo) return porPrefixo;
+  return culturas.includes("Soja") ? "Soja" : null;
+}
 function hexA(hex, alpha) {
   const h = hex.replace("#","");
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
@@ -2362,16 +2372,10 @@ function App() {
     const dProg = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     const culturas = Object.keys(dProg).filter(c => (dProg[c]?.area||0) > 0);
-    function culturaDoProduto(produto) {
-      const nome = normalizarNome(produto);
-      const porPrefixo = culturas.find(c => { const cn = normalizarNome(c); return nome===cn || nome.startsWith(cn+" "); });
-      if (porPrefixo) return porPrefixo;
-      return culturas.includes("Soja") ? "Soja" : null; // convenção: sem prefixo reconhecido = Soja
-    }
     const porCultura = {};
     culturas.forEach(c => { porCultura[c] = 0; });
     comprasRecords.filter(r=>r.categoria==="Sementes").forEach(r => {
-      const cultura = culturaDoProduto(r.produto);
+      const cultura = classificarCulturaSemente(r.produto, culturas);
       if (cultura) porCultura[cultura] += (r.valorTotal||0);
     });
     let atualizados = 0;
@@ -2744,6 +2748,33 @@ function App() {
     return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
   }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel]);
 
+  // Média de preço de sementes por cultura (Soja, Milho...) dentro da safra/categoria "Sementes"
+  // aberta em Compras — mesma classificação usada por "Atualizar Custo na Programação", só que
+  // aqui é só uma prévia (não grava nada). Sementes é compartilhado entre Verão e Inverno, então
+  // mostra as duas apurações separadas quando ambas tiverem culturas ativas.
+  const mediasSementesPorCultura = useMemo(() => {
+    if (comprasCatSel!=="Sementes" || !comprasSafraSel) return [];
+    const recs = comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria==="Sementes");
+    const linhas = [];
+    [["Verão",dataVerao],["Inverno",dataInverno]].forEach(([label,dProg])=>{
+      const culturas = Object.keys(dProg).filter(c=>(dProg[c]?.area||0)>0);
+      if (!culturas.length) return;
+      const porCultura = {};
+      culturas.forEach(c=>{porCultura[c]=0;});
+      recs.forEach(r=>{
+        const cultura = classificarCulturaSemente(r.produto, culturas);
+        if (cultura) porCultura[cultura] += (r.valorTotal||0);
+      });
+      culturas.forEach(cultura=>{
+        const areaTotal = dProg[cultura]?.area||0;
+        const totalPago = porCultura[cultura];
+        if (!areaTotal || !totalPago) return;
+        linhas.push({ label, cultura, totalPago, areaTotal, precoMedio: totalPago/areaTotal });
+      });
+    });
+    return linhas;
+  }, [comprasCatSel, comprasSafraSel, comprasRecords, dataVerao, dataInverno]);
+
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
     const inverno = summaryInverno.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -3088,8 +3119,8 @@ function App() {
 
   function submitCompra() {
     if (!newCompra.produto.trim()) return;
-    const quantidade = parseFloat(newCompra.quantidade)||0;
-    const precoUnitario = parseFloat(newCompra.precoUnitario)||0;
+    const quantidade = parseNumBR(newCompra.quantidade)||0;
+    const precoUnitario = parseNumBR(newCompra.precoUnitario)||0;
     addRecord(setComprasRecords, { safra:newCompra.safra.trim()||safraAtiva, categoria:newCompra.categoria.trim()||"Adubação",
       produto:newCompra.produto.trim(), unidade:newCompra.unidade, quantidade, precoUnitario,
       valorTotal:precoUnitario*quantidade, fornecedor:newCompra.fornecedor.trim(), data:newCompra.data.trim(), obs:newCompra.obs.trim(),
@@ -6345,9 +6376,9 @@ function App() {
                           <option value="sc">sc</option>
                         </select>
                       </td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{(parseFloat(newCompra.quantidade)||0)*(parseFloat(newCompra.precoUnitario)||0) > 0 ? fmt((parseFloat(newCompra.quantidade)||0)*(parseFloat(newCompra.precoUnitario)||0)) : ""}</td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="text" inputMode="decimal" value={newCompra.quantidade} onChange={e=>setNewCompra(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="text" inputMode="decimal" value={newCompra.precoUnitario} onChange={e=>setNewCompra(p=>({...p,precoUnitario:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{(parseNumBR(newCompra.quantidade)||0)*(parseNumBR(newCompra.precoUnitario)||0) > 0 ? fmt((parseNumBR(newCompra.quantidade)||0)*(parseNumBR(newCompra.precoUnitario)||0)) : ""}</td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Fornecedor" value={newCompra.fornecedor} onChange={e=>setNewCompra(p=>({...p,fornecedor:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Vencimento" value={newCompra.obs} onChange={e=>setNewCompra(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
@@ -6365,6 +6396,21 @@ function App() {
               </table>
               </div>
             </div>
+
+            {mediasSementesPorCultura.length>0 && (
+              <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginTop:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#00695c",marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>⚖️ Média de preço de sementes por cultura</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+                  {mediasSementesPorCultura.map((m,i)=>(
+                    <div key={m.label+m.cultura+i} style={{background:"#e0f2f1",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #00695c"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#00695c",marginBottom:4}}>{m.cultura} <span style={{fontWeight:400,fontSize:10,color:"#888"}}>({m.label})</span></div>
+                      <div style={{fontSize:15,fontWeight:800,color:"#004d40"}}>{fmt(m.precoMedio)}/ha</div>
+                      <div style={{fontSize:10,color:"#888",marginTop:2}}>{fmt(m.totalPago)} ÷ {fmtN(m.areaTotal,1)} ha</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>)}
         </div>
       )}
