@@ -1181,23 +1181,26 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
-  // Taxa média de Adubação e KCl (kg/ha), ponderada pela área de cada lote, separada por cultura.
+  // Taxa média de Adubação, KCl e (no Inverno) N de Cobertura (kg/ha), ponderada pela área de cada lote, separada por cultura.
   const campoAdubacao = isVerao ? "adubacao" : "adubacaoPlantio";
   const campoKcl = isVerao ? "kcl" : "cobertura";
+  const campoNCob = isVerao ? null : "nCobertura";
   const mediasPorCultura = useMemo(() => {
     const grupos = {};
     data.forEach(r => {
       const c = r.cultura; if (!c) return;
       const area = r.area||0;
-      if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0 };
+      if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0, nCobKg:0 };
       grupos[c].area += area;
       grupos[c].adubKg += extrairDoseKg(r[campoAdubacao]) * area;
       grupos[c].kclKg += extrairDoseKg(r[campoKcl]) * area;
+      if (campoNCob) grupos[c].nCobKg += extrairDoseKg(r[campoNCob]) * area;
     });
     return Object.entries(grupos)
       .filter(([,g])=>g.area>0)
-      .map(([cultura,g]) => ({ cultura, area:g.area, mediaAdub:g.adubKg/g.area, mediaKcl:g.kclKg/g.area }));
-  }, [data, campoAdubacao, campoKcl]);
+      .map(([cultura,g]) => ({ cultura, area:g.area, mediaAdub:g.adubKg/g.area, mediaKcl:g.kclKg/g.area,
+        mediaNCob: campoNCob ? g.nCobKg/g.area : null }));
+  }, [data, campoAdubacao, campoKcl, campoNCob]);
 
   // ── Importar planilha (Lote,Texto) pra preencher um campo agronômico (Adubação, KCl...)
   // em massa — usada quando a consultoria de fertilidade ou o grupo de compras manda uma
@@ -1319,7 +1322,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
 
       {mediasPorCultura.length>0 && (
         <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação e KCl (kg/ha) por cultura</div>
+          <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação{isVerao?" e KCl":", KCl e N Cobertura"} (kg/ha) por cultura</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
             {mediasPorCultura.map(m=>{
               const cc = cultureColors[m.cultura] || { bg:cor, light:"#f5f5f5" };
@@ -1328,6 +1331,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                   <div style={{fontSize:12,fontWeight:700,color:cc.bg,marginBottom:4}}>{m.cultura} <span style={{fontWeight:400,fontSize:10,color:"#888"}}>({fmtN(m.area,1)} ha)</span></div>
                   <div style={{fontSize:11,color:"#555"}}>Adubação: <b>{fmtN(m.mediaAdub,1)} kg/ha</b></div>
                   <div style={{fontSize:11,color:"#555"}}>KCl: <b>{fmtN(m.mediaKcl,1)} kg/ha</b></div>
+                  {m.mediaNCob!=null && <div style={{fontSize:11,color:"#555"}}>N Cobertura: <b>{fmtN(m.mediaNCob,1)} kg/ha</b></div>}
                 </div>
               );
             })}
