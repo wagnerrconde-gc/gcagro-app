@@ -1742,6 +1742,7 @@ function App() {
   const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // estoque | areas | safras | notas | aplicacoes | custos
   const [kmlMsg, setKmlMsg] = useState(null);
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
+  const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
   const [importInsumoErro, setImportInsumoErro] = useState("");
 
@@ -4599,7 +4600,7 @@ function App() {
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Novo item</button>
               <button onClick={()=>{setAddingMovimentacao(a=>!a);setMovimentacaoSubmitError("");}}
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>Ajuste manual</button>
-              <button onClick={()=>{setShowImportInsumoEstoque(true);setImportInsumoPreview(null);setImportInsumoErro("");}}
+              <button onClick={()=>{setShowImportInsumoEstoque(true);setImportInsumoPreview(null);setImportInsumoErro("");setImportInsumoSubstituir(false);}}
                 style={{padding:"6px 14px",background:"#e3f2fd",border:"none",color:"#1565C0",borderRadius:6,fontSize:11,cursor:"pointer"}}>📥 Importar planilha</button>
             </div>
 
@@ -4647,17 +4648,22 @@ function App() {
                           </tbody>
                         </table>
                       </div>
+                      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#666",marginBottom:4,cursor:"pointer"}}>
+                        <input type="checkbox" checked={importInsumoSubstituir} onChange={e=>setImportInsumoSubstituir(e.target.checked)}/>
+                        Substituir todo o estoque atual ({insumosEstoqueRecords.length} item(ns)) por esses — em vez de só adicionar
+                      </label>
                     </>
                   )}
                   {importInsumoErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importInsumoErro}</div>}
                   <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                    <button onClick={()=>{setShowImportInsumoEstoque(false);setImportInsumoPreview(null);setImportInsumoErro("");}}
+                    <button onClick={()=>{setShowImportInsumoEstoque(false);setImportInsumoPreview(null);setImportInsumoErro("");setImportInsumoSubstituir(false);}}
                       style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
                     {importInsumoPreview && (
                       <button onClick={()=>{
-                        setInsumosEstoqueRecords(rs => [...rs, ...importInsumoPreview]);
-                        setShowImportInsumoEstoque(false); setImportInsumoPreview(null); setImportInsumoErro("");
-                      }} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Importar {importInsumoPreview.length} item(ns)</button>
+                        if (importInsumoSubstituir && !window.confirm(`Isso vai APAGAR os ${insumosEstoqueRecords.length} item(ns) atuais do estoque e colocar só os ${importInsumoPreview.length} importados agora. Confirma?`)) return;
+                        setInsumosEstoqueRecords(rs => importInsumoSubstituir ? importInsumoPreview : [...rs, ...importInsumoPreview]);
+                        setShowImportInsumoEstoque(false); setImportInsumoPreview(null); setImportInsumoErro(""); setImportInsumoSubstituir(false);
+                      }} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ {importInsumoSubstituir?"Substituir por":"Importar"} {importInsumoPreview.length} item(ns)</button>
                     )}
                   </div>
                 </div>
