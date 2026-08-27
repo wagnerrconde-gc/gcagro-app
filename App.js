@@ -1134,7 +1134,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs, obs2, setObs2}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -1341,9 +1341,14 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
 
       <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
-        <textarea value={obs||""} onChange={e=>setObs(e.target.value)} rows={4}
-          placeholder="Anotações e testes realizados durante a safra..."
-          style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <textarea value={obs||""} onChange={e=>setObs(e.target.value)} rows={4}
+            placeholder="Anotações e testes realizados durante a safra..."
+            style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
+          <textarea value={obs2||""} onChange={e=>setObs2(e.target.value)} rows={4}
+            placeholder="Continuação das anotações..."
+            style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
+        </div>
       </div>
 
       {showImportCsv && (
@@ -1627,6 +1632,8 @@ function App() {
   const [planSafrinha, setPlanSafrinha]   = useState(() => loadLS(KEY_PLANEJAMENTO+"_safrinha", PLAN_SAFRINHA_INICIAL));
   const [planObsVerao, setPlanObsVerao]       = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_verao", ""));
   const [planObsSafrinha, setPlanObsSafrinha] = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_safrinha", ""));
+  const [planObsVerao2, setPlanObsVerao2]       = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_verao2", ""));
+  const [planObsSafrinha2, setPlanObsSafrinha2] = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_safrinha2", ""));
   const [tsVerao, setTsVerao]           = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_verao", TS_VERAO_INICIAL));
   const [tsSafrinha, setTsSafrinha]     = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_safrinha", TS_SAFRINHA_INICIAL));
 
@@ -1817,6 +1824,8 @@ function App() {
   useFirebaseSync("gcagro/planejamento/safrinha", planSafrinha, setPlanSafrinha);
   useFirebaseSync("gcagro/planejamento/obs_verao", planObsVerao, setPlanObsVerao);
   useFirebaseSync("gcagro/planejamento/obs_safrinha", planObsSafrinha, setPlanObsSafrinha);
+  useFirebaseSync("gcagro/planejamento/obs_verao2", planObsVerao2, setPlanObsVerao2);
+  useFirebaseSync("gcagro/planejamento/obs_safrinha2", planObsSafrinha2, setPlanObsSafrinha2);
   useFirebaseSync("gcagro/planejamento/ts_verao", tsVerao, setTsVerao);
   useFirebaseSync("gcagro/planejamento/ts_safrinha", tsSafrinha, setTsSafrinha);
   useFirebaseSync("gcagro/safras/ativa", safraAtiva, setSafraAtiva);
@@ -1828,6 +1837,8 @@ function App() {
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao", planObsVerao); }, [planObsVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_safrinha", planObsSafrinha); }, [planObsSafrinha]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao2", planObsVerao2); }, [planObsVerao2]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_safrinha2", planObsSafrinha2); }, [planObsSafrinha2]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_verao", tsVerao); }, [tsVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_safrinha", tsSafrinha); }, [tsSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
@@ -3550,8 +3561,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
