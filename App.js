@@ -707,6 +707,35 @@ function buildInsumoEstoqueRecord(m) {
     quantidade, custoMedio: (valorTotal && quantidade) ? valorTotal/quantidade : 0,
     vencimento:"", obs:String(m.obs||"").trim() };
 }
+// Importação de Compras a partir de planilha (ex: fechamento devolvido pelo grupo de compras).
+// Categoria e safra vêm do lugar onde o usuário está navegando (pasta atual em Compras), não
+// da planilha — evita confundir com as sub-categorias de defensivo que aparecem na exportação
+// da Cotação (Herbicidas, Fungicidas...), que não batem com as categorias de Compras.
+const ALIASES_COMPRAS = {
+  produto:       ["produto","nome","item"],
+  unidade:       ["unidade","unid"],
+  quantidade:    ["quantidade","qtd"],
+  precoUnitario: ["preco_fechado","preco_unitario","preco","preco_unit"],
+  valorTotal:    ["valor_total","valor","total"],
+  fornecedor:    ["fornecedor","revenda"],
+  data:          ["data","data_compra"],
+  vencimento:    ["vencimento","venc"],
+  obs:           ["obs","observacao","observacoes"],
+  tratamento:    ["tratamento"],
+};
+function buildCompraRecord(m, categoria, safra) {
+  const produto = String(m.produto||"").trim();
+  if (!produto) return null;
+  const quantidade = toNum(m.quantidade);
+  let precoUnitario = toNum(m.precoUnitario);
+  const valorTotalInformado = toNum(m.valorTotal);
+  if (!precoUnitario && valorTotalInformado && quantidade) precoUnitario = valorTotalInformado/quantidade;
+  return { id:newId(), safra, categoria, produto,
+    unidade: String(m.unidade||"TN").trim(), quantidade,
+    precoUnitario, valorTotal: valorTotalInformado || precoUnitario*quantidade,
+    fornecedor: String(m.fornecedor||"").trim(), data: String(m.data||"").trim(),
+    obs: String(m.vencimento||m.obs||"").trim(), tratamento: String(m.tratamento||"").trim() };
+}
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
 function deleteRecord(setRecords, id) { setRecords(rs => rs.filter(r => r.id !== id)); }
 function updateRecordField(setRecords, id, field, value, numeric=false) {
@@ -1745,6 +1774,9 @@ function App() {
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
   const [importInsumoErro, setImportInsumoErro] = useState("");
+  const [showImportCompra, setShowImportCompra] = useState(false);
+  const [importCompraPreview, setImportCompraPreview] = useState(null);
+  const [importCompraErro, setImportCompraErro] = useState("");
 
   // ── Ajuste manual de estoque (entrada/saída avulsa, pra acerto) ──
   const [movimentacoesEstoqueRecords, setMovimentacoesEstoqueRecords] = useState(() => loadLS(KEY_MOVIMENTACOES_ESTOQUE, []));
@@ -5734,6 +5766,20 @@ function App() {
             return t;
           });
           const filtProds = produtos.filter(p=>filterCat==="Todas"||p.categoria===filterCat);
+          // Exporta a lista de cotação (filtrada pela categoria atual) como planilha .xlsx, com
+          // colunas em branco pra quem cota preencher (ex: grupo de compras) — fluxo alternativo
+          // ao "cada fornecedor cota online aqui dentro", que continua existindo do lado.
+          function exportarCotacaoPlanilha() {
+            const linhas = filtProds.map(p => ({
+              "Categoria": p.categoria, "Produto": p.nome, "Ingrediente Ativo": p.ingrediente_ativo||"",
+              "Unidade": p.unidade, "Quantidade": p.qtd_total, "Preço Referência": p.preco_ref,
+              "Preço Fechado": "", "Fornecedor": "", "Vencimento": "", "Obs": "",
+            }));
+            const ws = XLSX.utils.json_to_sheet(linhas);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Cotação");
+            XLSX.writeFile(wb, `Cotacao_${tipoLabel}_${safraLabel}_${safraAtiva}`.replace(/[\/\\]/g,"-")+".xlsx");
+          }
 
           return (
             <div style={{color:"#e8f4fd"}}>
@@ -5744,6 +5790,7 @@ function App() {
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <SyncBadge/>
+                  <button onClick={exportarCotacaoPlanilha} title="Exporta em .xlsx pra enviar pro grupo de compras preencher fora do app" style={{padding:"9px 16px",background:"#1565C0",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📊 Exportar planilha</button>
                   <button onClick={abrirFecharCotacao} style={{padding:"9px 16px",background:"#2e7d32",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
                   <button onClick={()=>{const fresh=getCotData(cotContext);setCotData(cotContext,{...fresh});}} style={{padding:"9px 16px",background:"#1e3a5f",border:"1px solid #2a5080",borderRadius:7,color:"#7ab8ff",fontSize:12,cursor:"pointer"}}>↻</button>
                   <button onClick={handleCotLogout} style={{padding:"9px 14px",background:"transparent",border:"1px solid #1e3a5f",borderRadius:7,color:"#5a7a9a",fontSize:11,cursor:"pointer"}}>Sair</button>
@@ -6115,6 +6162,8 @@ function App() {
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <button onClick={()=>{setNewCompra(p=>({...p,safra:comprasSafraSel,categoria:comprasCatSel}));setAddingCompra(a=>!a);}}
                     style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
+                  <button onClick={()=>{setShowImportCompra(true);setImportCompraPreview(null);setImportCompraErro("");}}
+                    style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
                   {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
                     <button onClick={()=>{
                         const relatorio = comprasCatSel==="Sementes"
@@ -6137,6 +6186,66 @@ function App() {
               </div>
             ) : (
               <div style={{fontSize:11,color:"#999",marginBottom:14}}>Todas as compras dessa revenda nesta safra, de qualquer categoria — útil pra montar o próximo pedido.</div>
+            )}
+
+            {showImportCompra && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+                <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:680,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:10}}>📥 Importar compras (planilha)</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Produto</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Preço Fechado</b> (ou Valor Total), <b>Fornecedor</b>, <b>Vencimento</b>/<b>Obs</b> (opcional). Todas as linhas entram na safra <b>{comprasSafraSel}</b>, categoria <b>{comprasCatSel}</b> — a mesma pasta onde você está agora.
+                  </div>
+                  {!importCompraPreview ? (
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
+                      const file = e.target.files[0]; if (!file) return;
+                      try {
+                        const rows = await readSpreadsheetRows(file);
+                        const registros = rows.map(row => buildCompraRecord(mapRowByAliases(row, ALIASES_COMPRAS), comprasCatSel, comprasSafraSel)).filter(Boolean);
+                        if (!registros.length) { setImportCompraErro("⚠ Nenhuma linha reconhecida. Confira os nomes das colunas."); return; }
+                        setImportCompraPreview(registros);
+                        setImportCompraErro("");
+                      } catch (err) { setImportCompraErro("❌ Erro ao ler o arquivo: "+err.message); }
+                      e.target.value = "";
+                    }} style={{marginBottom:10}}/>
+                  ) : (
+                    <div style={{overflowX:"auto",marginBottom:14}}>
+                      <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>{importCompraPreview.length} compra(s) prontas pra importar:</div>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                        <thead><tr style={{background:"#e0f2f1"}}>
+                          {["Produto","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Data","Obs"].map(h=>(
+                            <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#00695c",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {importCompraPreview.map((r,i)=>(
+                            <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                              <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}</td>
+                              <td style={{padding:"5px 7px"}}>{r.unidade}</td>
+                              <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtQtd(r.quantidade)}</td>
+                              <td style={{padding:"5px 7px",textAlign:"right"}}>{fmt(r.precoUnitario)}</td>
+                              <td style={{padding:"5px 7px",textAlign:"right",fontWeight:600}}>{fmt(r.valorTotal)}</td>
+                              <td style={{padding:"5px 7px"}}>{r.fornecedor||"—"}</td>
+                              <td style={{padding:"5px 7px"}}>{r.data||"—"}</td>
+                              <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {importCompraErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importCompraErro}</div>}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                    <button onClick={()=>{setShowImportCompra(false);setImportCompraPreview(null);setImportCompraErro("");}}
+                      style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+                    {importCompraPreview && (
+                      <button onClick={()=>{
+                        setComprasRecords(rs => [...rs, ...importCompraPreview]);
+                        setShowImportCompra(false); setImportCompraPreview(null); setImportCompraErro("");
+                      }} style={{padding:"7px 14px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Importar {importCompraPreview.length} compra(s)</button>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
 
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
