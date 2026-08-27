@@ -4537,7 +4537,6 @@ function App() {
       ══════════════════════════════════════════════════════ */}
       {appView==="insumos" && (()=>{
         const busca = insumoEstoqueBusca.trim().toLowerCase();
-        const hoje = new Date(); hoje.setHours(0,0,0,0);
         const itensFiltrados = insumosEstoqueRecords.filter(r =>
           (insumoEstoqueCatFiltro==="Todas" || r.categoria===insumoEstoqueCatFiltro) &&
           (!busca || (r.nome||"").toLowerCase().includes(busca))
@@ -4709,15 +4708,13 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#f1f5f9"}}>
-                    {["Categoria","Produto","Ing. Ativo","Unid.","Qtd.","Custo méd.","Valor Total","Vencimento","Obs",""].map(h=>(
+                    {["Categoria","Produto","Ing. Ativo","Unid.","Qtd.","Custo méd.","Valor Total",""].map(h=>(
                       <th key={h} style={{padding:"7px 9px",textAlign:h==="Qtd."||h==="Custo méd."||h==="Valor Total"?"right":h===""?"center":"left",color:"#1e293b",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #0002",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {itensFiltrados.map((r,i)=>{
-                    const venc = parseDataBR(r.vencimento);
-                    const vencido = venc && venc<hoje;
                     return (
                       <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                         <td style={{padding:"6px 9px"}}>
@@ -4729,11 +4726,6 @@ function App() {
                         <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="quantidade" type="number" align="right" value={fmtN(r.quantidade,1)} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"quantidade",val,true)}/></td>
                         <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}>{r.custoMedio ? fmt(r.custoMedio) : "—"}</td>
                         <td style={{padding:"6px 9px",textAlign:"right",fontWeight:600,color:"#334155"}}>{r.custoMedio ? fmt((r.quantidade||0)*r.custoMedio) : "—"}</td>
-                        <td style={{padding:"6px 9px",color:vencido?"#c62828":"#888",fontWeight:vencido?700:400}}>
-                          <RecEditCell recKey={"insumoEstoque|"+r.id} field="vencimento" value={r.vencimento} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"vencimento",val)}/>
-                          {vencido && " ⚠"}
-                        </td>
-                        <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"insumoEstoque|"+r.id} field="obs" value={r.obs} onCommit={val=>updateRecordField(setInsumosEstoqueRecords,r.id,"obs",val)}/></td>
                         <td style={{padding:"6px 4px",textAlign:"center"}}>
                           <button onClick={()=>{if(window.confirm("Remover este item do estoque?"))deleteRecord(setInsumosEstoqueRecords,r.id);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                         </td>
@@ -4759,8 +4751,6 @@ function App() {
                       <td style={{padding:"5px 6px"}}><input placeholder="Qtd." type="number" step="any" value={newInsumoEstoque.quantidade} onChange={e=>setNewInsumoEstoque(p=>({...p,quantidade:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
                       <td style={{padding:"5px 6px",color:"#bbb",fontSize:10,textAlign:"center"}}>—</td>
                       <td style={{padding:"5px 6px",color:"#bbb",fontSize:10,textAlign:"center"}}>—</td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="dd/mm/aaaa" value={newInsumoEstoque.vencimento} onChange={e=>setNewInsumoEstoque(p=>({...p,vencimento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newInsumoEstoque.obs} onChange={e=>setNewInsumoEstoque(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <button onClick={submitInsumoEstoque} style={{background:"#334155",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
                         <button onClick={()=>{setAddingInsumoEstoque(false);setInsumoEstoqueSubmitError("");}} style={{background:"#eee",border:"none",borderRadius:4,padding:"3px 6px",cursor:"pointer",fontSize:12}}>✕</button>
@@ -4768,10 +4758,10 @@ function App() {
                     </tr>
                   )}
                   {addingInsumoEstoque && insumoEstoqueSubmitError && (
-                    <tr style={{background:"#fffde7"}}><td colSpan={10} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
+                    <tr style={{background:"#fffde7"}}><td colSpan={8} style={{padding:"2px 9px 8px",color:"#c62828",fontSize:11,fontWeight:600}}>⚠ {insumoEstoqueSubmitError}</td></tr>
                   )}
                   {itensFiltrados.length===0 && !addingInsumoEstoque && (
-                    <tr><td colSpan={10} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
+                    <tr><td colSpan={8} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>{busca||insumoEstoqueCatFiltro!=="Todas" ? "Nenhum item encontrado." : "Nenhum item cadastrado no estoque."}</td></tr>
                   )}
                 </tbody>
               </table>
