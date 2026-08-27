@@ -2873,9 +2873,9 @@ function App() {
   }
   function submitComissaoItem() {
     if (!newComissaoItem.produto.trim()) { setComissaoSubmitError("Preencha o Produto para adicionar a comissão."); return; }
-    const qtd = parseFloat(newComissaoItem.qtd)||0;
-    const precoUnit = parseFloat(newComissaoItem.precoUnit)||0;
-    const total = (qtd>0 && precoUnit>0) ? qtd*precoUnit : (parseFloat(newComissaoItem.total)||0);
+    const qtd = parseNumBR(newComissaoItem.qtd)||0;
+    const precoUnit = parseNumBR(newComissaoItem.precoUnit)||0;
+    const total = (qtd>0 && precoUnit>0) ? qtd*precoUnit : (parseNumBR(newComissaoItem.total)||0);
     addRecord(setComissaoRecords, { safra:comissaoSafraSel, produto:newComissaoItem.produto.trim(), qtd, precoUnit, total, obs:newComissaoItem.obs.trim() });
     setNewComissaoItem({produto:"",qtd:"",precoUnit:"",total:"",obs:""});
     setComissaoSubmitError("");
@@ -4326,9 +4326,21 @@ function App() {
                   {addingComissaoItem && (
                     <tr style={{background:"#fffde7"}}>
                       <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newComissaoItem.produto} onChange={e=>setNewComissaoItem(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd" type="number" step="any" value={newComissaoItem.qtd} onChange={e=>setNewComissaoItem(p=>({...p,qtd:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="number" step="any" value={newComissaoItem.precoUnit} onChange={e=>setNewComissaoItem(p=>({...p,precoUnit:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Total (se não tiver Qtd/Preço)" type="number" step="any" value={newComissaoItem.total} onChange={e=>setNewComissaoItem(p=>({...p,total:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Qtd" type="text" inputMode="decimal" value={newComissaoItem.qtd} onChange={e=>{
+                        const qtd = e.target.value;
+                        setNewComissaoItem(p=>{
+                          const q = parseNumBR(qtd)||0, pu = parseNumBR(p.precoUnit)||0;
+                          return {...p, qtd, total: (q>0 && pu>0) ? (q*pu).toFixed(2).replace(".",",") : p.total};
+                        });
+                      }} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Preço Unit." type="text" inputMode="decimal" value={newComissaoItem.precoUnit} onChange={e=>{
+                        const precoUnit = e.target.value;
+                        setNewComissaoItem(p=>{
+                          const q = parseNumBR(p.qtd)||0, pu = parseNumBR(precoUnit)||0;
+                          return {...p, precoUnit, total: (q>0 && pu>0) ? (q*pu).toFixed(2).replace(".",",") : p.total};
+                        });
+                      }} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
+                      <td style={{padding:"5px 6px"}}><input placeholder="Total (se não tiver Qtd/Preço)" type="text" inputMode="decimal" value={newComissaoItem.total} onChange={e=>setNewComissaoItem(p=>({...p,total:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3,textAlign:"right"}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Obs" value={newComissaoItem.obs} onChange={e=>setNewComissaoItem(p=>({...p,obs:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}>
                         <button onClick={submitComissaoItem} style={{background:"#8d6e63",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",cursor:"pointer",fontSize:12,marginRight:3}}>✓</button>
