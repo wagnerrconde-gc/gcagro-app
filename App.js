@@ -369,6 +369,12 @@ function calcProdTotal(p, cat, culture) {
   if (cat && cat.name === "TS") return calcQtdTS(p, culture) * p.preco_unit;
   return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
 }
+// Extrai a dose numérica (kg/ha) de um texto livre do Planejamento de Campo, tipo
+// "Yara Basa 128 kg" ou "241 kg" — pega o primeiro número que aparecer no texto.
+function extrairDoseKg(texto) {
+  const m = String(texto||"").match(/(\d+(?:[.,]\d+)?)/);
+  return m ? parseFloat(m[1].replace(",",".")) : 0;
+}
 // Quantidade de sementes (bags/sacos) a partir da população (sementes/metro) e área do lote.
 // Fórmula do usuário: sementes totais = população × 20000 × área; bag de soja = 5.000.000 sementes; saco de milho = 60.000 sementes.
 const SEMENTES_POR_UNIDADE = { bag: 5000000, saco: 60000 };
@@ -1175,6 +1181,24 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
+  // Taxa média de Adubação e KCl (kg/ha), ponderada pela área de cada lote, separada por cultura.
+  const campoAdubacao = isVerao ? "adubacao" : "adubacaoPlantio";
+  const campoKcl = isVerao ? "kcl" : "cobertura";
+  const mediasPorCultura = useMemo(() => {
+    const grupos = {};
+    data.forEach(r => {
+      const c = r.cultura; if (!c) return;
+      const area = r.area||0;
+      if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0 };
+      grupos[c].area += area;
+      grupos[c].adubKg += extrairDoseKg(r[campoAdubacao]) * area;
+      grupos[c].kclKg += extrairDoseKg(r[campoKcl]) * area;
+    });
+    return Object.entries(grupos)
+      .filter(([,g])=>g.area>0)
+      .map(([cultura,g]) => ({ cultura, area:g.area, mediaAdub:g.adubKg/g.area, mediaKcl:g.kclKg/g.area }));
+  }, [data, campoAdubacao, campoKcl]);
+
   // ── Importar planilha (Lote,Texto) pra preencher um campo agronômico (Adubação, KCl...)
   // em massa — usada quando a consultoria de fertilidade ou o grupo de compras manda uma
   // recomendação/fechamento pra lançar no Planejamento sem digitar lote por lote. ──
@@ -1292,6 +1316,25 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           </table>
         </div>
       </div>
+
+      {mediasPorCultura.length>0 && (
+        <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+          <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação e KCl (kg/ha) por cultura</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            {mediasPorCultura.map(m=>{
+              const cc = cultureColors[m.cultura] || { bg:cor, light:"#f5f5f5" };
+              return (
+                <div key={m.cultura} style={{background:cc.light,borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${cc.bg}`}}>
+                  <div style={{fontSize:12,fontWeight:700,color:cc.bg,marginBottom:4}}>{m.cultura} <span style={{fontWeight:400,fontSize:10,color:"#888"}}>({fmtN(m.area,1)} ha)</span></div>
+                  <div style={{fontSize:11,color:"#555"}}>Adubação: <b>{fmtN(m.mediaAdub,1)} kg/ha</b></div>
+                  <div style={{fontSize:11,color:"#555"}}>KCl: <b>{fmtN(m.mediaKcl,1)} kg/ha</b></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
         <textarea value={obs||""} onChange={e=>setObs(e.target.value)} rows={4}
