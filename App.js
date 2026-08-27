@@ -1134,7 +1134,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, obs, setObs, obs2, setObs2}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onEnviarMedias, obs, setObs, obs2, setObs2}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -1142,6 +1142,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
   const total = data.reduce((s,r)=>s+(r.area||0),0);
   const [genMsg, setGenMsg] = useState(null);
+  const [enviarMsg, setEnviarMsg] = useState(null);
 
   function upd(i, field, val) {
     setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
@@ -1322,7 +1323,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
 
       {mediasPorCultura.length>0 && (
         <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação{isVerao?" e KCl":", KCl e N Cobertura"} (kg/ha) por cultura</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:cor,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação{isVerao?" e KCl":", KCl e N Cobertura"} (kg/ha) por cultura</div>
+            <button onClick={()=>{ const rel = onEnviarMedias(mediasPorCultura, isVerao); setEnviarMsg(rel); }}
+              style={{padding:"6px 12px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📤 Enviar médias pra Programação</button>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
             {mediasPorCultura.map(m=>{
               const cc = cultureColors[m.cultura] || { bg:cor, light:"#f5f5f5" };
@@ -1336,6 +1341,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
               );
             })}
           </div>
+          {enviarMsg && (
+            <div style={{marginTop:12,padding:"10px 12px",background:"#f5f5f5",borderRadius:8,fontSize:11}}>
+              {enviarMsg.map((linha,i)=><div key={i} style={{color:linha.startsWith("⚠")?"#c62828":"#2e7d32",marginBottom:3}}>{linha}</div>)}
+            </div>
+          )}
         </div>
       )}
 
@@ -2311,6 +2321,59 @@ function App() {
             if (cat.name!=="Sementes") return;
             (cat.products||[]).forEach(p=>{ p.preco_unit = precoMedio; p.preco_compra = precoMedio; p.fornecedor_compra = "Compra manual"; });
           });
+        });
+        return nd;
+      });
+    }
+    return relatorio;
+  }
+  // Manda a taxa média de Adubação/KCl/N-Cobertura calculada no Planejamento de Campo pra
+  // Programação (Verão ou Inverno): dose do 1º produto da categoria "Adubação" recebe a média
+  // de Adubação; o produto cujo nome contém "kcl" recebe a média de KCl; no Inverno, o produto
+  // cujo nome contém "ureia" recebe a média de N Cobertura. Converte kg/ha → t/ha quando a
+  // unidade do produto for "Tn".
+  function enviarMediasParaProgramacao(medias, isVerao) {
+    const dProg = isVerao ? dataVerao : dataInverno;
+    const setD = isVerao ? setDataVerao : setDataInverno;
+    const relatorio = [];
+    const plano = [];
+    medias.forEach(({cultura, mediaAdub, mediaKcl, mediaNCob}) => {
+      const c = dProg[cultura];
+      if (!c) { relatorio.push(`⚠ ${cultura}: cultura não encontrada na Programação.`); return; }
+      const catIdx = (c.categories||[]).findIndex(cat=>cat.name==="Adubação");
+      const cat = catIdx>=0 ? c.categories[catIdx] : null;
+      if (!cat || !(cat.products||[]).length) { relatorio.push(`⚠ ${cultura}: categoria Adubação vazia ou não encontrada.`); return; }
+      const item = { cultura, catIdx };
+      const partes = [];
+      const base = cat.products[0];
+      item.baseIdx = 0;
+      item.baseDose = base.unidade==="Tn" ? mediaAdub/1000 : mediaAdub;
+      partes.push(`Adubação → ${base.produto} = ${fmtN(item.baseDose,3)}`);
+      const kclIdx = cat.products.findIndex(p=>normalizarNome(p.produto).includes("kcl"));
+      if (kclIdx>=0) {
+        item.kclIdx = kclIdx;
+        item.kclDose = cat.products[kclIdx].unidade==="Tn" ? mediaKcl/1000 : mediaKcl;
+        partes.push(`KCl → ${cat.products[kclIdx].produto} = ${fmtN(item.kclDose,3)}`);
+      }
+      if (!isVerao && mediaNCob!=null) {
+        const ureiaIdx = cat.products.findIndex(p=>normalizarNome(p.produto).includes("ureia"));
+        if (ureiaIdx>=0) {
+          item.ureiaIdx = ureiaIdx;
+          item.ureiaDose = cat.products[ureiaIdx].unidade==="Tn" ? mediaNCob/1000 : mediaNCob;
+          partes.push(`N Cobertura → ${cat.products[ureiaIdx].produto} = ${fmtN(item.ureiaDose,3)}`);
+        }
+      }
+      plano.push(item);
+      relatorio.push(`✓ ${cultura}: ${partes.join(" · ")}`);
+    });
+    if (plano.length) {
+      setD(d => {
+        const nd = JSON.parse(JSON.stringify(d));
+        plano.forEach(item => {
+          const cat = nd[item.cultura].categories[item.catIdx];
+          cat.products[item.baseIdx].dose = item.baseDose;
+          if (item.kclIdx!=null) cat.products[item.kclIdx].dose = item.kclDose;
+          if (item.ureiaIdx!=null) cat.products[item.ureiaIdx].dose = item.ureiaDose;
         });
         return nd;
       });
@@ -3561,8 +3624,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
