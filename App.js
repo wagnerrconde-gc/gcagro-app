@@ -299,9 +299,9 @@ const PROG_COL_W = {
 const CATEGORIAS_INSUMOS = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas","Foliares","TS","Kit Sulco","Óleos / Adjuvantes"];
 const CAT_IA = new Set(["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"]);
 
-const CATEGORIAS_COMPRA_PADRAO = ["Sementes","Adubação Verão","Adubação Inverno","Químicos Verão","Químicos Inverno"];
+const CATEGORIAS_COMPRA_PADRAO = ["Sementes Verão","Sementes Inverno","Adubação Verão","Adubação Inverno","Químicos Verão","Químicos Inverno"];
 const CATEGORIA_COMPRA_ICONS = {
-  "Sementes":"🌾","Adubação Verão":"🌱","Adubação Inverno":"🌱",
+  "Sementes Verão":"🌾","Sementes Inverno":"🌾","Adubação Verão":"🌱","Adubação Inverno":"🌱",
   "Químicos Verão":"🧪","Químicos Inverno":"🧪",
 };
 
@@ -1657,11 +1657,6 @@ function App() {
   const [comprasModoNav, setComprasModoNav]   = useState("categoria"); // "categoria" | "revenda"
   const [comprasRevendaSel, setComprasRevendaSel] = useState(null);
   const [novaPastaNome, setNovaPastaNome]     = useState("");
-  // Qual temporada (Verão/Inverno) a pasta "Sementes" de cada safra de Compras representa —
-  // Sementes não é dividida em pasta por temporada como Adubação/Químicos, mas uma cultura
-  // (ex: "Milho") pode existir em ambas as programações, então sem isso uma mesma compra seria
-  // contada nas duas. Um valor por pasta de safra (chave = nome da safra), padrão "verao".
-  const [comprasSementesTemporada, setComprasSementesTemporada] = useState(() => loadLS(KEY_COMPRAS+"_sementes_temporada", {}));
 
   // ── UI ──
   // ── Acesso (dono vs. equipe) ──
@@ -1879,7 +1874,6 @@ function App() {
   useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
   useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
   useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords);
-  useFirebaseSync("gcagro/compras_sementes_temporada", comprasSementesTemporada, setComprasSementesTemporada);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
   useFirebaseSync("gcagro/comissao_adiant", comissaoAdiant, setComissaoAdiant);
@@ -1919,7 +1913,15 @@ function App() {
   useEffect(() => { saveLS(KEY_SAFRAS+"_ativa", safraAtiva); }, [safraAtiva]);
   useEffect(() => { saveLS(KEY_SAFRAS+"_arquivo", safrasArquivadas); }, [safrasArquivadas]);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
-  useEffect(() => { saveLS(KEY_COMPRAS+"_sementes_temporada", comprasSementesTemporada); }, [comprasSementesTemporada]);
+  // Migração: a pasta "Sementes" de Compras era única (não separada por temporada); agora
+  // vira "Sementes Verão"/"Sementes Inverno", igual Adubação/Químicos já são — pra não misturar
+  // uma cultura com o mesmo nome nas duas programações (ex: Milho). Lançamentos antigos (categoria
+  // exatamente "Sementes") viram "Sementes Verão" por padrão. Idempotente — some sozinho depois.
+  useEffect(() => {
+    if (comprasRecords.some(r => r.categoria === "Sementes")) {
+      setComprasRecords(rs => rs.map(r => r.categoria === "Sementes" ? { ...r, categoria: "Sementes Verão" } : r));
+    }
+  }, [comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao", planObsVerao); }, [planObsVerao]);
@@ -2174,7 +2176,7 @@ function App() {
       const qtd = p.dose>0 ? p.dose*p.area : p.area;
       const unidadeCompra = p.unidade==="Tn"?"TN":p.unidade==="Lt"?"L":(p.unidade||"kg");
       const categoriaCompra = cat.name==="Adubação" ? "Adubação "+(isVerao?"Verão":"Inverno")
-                            : cat.name==="Sementes" ? "Sementes"
+                            : cat.name==="Sementes" ? "Sementes "+(isVerao?"Verão":"Inverno")
                             : "Químicos "+(isVerao?"Verão":"Inverno");
       const campos = { produto:p.produto, unidade:unidadeCompra, quantidade:qtd,
         precoUnitario:p.preco_unit, valorTotal:p.preco_unit*qtd, fornecedor:p.revenda, obs:p.vencimento, categoria:categoriaCompra };
@@ -2375,13 +2377,16 @@ function App() {
   // do Planejamento (esses nomes batiam pouco na prática — variedades compostas, abreviações).
   // Segue a convenção do próprio usuário pra nomear as compras de semente: só prefixa o nome com
   // a cultura quando NÃO é Soja (ex: "Milho AS 1868"); sem prefixo reconhecido, cai em Soja.
-  function atualizarCustoSementesDoPlano(planData, isVerao) {
+  // categoriaCompra: "Sementes Verão" ou "Sementes Inverno" — a pasta de Compras já vem separada
+  // por temporada (igual Adubação/Químicos), então a temporada é lida do nome da categoria.
+  function atualizarCustoSementesDoPlano(categoriaCompra) {
+    const isVerao = categoriaCompra.includes("Verão");
     const dProg = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     const culturas = Object.keys(dProg).filter(c => (dProg[c]?.area||0) > 0);
     const porCultura = {};
     culturas.forEach(c => { porCultura[c] = 0; });
-    comprasRecords.filter(r=>r.categoria==="Sementes").forEach(r => {
+    comprasRecords.filter(r=>r.categoria===categoriaCompra).forEach(r => {
       const cultura = classificarCulturaSemente(r.produto, culturas);
       if (cultura) porCultura[cultura] += (r.valorTotal||0);
     });
@@ -2755,17 +2760,16 @@ function App() {
     return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
   }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel]);
 
-  // Média de preço de sementes por cultura (Soja, Milho...) dentro da safra/categoria "Sementes"
-  // aberta em Compras — mesma classificação usada por "Atualizar Custo na Programação", só que
-  // aqui é só uma prévia (não grava nada). Sementes é compartilhado entre Verão e Inverno (não tem
-  // pasta separada por temporada), então usa a temporada marcada pelo usuário pra essa pasta de
-  // safra (comprasSementesTemporada) em vez de misturar as duas apurações.
+  // Média de preço de sementes por cultura (Soja, Milho...) dentro da safra/categoria "Sementes
+  // Verão"/"Sementes Inverno" aberta em Compras — mesma classificação usada por "Atualizar Custo
+  // na Programação", só que aqui é só uma prévia (não grava nada). A pasta já vem separada por
+  // temporada (igual Adubação/Químicos), então a temporada é lida do nome da categoria aberta.
   const mediasSementesPorCultura = useMemo(() => {
-    if (comprasCatSel!=="Sementes" || !comprasSafraSel) return [];
-    const recs = comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria==="Sementes");
-    const temporada = comprasSementesTemporada[comprasSafraSel]||"verao";
-    const label = temporada==="verao" ? "Verão" : "Inverno";
-    const dProg = temporada==="verao" ? dataVerao : dataInverno;
+    if (!comprasCatSel || !comprasCatSel.startsWith("Sementes") || !comprasSafraSel) return [];
+    const recs = comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
+    const isVerao = comprasCatSel.includes("Verão");
+    const label = isVerao ? "Verão" : "Inverno";
+    const dProg = isVerao ? dataVerao : dataInverno;
     const culturas = Object.keys(dProg).filter(c=>(dProg[c]?.area||0)>0);
     if (!culturas.length) return [];
     const porCultura = {};
@@ -2782,7 +2786,7 @@ function App() {
       linhas.push({ label, cultura, totalPago, areaTotal, precoMedio: totalPago/areaTotal });
     });
     return linhas;
-  }, [comprasCatSel, comprasSafraSel, comprasRecords, comprasSementesTemporada, dataVerao, dataInverno]);
+  }, [comprasCatSel, comprasSafraSel, comprasRecords, dataVerao, dataInverno]);
 
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -6239,9 +6243,8 @@ function App() {
                     style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
                   {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
                     <button onClick={()=>{
-                        const temporadaSementes = comprasSementesTemporada[comprasSafraSel]||"verao";
-                        const relatorio = comprasCatSel==="Sementes"
-                          ? atualizarCustoSementesDoPlano(temporadaSementes==="verao"?planVerao:planSafrinha, temporadaSementes==="verao")
+                        const relatorio = comprasCatSel.startsWith("Sementes")
+                          ? atualizarCustoSementesDoPlano(comprasCatSel)
                           : atualizarCustoPorCategoria(comprasCatSel);
                         setCustoCompraMsg({categoria:comprasCatSel, relatorio});
                         setTimeout(()=>setCustoCompraMsg(null), 8000);
@@ -6249,19 +6252,6 @@ function App() {
                       style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
                   )}
                 </div>
-                {comprasCatSel==="Sementes" && (
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
-                    <span style={{fontSize:11,color:"#666",fontWeight:600}}>Essa pasta de sementes é da safra:</span>
-                    {["verao","inverno"].map(t=>(
-                      <button key={t} onClick={()=>setComprasSementesTemporada(s=>({...s,[comprasSafraSel]:t}))}
-                        style={{padding:"4px 12px",background:(comprasSementesTemporada[comprasSafraSel]||"verao")===t?"#00695c":"#eee",
-                          color:(comprasSementesTemporada[comprasSafraSel]||"verao")===t?"#fff":"#666",
-                          border:"none",borderRadius:14,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                        {t==="verao"?"☀️ Verão":"❄️ Inverno"}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
                 {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
                   <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
@@ -6340,7 +6330,7 @@ function App() {
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
                   <tr style={{background:"#e0f2f1"}}>
-                    {(comprasCatSel==="Sementes"
+                    {((comprasCatSel||"").startsWith("Sementes")
                       ? ["Data Compra","Produto","Tratamento de Sementes","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
                       : comprasRevendaSel
                       ? ["Data Compra","Produto","Categoria","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
@@ -6354,7 +6344,7 @@ function App() {
                     <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
-                      {comprasCatSel==="Sementes" && (
+                      {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
                       )}
                       {comprasRevendaSel && (
@@ -6385,7 +6375,7 @@ function App() {
                     <tr style={{background:"#fffde7"}}>
                       <td style={{padding:"5px 6px"}}><input placeholder="Data Compra" value={newCompra.data} onChange={e=>setNewCompra(p=>({...p,data:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Produto" value={newCompra.produto} onChange={e=>setNewCompra(p=>({...p,produto:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      {comprasCatSel==="Sementes" && (
+                      {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"5px 6px"}}><input placeholder="Tratamento de Sementes" value={newCompra.tratamento} onChange={e=>setNewCompra(p=>({...p,tratamento:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
                       )}
                       <td style={{padding:"5px 6px"}}>
@@ -6411,7 +6401,7 @@ function App() {
                     </tr>
                   )}
                   {comprasRecordsFiltrados.length===0 && !addingCompra && (
-                    <tr><td colSpan={9 + (comprasCatSel==="Sementes"?1:0) + (comprasRevendaSel?1:0)} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>
+                    <tr><td colSpan={9 + ((comprasCatSel||"").startsWith("Sementes")?1:0) + (comprasRevendaSel?1:0)} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>
                       {comprasRevendaSel ? "Nenhuma compra registrada dessa revenda ainda." : "Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente."}
                     </td></tr>
                   )}
@@ -6856,7 +6846,7 @@ function App() {
           const novasCompras = [];
           const pedidoPorFornecedor = {};
           const temporadaLabel = cotContext?.safra==="verao" ? "Verão" : "Inverno";
-          const categoria = isAdubFechar ? "Adubação "+temporadaLabel : isSemFechar ? "Sementes" : "Químicos "+temporadaLabel;
+          const categoria = isAdubFechar ? "Adubação "+temporadaLabel : isSemFechar ? "Sementes "+temporadaLabel : "Químicos "+temporadaLabel;
           const unidadePadrao = isAdubFechar ? "TN" : isSemFechar ? "bag" : "L";
           Object.entries(decisions).forEach(([key,dec])=>{
             if (!dec.splits.some(s=>s.nome&&s.preco>0)) return;
