@@ -2070,7 +2070,7 @@ function App() {
   function updateAduboField(nome, field, value) {
     if (!cotContext) return;
     setAduboProdutos(cotContext, list => list.map(p => p.nome===nome
-      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseNumBR(value)||0) : value }
       : p));
   }
   function deleteAduboRow(nome) {
@@ -2092,7 +2092,7 @@ function App() {
   function updateSementeField(nome, field, value) {
     if (!cotContext) return;
     setSementeProdutos(cotContext, list => list.map(p => p.nome===nome
-      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseNumBR(value)||0) : value }
       : p));
   }
   function deleteSementeRow(nome) {
@@ -2115,7 +2115,7 @@ function App() {
   function updateInsumoField(nome, field, value) {
     if (!cotContext) return;
     setInsumoProdutos(cotContext, list => list.map(p => p.nome===nome
-      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseFloat(value)||0) : value }
+      ? { ...p, [field]: ["qtd_total","preco_ref"].includes(field) ? (parseNumBR(value)||0) : value }
       : p));
   }
   function deleteInsumoRow(nome) {
@@ -5858,16 +5858,31 @@ function App() {
           // Exporta a lista de cotação (filtrada pela categoria atual) como planilha .xlsx, com
           // colunas em branco pra quem cota preencher (ex: grupo de compras) — fluxo alternativo
           // ao "cada fornecedor cota online aqui dentro", que continua existindo do lado.
+          //
+          // A biblioteca de xlsx usada aqui é a versão gratuita (SheetJS Community) — ela não
+          // escreve negrito/cor de célula (isso é só na versão paga), mas largura de coluna e
+          // formato numérico (moeda, casas decimais) ela escreve normalmente, então é isso que dá
+          // pra fazer pra a planilha não sair com coluna apertada e número cru sem "R$".
           function exportarCotacaoPlanilha() {
-            const linhas = filtProds.map(p => ({
+            const linhasOrdenadas = [...filtProds].sort((a,b)=>
+              a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
+            const linhas = linhasOrdenadas.map(p => ({
               "Categoria": p.categoria, "Produto": p.nome, "Ingrediente Ativo": p.ingrediente_ativo||"",
               "Unidade": p.unidade, "Quantidade": p.qtd_total, "Preço Referência": p.preco_ref,
               "Preço Fechado": "", "Fornecedor": "", "Vencimento": "", "Obs": "",
             }));
             const ws = XLSX.utils.json_to_sheet(linhas);
+            ws['!cols'] = [{wch:18},{wch:32},{wch:26},{wch:10},{wch:12},{wch:16},{wch:14},{wch:20},{wch:12},{wch:25}];
+            const COL_QTD = 4, COL_REF = 5;
+            linhas.forEach((_,ri)=>{
+              const qtdCell = ws[XLSX.utils.encode_cell({r:ri+1,c:COL_QTD})];
+              if (qtdCell) qtdCell.z = "#,##0.0";
+              const refCell = ws[XLSX.utils.encode_cell({r:ri+1,c:COL_REF})];
+              if (refCell) refCell.z = 'R$ #,##0.00';
+            });
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Cotação");
-            XLSX.writeFile(wb, `Cotacao_${tipoLabel}_${safraLabel}_${safraAtiva}`.replace(/[\/\\]/g,"-")+".xlsx");
+            XLSX.writeFile(wb, `Cotacao_${tipoLabel}_${safraLabel}_${safraAtiva}`.replace(/[\/\\]/g,"-")+".xlsx", {cellStyles:true});
           }
 
           return (
@@ -6003,7 +6018,7 @@ function App() {
                                       {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="qtd_total" type="number" align="right" value={fmtQtd(p.qtd_total)} onCommit={v=>updateEditableField(p.nome,"qtd_total",v)}/> : fmtQtd(p.qtd_total)}
                                     </td>
                                     <td style={tdS("right",bg,"#4a9eff",true)}>
-                                      {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="preco_ref" type="number" align="right" value={p.preco_ref} onCommit={v=>updateEditableField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
+                                      {isEditableList ? <RecEditCell recKey={recKeyPrefix+p.nome} field="preco_ref" type="number" align="right" value={fmtC(p.preco_ref)} onCommit={v=>updateEditableField(p.nome,"preco_ref",v)}/> : fmtC(p.preco_ref)}
                                     </td>
                                     {fornPrecos.map((fp,fi)=>{const isBest=fp!==null&&fp.v===melhor;
                                       const tip=[fp?.nomeComercial?`Produto: ${fp.nomeComercial}`:null,fp?.obs?`Obs: ${fp.obs}`:null].filter(Boolean).join(" · ")||undefined;
