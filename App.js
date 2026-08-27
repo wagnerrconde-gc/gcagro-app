@@ -2350,24 +2350,36 @@ function App() {
   }
 
   // ── Custo médio de sementes: junta o valor pago em Compras de todas as variedades da
-  // cultura (Soja, Milho, Feijão) e divide pela Área total já cadastrada na Programação
-  // (não pela soma de área do Planejamento, que pode não estar em dia) — alimentando um
-  // preço médio único na categoria "Sementes" da Programação (Verão ou Inverno) ──
+  // cultura e divide pela Área total já cadastrada na Programação (não pela soma de área do
+  // Planejamento, que pode não estar em dia) — alimentando um preço médio único na categoria
+  // "Sementes" da Programação (Verão ou Inverno).
+  //
+  // O casamento entre o produto lançado em Compras e a cultura NÃO é mais por nome de variedade
+  // do Planejamento (esses nomes batiam pouco na prática — variedades compostas, abreviações).
+  // Segue a convenção do próprio usuário pra nomear as compras de semente: só prefixa o nome com
+  // a cultura quando NÃO é Soja (ex: "Milho AS 1868"); sem prefixo reconhecido, cai em Soja.
   function atualizarCustoSementesDoPlano(planData, isVerao) {
-    const culturas = [...new Set(planData.map(r=>r.cultura).filter(Boolean))];
     const dProg = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
+    const culturas = Object.keys(dProg).filter(c => (dProg[c]?.area||0) > 0);
+    function culturaDoProduto(produto) {
+      const nome = normalizarNome(produto);
+      const porPrefixo = culturas.find(c => { const cn = normalizarNome(c); return nome===cn || nome.startsWith(cn+" "); });
+      if (porPrefixo) return porPrefixo;
+      return culturas.includes("Soja") ? "Soja" : null; // convenção: sem prefixo reconhecido = Soja
+    }
+    const porCultura = {};
+    culturas.forEach(c => { porCultura[c] = 0; });
+    comprasRecords.filter(r=>r.categoria==="Sementes").forEach(r => {
+      const cultura = culturaDoProduto(r.produto);
+      if (cultura) porCultura[cultura] += (r.valorTotal||0);
+    });
     let atualizados = 0;
     const relatorio = [];
     culturas.forEach(cultura => {
       const areaTotal = dProg[cultura]?.area || 0;
-      if (!areaTotal) return;
-      const variedades = new Set(planData.filter(r=>r.cultura===cultura && r.variedade)
-        .map(r=>normalizarNome(r.variedade)));
-      if (!variedades.size) return;
-      const totalPago = comprasRecords.filter(r=>r.categoria==="Sementes" && variedades.has(normalizarNome(r.produto)))
-        .reduce((s,r)=>s+(r.valorTotal||0),0);
-      if (!totalPago) return;
+      const totalPago = porCultura[cultura];
+      if (!areaTotal || !totalPago) return;
       const precoMedio = totalPago/areaTotal;
       relatorio.push({cultura, precoMedio, totalPago, areaTotal});
       atualizados++;
