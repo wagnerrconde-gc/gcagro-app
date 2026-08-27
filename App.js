@@ -3289,7 +3289,25 @@ function App() {
   // o localStorage começa vazio/desatualizado, então validar só uma vez no mount podia dar "link
   // inválido" por engano antes do dado real chegar.
   // ══════════════════════════════════════════════════════
-  const linkForn = parseFornecedorLink();
+  // Login manual do fornecedor (alternativa ao link do WhatsApp, caso ele perca a mensagem):
+  // digita o token, o app acha em qual lista (adub/sem/ins) ele está e pede pra escolher a
+  // safra (o cadastro de fornecedor não é separado por temporada, só a cotação em si é).
+  const [fornManualToken, setFornManualToken] = useState("");
+  const [fornManualTipo, setFornManualTipo] = useState(null);
+  const [fornManualSafra, setFornManualSafra] = useState(null);
+  const [fornManualError, setFornManualError] = useState("");
+  function tentarTokenManual() {
+    const t = fornManualToken.trim();
+    if (!t) return;
+    const listas = [["adub",fornecedoresAdub],["ins",fornecedoresIns],["sem",sementesFornecedores]];
+    const achou = listas.find(([,list]) => list.some(f=>f.token && f.token.toLowerCase()===t.toLowerCase()));
+    if (!achou) { setFornManualError("Token não encontrado."); return; }
+    setFornManualTipo(achou[0]);
+    setFornManualError("");
+  }
+  const manualForn = (fornManualTipo && fornManualSafra) ? { token: fornManualToken.trim(), tipo: fornManualTipo, safra: fornManualSafra } : null;
+
+  const linkForn = parseFornecedorLink() || manualForn;
   let linkFornMatch = null;
   if (linkForn) {
     const fns = getFornecedorList(linkForn.tipo);
@@ -3459,6 +3477,30 @@ function App() {
             style={{width:"100%",padding:"13px",background:roleLoginPass?"linear-gradient(135deg,#2e7d32,#1b5e20)":"#2a3d2f",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:roleLoginPass?"pointer":"not-allowed"}}>
             Entrar como dono
           </button>
+        </div>
+
+        <div style={{height:1,background:"rgba(255,255,255,0.1)",margin:"20px 0"}}/>
+
+        <div>
+          <div style={{fontSize:11,color:"#8fb89c",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>🚜 Fornecedor</div>
+          {!fornManualTipo ? (<>
+            <div style={{fontSize:12,color:"#6a9a7a",marginBottom:10}}>Recebeu um link de convite? Abra ele direto. Perdeu a mensagem? Digite seu token aqui.</div>
+            <input value={fornManualToken} onChange={e=>{setFornManualToken(e.target.value);setFornManualError("");}}
+              onKeyDown={e=>e.key==="Enter"&&tentarTokenManual()} placeholder="Seu token (ex: YA-42RW)"
+              style={{width:"100%",padding:"12px 14px",background:"#0d1f14",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:fornManualError?8:12}}/>
+            {fornManualError && <div style={{color:"#ff6b6b",fontSize:12,marginBottom:10}}>{fornManualError}</div>}
+            <button onClick={tentarTokenManual} disabled={!fornManualToken.trim()}
+              style={{width:"100%",padding:"13px",background:fornManualToken.trim()?"rgba(255,255,255,0.08)":"#1a2a1e",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:fornManualToken.trim()?"pointer":"not-allowed"}}>
+              Entrar como fornecedor
+            </button>
+          </>) : (<>
+            <div style={{fontSize:12,color:"#6a9a7a",marginBottom:10}}>Token certo! Qual cotação você quer preencher?</div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>setFornManualSafra("verao")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>☀️ Verão</button>
+              <button onClick={()=>setFornManualSafra("inv")} style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>❄️ Inverno</button>
+            </div>
+            <div onClick={()=>{setFornManualTipo(null);setFornManualToken("");}} style={{fontSize:11,color:"#6a9a7a",cursor:"pointer",textAlign:"center"}}>‹ Voltar</div>
+          </>)}
         </div>
       </div>
     </div>
