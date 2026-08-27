@@ -133,6 +133,20 @@ const FORN_INSUMOS_INICIAL = ["Trisolo","Agrocerrado","Terrena","Tchê","AgroBra
 const FORN_ADUBACAO_INICIAL = ["Yara","ADM","Calcário Noroeste","Agro Brasil","Plano Agronegócios","Valoriza","Produttiva","Nascente"].map(nome=>({nome,telefone:"",token:genToken(nome)}));
 const FORN_COLORS  = ["#1565C0","#2E7D32","#B71C1C","#6A1B9A","#E65100","#00695C","#37474F","#4E342E"];
 
+// Link de convite mandado por WhatsApp pro fornecedor preencher preço sozinho, sem precisar de
+// senha de dono (que dá acesso a Compras/Financeiro/etc.) — o token na URL já é a credencial dele,
+// só pra aquela cotação específica (safra+tipo). Lido direto da query string, sem biblioteca de rota.
+function parseFornecedorLink() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const token = (params.get("token")||"").trim();
+    const safra = params.get("safra");
+    const tipo = params.get("tipo");
+    if (!token || !["verao","inv"].includes(safra) || !["adub","sem","ins"].includes(tipo)) return null;
+    return { token, safra, tipo };
+  } catch { return null; }
+}
+
 const ADMIN_PASSWORD = "GCagro26#";
 
 // Telas liberadas pro papel "equipe" (chefe de equipe / funcionário) — todo o resto
@@ -1687,6 +1701,7 @@ function App() {
   const [filterCat, setFilterCat]         = useState("Todas");
   const [fornCatFilter, setFornCatFilter] = useState("Todas");
   const [fornecedoresTab, setFornecedoresTab] = useState("adub");
+  const [fornecedoresSafra, setFornecedoresSafra] = useState("verao"); // pra qual cotação (Verão/Inverno) o link de convite do WhatsApp aponta
   const [showSafrasModal, setShowSafrasModal] = useState(false);
   const [novaSafraNome, setNovaSafraNome] = useState("");
   const [editingSafraNome, setEditingSafraNome] = useState(false);
@@ -3266,6 +3281,150 @@ function App() {
 
   const tintColor = isCotView ? "10,22,40" : appView.includes("inv") ? "26,15,0" : "240,244,248";
   const tintAlpha = isCotView || appView.includes("inv") ? 0.82 : 0.86;
+
+  // ══════════════════════════════════════════════════════
+  // LINK DE FORNECEDOR (?token=...&safra=...&tipo=...): acesso direto só àquela cotação, sem
+  // senha de dono. Recalcula a cada render (não guarda num useState) pra ficar sempre em dia com
+  // a lista de fornecedores assim que o Firebase sincronizar — num celular que nunca abriu o app,
+  // o localStorage começa vazio/desatualizado, então validar só uma vez no mount podia dar "link
+  // inválido" por engano antes do dado real chegar.
+  // ══════════════════════════════════════════════════════
+  const linkForn = parseFornecedorLink();
+  let linkFornMatch = null;
+  if (linkForn) {
+    const fns = getFornecedorList(linkForn.tipo);
+    const idx = fns.findIndex(f => f.token && f.token.toLowerCase()===linkForn.token.toLowerCase());
+    if (idx>=0) linkFornMatch = { ctx:{safra:linkForn.safra,tipo:linkForn.tipo}, nome:fns[idx].nome, idx };
+  }
+  const linkFornKey = linkFornMatch ? linkFornMatch.ctx.safra+"|"+linkFornMatch.ctx.tipo+"|"+linkFornMatch.nome : null;
+  const linkFornSeeded = useRef(null);
+  useEffect(() => {
+    if (linkFornMatch && linkFornKey !== linkFornSeeded.current) {
+      const fresh = getCotData(linkFornMatch.ctx);
+      setMyPrices(fresh[linkFornMatch.nome] || {});
+      linkFornSeeded.current = linkFornKey;
+    }
+    // eslint-disable-next-line
+  }, [linkFornKey]);
+  // Sem match ainda pode ser "dado real do Firebase não chegou" (mostra "carregando") ou "token
+  // realmente não existe" (mostra erro) — dá um tempo pro Firebase responder antes de decidir.
+  const linkFornReqKey = linkForn ? linkForn.token+"|"+linkForn.safra+"|"+linkForn.tipo : null;
+  const [linkFornTimedOut, setLinkFornTimedOut] = useState(false);
+  useEffect(() => {
+    if (!linkFornReqKey) return;
+    setLinkFornTimedOut(false);
+    const t = setTimeout(()=>setLinkFornTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, [linkFornReqKey]);
+
+  if (linkForn) {
+    if (!linkFornMatch) return (
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0a1628",padding:20,color:"#e8f4fd"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:26,marginBottom:10}}>🌿</div>
+          {linkFornTimedOut ? (<>
+            <div style={{fontSize:14,color:"#ff6b6b",fontWeight:700,marginBottom:4}}>Link inválido ou expirado</div>
+            <div style={{fontSize:12,color:"#5a7a9a"}}>Peça um novo link de convite.</div>
+          </>) : (
+            <div style={{fontSize:14,color:"#5a7a9a"}}>Carregando cotação…</div>
+          )}
+        </div>
+      </div>
+    );
+    const ctx = linkFornMatch.ctx;
+    const produtos = getProdutos(ctx);
+    const categorias = [...new Set(produtos.map(p=>p.categoria))];
+    const tipoLabel = ctx.tipo==="adub" ? "Adubação" : ctx.tipo==="sem" ? "Sementes" : "Insumos";
+    const safraLabel = ctx.safra==="verao" ? "Verão" : "Inverno";
+    const isIns = ctx.tipo==="ins";
+    const color = FORN_COLORS[linkFornMatch.idx%8];
+    const vencLabels = getVencLabels(ctx);
+    const vencAtivos = getVencAtivos(ctx);
+    const vencsAtivos = ["v1","v2"].filter(vk=>vencAtivos[vk]);
+    const filled = Object.values(myPrices).filter(v=>v&&(v.v1>0||v.v2>0)).length;
+    function handleCotSaveLink() {
+      const fresh = {...getCotData(ctx)};
+      fresh[linkFornMatch.nome] = myPrices;
+      setCotData(ctx, fresh);
+      setCotSaved(true);
+      setTimeout(()=>setCotSaved(false),3000);
+    }
+    return (
+      <div style={{minHeight:"100vh",background:"#0a1628",color:"#e8f4fd"}}>
+        <div style={{background:"#111d35",borderBottom:"1px solid #1e3a5f",padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontSize:10,color:"#4a9eff",letterSpacing:3,textTransform:"uppercase"}}>Cotação {tipoLabel} · {safraLabel}</div>
+            <div style={{fontSize:15,fontWeight:700,color:"#e8f4fd"}}>Fornecedor: <span style={{color}}>{linkFornMatch.nome}</span></div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:11,color:"#5a7a9a"}}>{filled}/{produtos.length} preenchidos</span>
+            <button onClick={handleCotSaveLink} style={{padding:"9px 20px",background:cotSaved?"#2e7d32":"linear-gradient(135deg,#1565C0,#0d47a1)",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              {cotSaved?"✓ Salvo!":"Salvar"}
+            </button>
+          </div>
+        </div>
+        <div style={{margin:"12px 20px 0",padding:"10px 14px",background:"#0d2040",borderLeft:`3px solid ${color}`,borderRadius:4,fontSize:11,color:"#7a9ab8"}}>
+          ⚠ Preencha apenas o preço unitário (R$). Os preços dos outros fornecedores são invisíveis para você. Pode fechar esta aba quando terminar — seus preços já ficam salvos.
+        </div>
+        <div style={{padding:"10px 20px 0",display:"flex",gap:6,flexWrap:"wrap"}}>
+          {["Todas",...categorias].map(cat=>(
+            <button key={cat} onClick={()=>setFornCatFilter(cat)} style={{padding:"5px 12px",background:fornCatFilter===cat?color:"#111d35",border:`1px solid ${fornCatFilter===cat?color:"#1e3a5f"}`,borderRadius:18,color:fornCatFilter===cat?"#fff":"#7a9ab8",fontSize:11,cursor:"pointer"}}>{cat}</button>
+          ))}
+        </div>
+        <div style={{padding:"12px 20px 40px"}}>
+          {categorias.filter(cat=>fornCatFilter==="Todas"||cat===fornCatFilter).map(cat=>{
+            const prods = produtos.filter(p=>p.categoria===cat);
+            if (!prods.length) return null;
+            const showIA = isIns && CAT_IA.has(cat);
+            return (
+              <div key={cat} style={{marginBottom:20}}>
+                <div style={{fontSize:10,letterSpacing:3,color,textTransform:"uppercase",marginBottom:8,paddingBottom:5,borderBottom:`1px solid ${color}33`}}>{cat}</div>
+                <div style={{display:"grid",gridTemplateColumns:`1fr 130px 150px 60px 100px ${showIA?"80px ":""}${vencsAtivos.map(()=>"140px").join(" ")}`,gap:1,background:"#1e3a5f22"}}>
+                  {["Produto","Seu produto (nome comercial)","Observação (ex: dose do seu produto)","Unid.","Qtd. Total",...(showIA?["I.A."]:[]),...vencsAtivos.map(vk=>`Preço (${vencLabels[vk]})`)].map((h,hi)=>(
+                    <div key={hi} style={{padding:"7px 10px",background:"#111d35",fontSize:10,color:"#5a7a9a",letterSpacing:1,textTransform:"uppercase"}}>{h}</div>
+                  ))}
+                  {prods.map((p,i)=>{
+                    const key=p.nome.toLowerCase();
+                    const entry=myPrices[key]||{};
+                    const bg=i%2===0?"#0d1e36":"#0f2240";
+                    return (
+                      <React.Fragment key={key}>
+                        <div style={{padding:"9px 10px",background:bg,fontSize:12,color:"#d0e8ff"}}>{p.nome}</div>
+                        <div style={{padding:"5px 7px",background:bg}}>
+                          <input value={entry.nomeComercial||""} placeholder="ex: nome que você vende"
+                            onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),nomeComercial:e.target.value}}))}
+                            style={{width:"100%",padding:"5px 9px",background:"#0a1628",border:`1px solid ${color}44`,borderRadius:5,color:"#e8f4fd",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+                        </div>
+                        <div style={{padding:"5px 7px",background:bg}}>
+                          <input value={entry.obs||""} placeholder="ex: dose 0,5 L/ha"
+                            onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),obs:e.target.value}}))}
+                            style={{width:"100%",padding:"5px 9px",background:"#0a1628",border:`1px solid ${color}44`,borderRadius:5,color:"#e8f4fd",fontSize:11,outline:"none",boxSizing:"border-box"}}/>
+                        </div>
+                        <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#5a7a9a",textAlign:"center"}}>{p.unidade}</div>
+                        <div style={{padding:"9px 10px",background:bg,fontSize:11,color:"#7a9ab8",textAlign:"right"}}>{fmtQtd(p.qtd_total)}</div>
+                        {showIA && <div style={{padding:"9px 10px",background:bg,fontSize:10,color:"#5a7a9a"}}>{p.ingrediente_ativo||"—"}</div>}
+                        {vencsAtivos.map(vk=>{
+                          const val = entry[vk]!==undefined?entry[vk]:"";
+                          return (
+                            <div key={vk} style={{padding:"5px 7px",background:bg}}>
+                              <input type="number" step="0.01" min="0" value={val}
+                                onChange={e=>setMyPrices(prev=>({...prev,[key]:{...(prev[key]||{}),[vk]:e.target.value===""?"":parseFloat(e.target.value)}}))}
+                                placeholder="0,00"
+                                style={{width:"100%",padding:"5px 9px",background:val>0?"#0d2a4a":"#0a1628",border:`1px solid ${val>0?color+"88":"#1e3a5f"}`,borderRadius:5,color:val>0?"#e8f4fd":"#5a7a9a",fontSize:12,outline:"none",boxSizing:"border-box",textAlign:"right"}}/>
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   // ══════════════════════════════════════════════════════
   // PORTA DE ENTRADA: escolha de acesso (dono vs. equipe)
@@ -6460,8 +6619,13 @@ function App() {
       ══════════════════════════════════════════════════════ */}
       {appView==="fornecedores" && (()=>{
         const APP_URL = "https://gcagro-app.vercel.app";
-        function whatsappLink(f, tipoLabel) {
-          const msg = encodeURIComponent(`Olá ${f.nome}! 🌿\n\nGC Agro — Cotação de ${tipoLabel}\n\nAcesse: ${APP_URL}\n\nSeu token de acesso: *${f.token}*`);
+        // Link direto pra tela de preenchimento daquela cotação específica, sem precisar de senha
+        // de dono — o token na URL já identifica o fornecedor (ver parseFornecedorLink no topo do
+        // arquivo). tipo = "adub"/"sem"/"ins", igual já é usado no resto do app.
+        function whatsappLink(f, tipoLabel, tipo) {
+          const link = `${APP_URL}/?token=${encodeURIComponent(f.token)}&tipo=${tipo}&safra=${fornecedoresSafra}`;
+          const safraLabel = fornecedoresSafra==="verao" ? "Verão" : "Inverno";
+          const msg = encodeURIComponent(`Olá ${f.nome}! 🌿\n\nGC Agro — Cotação de ${tipoLabel} (${safraLabel})\n\nAcesse o link abaixo pra preencher seu preço — já entra direto, sem senha:\n${link}`);
           return `https://wa.me/55${(f.telefone||"").replace(/\D/g,"")}?text=${msg}`;
         }
         const TABS = [["adub","🌱 Adubação",fornecedoresAdub],["ins","💊 Insumos",fornecedoresIns],["sem","🌾 Sementes",sementesFornecedores]];
@@ -6469,9 +6633,15 @@ function App() {
           <div style={{maxWidth:900,margin:"0 auto",padding:"16px"}}>
             <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:4}}>👥 Cadastro de Fornecedores</div>
             <div style={{fontSize:12,color:"#667",marginBottom:16}}>Gerencie os fornecedores de cada cotação. Cada um tem um token único para acessar sem precisar digitar o nome exato.</div>
-            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
               {TABS.map(([id,label])=>(
                 <button key={id} onClick={()=>setFornecedoresTab(id)} style={{padding:"7px 16px",background:fornecedoresTab===id?"#1565C0":"#fff",border:`1px solid ${fornecedoresTab===id?"#1565C0":"#ddd"}`,borderRadius:20,color:fornecedoresTab===id?"#fff":"#555",fontSize:12,cursor:"pointer",fontWeight:fornecedoresTab===id?700:400}}>{label}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <span style={{fontSize:11,color:"#888",fontWeight:600}}>Convite de WhatsApp aponta pra cotação de:</span>
+              {[["verao","☀️ Verão"],["inv","❄️ Inverno"]].map(([id,label])=>(
+                <button key={id} onClick={()=>setFornecedoresSafra(id)} style={{padding:"4px 12px",background:fornecedoresSafra===id?"#1565C0":"#eee",color:fornecedoresSafra===id?"#fff":"#666",border:"none",borderRadius:14,fontSize:11,fontWeight:700,cursor:"pointer"}}>{label}</button>
               ))}
             </div>
             {TABS.filter(([id])=>id===fornecedoresTab).map(([tipo,label,list])=>(
@@ -6498,7 +6668,7 @@ function App() {
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
                       {f.telefone&&(
-                        <a href={whatsappLink(f,label)} target="_blank" rel="noopener noreferrer"
+                        <a href={whatsappLink(f,label,tipo)} target="_blank" rel="noopener noreferrer"
                           style={{padding:"8px 12px",background:"#25D366",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",marginTop:16,textDecoration:"none",display:"inline-block"}}>
                           📱 WhatsApp
                         </a>
