@@ -3097,6 +3097,17 @@ function App() {
     setNewCompra({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:"",tratamento:""});
     setAddingCompra(false);
   }
+  // Edita Quantidade ou Preço Unit. de uma compra já lançada e recalcula o Valor Total junto —
+  // antes só calculava o total na hora de criar a linha (submitCompra/importação), então editar
+  // depois não atualizava o total.
+  function updateCompraQtdPreco(id, field, value) {
+    setComprasRecords(rs => rs.map(r => {
+      if (r.id !== id) return r;
+      const novo = { ...r, [field]: parseNumBR(value) };
+      novo.valorTotal = novo.quantidade*novo.precoUnitario;
+      return novo;
+    }));
+  }
 
   const ImportButton = ({label, onFile, color}) => {
     const inputRef = useRef(null);
@@ -6306,8 +6317,8 @@ function App() {
                           <option value="sc">sc</option>
                         </select>
                       </td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"quantidade",v,true)}/></td>
-                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="precoUnitario" type="number" align="right" value={fmt(r.precoUnitario)} onCommit={v=>updateRecordField(setComprasRecords,r.id,"precoUnitario",v,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="quantidade" type="number" align="right" value={fmtQtd(r.quantidade)} onCommit={v=>updateCompraQtdPreco(r.id,"quantidade",v)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"compra|"+r.id} field="precoUnitario" type="number" align="right" value={fmt(r.precoUnitario)} onCommit={v=>updateCompraQtdPreco(r.id,"precoUnitario",v)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#00695c"}}>{fmt(r.valorTotal)}</td>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="fornecedor" value={r.fornecedor} onCommit={v=>updateRecordField(setComprasRecords,r.id,"fornecedor",v)}/></td>
                       <td style={{padding:"6px 9px",color:"#888"}}><RecEditCell recKey={"compra|"+r.id} field="obs" value={r.obs} onCommit={v=>updateRecordField(setComprasRecords,r.id,"obs",v)}/></td>
