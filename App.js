@@ -2837,6 +2837,16 @@ function App() {
     setComissaoSubmitError("");
     setAddingComissaoItem(false);
   }
+  // Edita Qtd. ou Preço Unit. de uma comissão já lançada e recalcula o Total junto — antes só
+  // calculava o total na hora de criar a linha, então editar depois não atualizava o total.
+  function updateComissaoQtdPreco(id, field, value) {
+    setComissaoRecords(rs => rs.map(r => {
+      if (r.id !== id) return r;
+      const novo = { ...r, [field]: parseNumBR(value) };
+      if (novo.qtd>0 && novo.precoUnit>0) novo.total = novo.qtd*novo.precoUnit;
+      return novo;
+    }));
+  }
   function renomearGerente(novoNome) {
     const nome = novoNome.trim();
     if (!nome) return;
@@ -4249,8 +4259,8 @@ function App() {
                   {items.map((c,i)=>(
                     <tr key={c.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"com|"+c.id} field="produto" value={c.produto} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"produto",val)}/></td>
-                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="qtd" type="number" align="right" value={c.qtd?fmtN(c.qtd,2):""} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"qtd",val,true)}/></td>
-                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="precoUnit" type="number" align="right" value={c.precoUnit?fmt(c.precoUnit):""} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"precoUnit",val,true)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="qtd" type="number" align="right" value={c.qtd?fmtN(c.qtd,2):""} onCommit={val=>updateComissaoQtdPreco(c.id,"qtd",val)}/></td>
+                      <td style={{padding:"6px 9px",textAlign:"right",color:"#888"}}><RecEditCell recKey={"com|"+c.id} field="precoUnit" type="number" align="right" value={c.precoUnit?fmt(c.precoUnit):""} onCommit={val=>updateComissaoQtdPreco(c.id,"precoUnit",val)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right",fontWeight:700,color:"#5d4037"}}><RecEditCell recKey={"com|"+c.id} field="total" type="number" align="right" value={fmt(c.total)} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"total",val,true)}/></td>
                       <td style={{padding:"6px 9px",color:"#aaa",fontSize:11}}><RecEditCell recKey={"com|"+c.id} field="obs" value={c.obs} onCommit={val=>updateRecordField(setComissaoRecords,c.id,"obs",val)}/></td>
                       <td style={{padding:"6px 4px",textAlign:"center"}}>
