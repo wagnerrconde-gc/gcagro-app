@@ -1134,7 +1134,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onEnviarMedias, obs, setObs, obs2, setObs2}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onEnviarMedias, onEnviarCalcarioGesso, areaAnualFazenda, setAreaAnualFazenda, obs, setObs, obs2, setObs2}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -1143,6 +1143,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   const total = data.reduce((s,r)=>s+(r.area||0),0);
   const [genMsg, setGenMsg] = useState(null);
   const [enviarMsg, setEnviarMsg] = useState(null);
+  const [calcarioMsg, setCalcarioMsg] = useState(null);
 
   function upd(i, field, val) {
     setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
@@ -1348,6 +1349,27 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           )}
         </div>
       )}
+
+      <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>🪨 Calcário / Gesso (correção de solo)</div>
+        <div style={{fontSize:11,color:"#888",marginBottom:10}}>
+          Não é dividido por cultura: soma tudo que foi comprado (Verão + Inverno) e dilui pela área anual total plantada na fazenda — a mesma dose entra em todas as culturas.
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Área anual da fazenda (ha)</div>
+            <input type="number" step="any" value={areaAnualFazenda} onChange={e=>setAreaAnualFazenda(parseFloat(e.target.value)||0)}
+              style={{width:120,padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:13,fontWeight:700}}/>
+          </div>
+          <button onClick={()=>{ const rel = onEnviarCalcarioGesso(areaAnualFazenda); setCalcarioMsg(rel); }}
+            style={{padding:"7px 14px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📤 Enviar Calcário/Gesso pra Programação</button>
+        </div>
+        {calcarioMsg && (
+          <div style={{marginTop:12,padding:"10px 12px",background:"#f5f5f5",borderRadius:8,fontSize:11}}>
+            {calcarioMsg.map((linha,i)=><div key={i} style={{color:linha.startsWith("⚠")?"#c62828":"#2e7d32",marginBottom:3}}>{linha}</div>)}
+          </div>
+        )}
+      </div>
 
       <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
@@ -1644,6 +1666,10 @@ function App() {
   const [planObsSafrinha, setPlanObsSafrinha] = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_safrinha", ""));
   const [planObsVerao2, setPlanObsVerao2]       = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_verao2", ""));
   const [planObsSafrinha2, setPlanObsSafrinha2] = useState(() => loadLS(KEY_PLANEJAMENTO+"_obs_safrinha2", ""));
+  // Área anual total plantada na fazenda (Verão + Inverno somados) — usada como divisor pra
+  // diluir o custo/dose de Calcário e Gesso (correção de solo, não é por cultura como os demais
+  // adubos), conforme o usuário faz na prática.
+  const [areaAnualFazenda, setAreaAnualFazenda] = useState(() => loadLS(KEY_PLANEJAMENTO+"_area_anual", 2000));
   const [tsVerao, setTsVerao]           = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_verao", TS_VERAO_INICIAL));
   const [tsSafrinha, setTsSafrinha]     = useState(() => loadLS(KEY_PLANEJAMENTO+"_ts_safrinha", TS_SAFRINHA_INICIAL));
 
@@ -1836,6 +1862,7 @@ function App() {
   useFirebaseSync("gcagro/planejamento/obs_safrinha", planObsSafrinha, setPlanObsSafrinha);
   useFirebaseSync("gcagro/planejamento/obs_verao2", planObsVerao2, setPlanObsVerao2);
   useFirebaseSync("gcagro/planejamento/obs_safrinha2", planObsSafrinha2, setPlanObsSafrinha2);
+  useFirebaseSync("gcagro/planejamento/area_anual", areaAnualFazenda, setAreaAnualFazenda);
   useFirebaseSync("gcagro/planejamento/ts_verao", tsVerao, setTsVerao);
   useFirebaseSync("gcagro/planejamento/ts_safrinha", tsSafrinha, setTsSafrinha);
   useFirebaseSync("gcagro/safras/ativa", safraAtiva, setSafraAtiva);
@@ -1849,6 +1876,7 @@ function App() {
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_safrinha", planObsSafrinha); }, [planObsSafrinha]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao2", planObsVerao2); }, [planObsVerao2]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_safrinha2", planObsSafrinha2); }, [planObsSafrinha2]);
+  useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_area_anual", areaAnualFazenda); }, [areaAnualFazenda]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_verao", tsVerao); }, [tsVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_ts_safrinha", tsSafrinha); }, [tsSafrinha]);
   useEffect(() => { saveLS(KEY_COLHEITA, colheitaRecords); }, [colheitaRecords]);
@@ -2378,6 +2406,47 @@ function App() {
         return nd;
       });
     }
+    return relatorio;
+  }
+  // Calcário e Gesso são correção de solo, não adubação por cultura: o usuário dilui a
+  // quantidade total comprada (Verão + Inverno) pela área anual total plantada na fazenda —
+  // um número fixo que ele mesmo informa (ex: 2000 ha) — e aplica essa MESMA dose em todas as
+  // culturas, nas duas programações (Verão e Inverno).
+  function enviarCalcarioGessoParaProgramacao(areaAnual) {
+    if (!areaAnual || areaAnual<=0) return ["⚠ Informe a área anual da fazenda (ha) antes de enviar."];
+    const relatorio = [];
+    ["Calcário","Gesso"].forEach(nomeAlvo => {
+      const alvoNorm = normalizarNome(nomeAlvo);
+      const totalKg = comprasRecords
+        .filter(r => r.safra===safraAtiva && (r.categoria||"").startsWith("Adubação") && normalizarNome(r.produto).includes(alvoNorm))
+        .reduce((s,r)=> s + (r.unidade==="TN" ? (r.quantidade||0)*1000 : (r.quantidade||0)), 0);
+      if (!totalKg) { relatorio.push(`⚠ ${nomeAlvo}: nenhuma compra encontrada na safra ${safraAtiva} (categoria Adubação).`); return; }
+      const doseKgHa = totalKg / areaAnual;
+      let atualizados = 0;
+      [["Verão",dataVerao,setDataVerao],["Inverno",dataInverno,setDataInverno]].forEach(([label,dProg,setD])=>{
+        const plano = [];
+        Object.entries(dProg).forEach(([cultura,c])=>{
+          const catIdx = (c.categories||[]).findIndex(cat=>cat.name==="Adubação");
+          const cat = catIdx>=0 ? c.categories[catIdx] : null;
+          if (!cat) return;
+          const prodIdx = (cat.products||[]).findIndex(p=>normalizarNome(p.produto).includes(alvoNorm));
+          if (prodIdx<0) return;
+          const dose = cat.products[prodIdx].unidade==="Tn" ? doseKgHa/1000 : doseKgHa;
+          plano.push({cultura, catIdx, prodIdx, dose});
+        });
+        if (plano.length) {
+          setD(d => {
+            const nd = JSON.parse(JSON.stringify(d));
+            plano.forEach(({cultura,catIdx,prodIdx,dose}) => { nd[cultura].categories[catIdx].products[prodIdx].dose = dose; });
+            return nd;
+          });
+          atualizados += plano.length;
+        }
+      });
+      relatorio.push(atualizados
+        ? `✓ ${nomeAlvo}: ${fmtN(totalKg/1000,1)} t ÷ ${fmtN(areaAnual,1)} ha = ${fmtN(doseKgHa,1)} kg/ha, aplicado em ${atualizados} cultura(s) (Verão + Inverno).`
+        : `⚠ ${nomeAlvo}: total comprado encontrado, mas nenhuma cultura tem esse produto na categoria Adubação.`);
+    });
     return relatorio;
   }
   // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
@@ -3624,8 +3693,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} onEnviarCalcarioGesso={enviarCalcarioGessoParaProgramacao} areaAnualFazenda={areaAnualFazenda} setAreaAnualFazenda={setAreaAnualFazenda} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} onEnviarCalcarioGesso={enviarCalcarioGessoParaProgramacao} areaAnualFazenda={areaAnualFazenda} setAreaAnualFazenda={setAreaAnualFazenda} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
