@@ -1244,6 +1244,9 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     const grupos = {};
     data.forEach(r => {
       const c = r.cultura; if (!c) return;
+      // Lote de campo de semente não é produção comercial — não entra na média de dose por
+      // cultura (ex: Milho semente distorceria a média do Milho comercial).
+      if (normalizarNome(r.variedade).includes("campo de semente")) return;
       const area = r.area||0;
       if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0, nCobKg:0 };
       grupos[c].area += area;
