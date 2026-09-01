@@ -1245,8 +1245,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     data.forEach(r => {
       const c = r.cultura; if (!c) return;
       // Lote de campo de semente não é produção comercial — não entra na média de dose por
-      // cultura (ex: Milho semente distorceria a média do Milho comercial).
-      if (normalizarNome(r.variedade).includes("campo de semente")) return;
+      // cultura (ex: Milho semente distorceria a média do Milho comercial). Checa "campo" e
+      // "semente" separados (não a frase exata) pra pegar variações tipo "Campo Semente",
+      // "Semente - Campo" etc.
+      const vNorm = normalizarNome(r.variedade);
+      if (vNorm.includes("campo") && vNorm.includes("semente")) return;
       const area = r.area||0;
       if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0, nCobKg:0 };
       grupos[c].area += area;
