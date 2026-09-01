@@ -1780,6 +1780,12 @@ function App() {
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
   const [importInsumoErro, setImportInsumoErro] = useState("");
+  // Importação separada só pra atualizar o Ingrediente Ativo de itens já cadastrados no estoque
+  // (casando por Nome) — sem mexer em quantidade/valor/etc., diferente da importação de cima que
+  // sempre cria itens novos.
+  const [showImportIA, setShowImportIA] = useState(false);
+  const [importIAPreview, setImportIAPreview] = useState(null);
+  const [importIAErro, setImportIAErro] = useState("");
   const [showImportCompra, setShowImportCompra] = useState(false);
   const [importCompraPreview, setImportCompraPreview] = useState(null);
   const [importCompraErro, setImportCompraErro] = useState("");
@@ -4863,6 +4869,8 @@ function App() {
                 style={{padding:"6px 14px",background:"none",border:"1px dashed #334155",color:"#334155",borderRadius:6,fontSize:11,cursor:"pointer"}}>Ajuste manual</button>
               <button onClick={()=>{setShowImportInsumoEstoque(true);setImportInsumoPreview(null);setImportInsumoErro("");setImportInsumoSubstituir(false);}}
                 style={{padding:"6px 14px",background:"#e3f2fd",border:"none",color:"#1565C0",borderRadius:6,fontSize:11,cursor:"pointer"}}>📥 Importar planilha</button>
+              <button onClick={()=>{setShowImportIA(true);setImportIAPreview(null);setImportIAErro("");}}
+                style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>🧪 Atualizar Ing. Ativo</button>
             </div>
 
             {showImportInsumoEstoque && (
@@ -4925,6 +4933,77 @@ function App() {
                         setInsumosEstoqueRecords(rs => importInsumoSubstituir ? importInsumoPreview : [...rs, ...importInsumoPreview]);
                         setShowImportInsumoEstoque(false); setImportInsumoPreview(null); setImportInsumoErro(""); setImportInsumoSubstituir(false);
                       }} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ {importInsumoSubstituir?"Substituir por":"Importar"} {importInsumoPreview.length} item(ns)</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showImportIA && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+                <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:640,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#334155",marginBottom:10}}>🧪 Atualizar Ingrediente Ativo</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+                    Arquivo .xlsx, .xls ou .csv com colunas <b>Nome</b> e <b>Ingrediente Ativo</b>. Casa pelo nome com os itens já cadastrados no estoque e atualiza só o Ingrediente Ativo — quantidade, valor e o resto ficam intocados. Item sem correspondência no estoque é ignorado.
+                  </div>
+                  {!importIAPreview ? (
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
+                      const file = e.target.files[0]; if (!file) return;
+                      try {
+                        const rows = await readSpreadsheetRows(file);
+                        const linhas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
+                          .filter(m => String(m.nome||"").trim())
+                          .map(m => {
+                            const nome = String(m.nome).trim();
+                            const ingredienteAtivo = String(m.ingredienteAtivo||"").trim();
+                            const matchIdx = insumosEstoqueRecords.findIndex(r => normalizarNome(r.nome)===normalizarNome(nome));
+                            return { nome, ingredienteAtivo, matchIdx };
+                          });
+                        if (!linhas.length) { setImportIAErro("⚠ Nenhuma linha reconhecida. Confira os nomes das colunas (Nome, Ingrediente Ativo)."); return; }
+                        setImportIAPreview(linhas);
+                        setImportIAErro("");
+                      } catch (err) { setImportIAErro("❌ Erro ao ler o arquivo: "+err.message); }
+                      e.target.value = "";
+                    }} style={{marginBottom:10}}/>
+                  ) : (
+                    <>
+                      <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
+                        {importIAPreview.filter(l=>l.matchIdx>=0).length} de {importIAPreview.length} linha(s) encontraram item correspondente no estoque:
+                      </div>
+                      <div style={{overflowX:"auto",marginBottom:14}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                          <thead><tr style={{background:"#f5f5f5"}}>
+                            {["","Nome","Ingrediente Ativo"].map(h=>(
+                              <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#888",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {importIAPreview.map((l,i)=>(
+                              <tr key={i} style={{background:i%2===0?"#fff":"#fafafa",opacity:l.matchIdx>=0?1:0.5}}>
+                                <td style={{padding:"5px 7px"}}>{l.matchIdx>=0?"✓":"⚠"}</td>
+                                <td style={{padding:"5px 7px",fontWeight:600}}>{l.nome}</td>
+                                <td style={{padding:"5px 7px",color:"#888"}}>{l.ingredienteAtivo||"—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                  {importIAErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importIAErro}</div>}
+                  <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                    <button onClick={()=>{setShowImportIA(false);setImportIAPreview(null);setImportIAErro("");}}
+                      style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+                    {importIAPreview && (
+                      <button onClick={()=>{
+                        const porNome = {};
+                        importIAPreview.forEach(l => { if (l.matchIdx>=0) porNome[normalizarNome(l.nome)] = l.ingredienteAtivo; });
+                        setInsumosEstoqueRecords(rs => rs.map(r => {
+                          const ia = porNome[normalizarNome(r.nome)];
+                          return ia!=null ? {...r, ingredienteAtivo:ia} : r;
+                        }));
+                        setShowImportIA(false); setImportIAPreview(null); setImportIAErro("");
+                      }} style={{padding:"7px 14px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Atualizar {importIAPreview.filter(l=>l.matchIdx>=0).length} item(ns)</button>
                     )}
                   </div>
                 </div>
