@@ -3770,7 +3770,7 @@ function App() {
                                 {isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}
                               </td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Unid."],textAlign:"center",whiteSpace:"nowrap"}}>
-                                <select value={p.unidade||"kg"} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
+                                <select value={p.unidade||(isSementes?"bag":"kg")} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
                                   style={{padding:"2px 4px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
                                   <option value="kg">kg</option>
                                   <option value="Lt">Lt</option>
