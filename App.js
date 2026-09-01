@@ -2417,7 +2417,9 @@ function App() {
     const setD = isVerao ? setDataVerao : setDataInverno;
     const relatorio = [];
     const plano = [];
-    medias.forEach(({cultura, mediaAdub, mediaKcl, mediaNCob}) => {
+    // "Milho Semente" é uma cultura própria na Programação de Inverno (produção de semente, não
+    // comercial) — não recebe a média calculada em cima do milho comercial.
+    medias.filter(m => !normalizarNome(m.cultura).includes("semente")).forEach(({cultura, mediaAdub, mediaKcl, mediaNCob}) => {
       const c = dProg[cultura];
       if (!c) { relatorio.push(`⚠ ${cultura}: cultura não encontrada na Programação.`); return; }
       const catIdx = (c.categories||[]).findIndex(cat=>cat.name==="Adubação");
