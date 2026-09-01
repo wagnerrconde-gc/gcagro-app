@@ -391,6 +391,7 @@ function calcQtdTS(p, culture) {
 }
 function calcProdTotal(p, cat, culture) {
   if (cat && cat.name === "TS") return calcQtdTS(p, culture) * p.preco_unit;
+  if (cat && cat.name === "Sementes") return (p.qtd||0) * p.preco_unit;
   return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
 }
 // Extrai a dose numérica (kg/ha) de um texto livre do Planejamento de Campo, tipo
@@ -472,7 +473,7 @@ function derivarSementes(data) {
       (cat.products||[]).forEach(p => {
         if (!p || !p.produto || produtoJaResolvido(p)) return;
         const key = p.produto.trim().toLowerCase();
-        const qtd = p.dose > 0 ? p.dose * p.area : p.area;
+        const qtd = p.qtd||0;
         if (map[key]) { map[key].qtd_total += qtd; }
         else { map[key] = { nome:p.produto.trim(), unidade:"bag", qtd_total:qtd, categoria:"Sementes", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
       });
@@ -2170,10 +2171,13 @@ function App() {
     const pAtual = cat.products[prodIdx];
     const novoValor = ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
     const p = { ...pAtual, [field]: novoValor };
-    const fechado = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
+    // Sementes não tem mais dose/área alimentando quantidade — só lança em Compras sozinho se já
+    // tiver uma Quantidade digitada (senão o lançamento sairia com quantidade zerada).
+    const fechado = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim()
+      && (cat.name!=="Sementes" || (p.qtd||0)>0);
     let novoCompraId = null, compraNova = null, compraSync = null;
     if (fechado) {
-      const qtd = p.dose>0 ? p.dose*p.area : p.area;
+      const qtd = cat.name==="Sementes" ? (p.qtd||0) : (p.dose>0 ? p.dose*p.area : p.area);
       const unidadeCompra = p.unidade==="Tn"?"TN":p.unidade==="Lt"?"L":(p.unidade||"kg");
       const categoriaCompra = cat.name==="Adubação" ? "Adubação "+(isVerao?"Verão":"Inverno")
                             : cat.name==="Sementes" ? "Sementes "+(isVerao?"Verão":"Inverno")
@@ -2201,7 +2205,7 @@ function App() {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d));
       nd[activeCulture].categories[catIdx].products.push({...newProd,
         dose:parseFloat(newProd.dose)||0, kgHa:parseFloat(newProd.kgHa)||0, area:parseFloat(newProd.area)||nd[activeCulture].area,
-        preco_unit:parseFloat(newProd.preco_unit)||0, preco_compra:null, fornecedor_compra:null});
+        qtd:0, preco_unit:parseFloat(newProd.preco_unit)||0, preco_compra:null, fornecedor_compra:null});
       return nd; });
     setNewProd({produto:"",dose:"",kgHa:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
     setAddingTo(null);
@@ -2368,54 +2372,6 @@ function App() {
     return merged.length - atual.length;
   }
 
-  // ── Custo médio de sementes: junta o valor pago em Compras de todas as variedades da
-  // cultura e divide pela Área total já cadastrada na Programação (não pela soma de área do
-  // Planejamento, que pode não estar em dia) — alimentando um preço médio único na categoria
-  // "Sementes" da Programação (Verão ou Inverno).
-  //
-  // O casamento entre o produto lançado em Compras e a cultura NÃO é mais por nome de variedade
-  // do Planejamento (esses nomes batiam pouco na prática — variedades compostas, abreviações).
-  // Segue a convenção do próprio usuário pra nomear as compras de semente: só prefixa o nome com
-  // a cultura quando NÃO é Soja (ex: "Milho AS 1868"); sem prefixo reconhecido, cai em Soja.
-  // categoriaCompra: "Sementes Verão" ou "Sementes Inverno" — a pasta de Compras já vem separada
-  // por temporada (igual Adubação/Químicos), então a temporada é lida do nome da categoria.
-  function atualizarCustoSementesDoPlano(categoriaCompra) {
-    const isVerao = categoriaCompra.includes("Verão");
-    const dProg = isVerao ? dataVerao : dataInverno;
-    const setD = isVerao ? setDataVerao : setDataInverno;
-    const culturas = Object.keys(dProg).filter(c => (dProg[c]?.area||0) > 0);
-    const porCultura = {};
-    culturas.forEach(c => { porCultura[c] = 0; });
-    comprasRecords.filter(r=>r.categoria===categoriaCompra).forEach(r => {
-      const cultura = classificarCulturaSemente(r.produto, culturas);
-      if (cultura) porCultura[cultura] += (r.valorTotal||0);
-    });
-    let atualizados = 0;
-    const relatorio = [];
-    culturas.forEach(cultura => {
-      const areaTotal = dProg[cultura]?.area || 0;
-      const totalPago = porCultura[cultura];
-      if (!areaTotal || !totalPago) return;
-      const precoMedio = totalPago/areaTotal;
-      relatorio.push({cultura, precoMedio, totalPago, areaTotal});
-      atualizados++;
-    });
-    if (atualizados) {
-      setD(d => {
-        const nd = JSON.parse(JSON.stringify(d));
-        relatorio.forEach(({cultura,precoMedio})=>{
-          const c = nd[cultura];
-          if (!c) return;
-          (c.categories||[]).forEach(cat=>{
-            if (cat.name!=="Sementes") return;
-            (cat.products||[]).forEach(p=>{ p.preco_unit = precoMedio; p.preco_compra = precoMedio; p.fornecedor_compra = "Compra manual"; });
-          });
-        });
-        return nd;
-      });
-    }
-    return relatorio;
-  }
   // Manda a taxa média de Adubação/KCl/N-Cobertura calculada no Planejamento de Campo pra
   // Programação (Verão ou Inverno): dose do 1º produto da categoria "Adubação" recebe a média
   // de Adubação; o produto cujo nome contém "kcl" recebe a média de KCl; no Inverno, o produto
@@ -2472,12 +2428,14 @@ function App() {
     return relatorio;
   }
   // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
-  // Compras — soma o valor pago por produto e divide pela quantidade comprada (não pela área,
-  // já que Adubação/Químicos usam dose × área × preço, diferente de Sementes que é só área).
-  // categoriaCompra: "Adubação Verão", "Adubação Inverno", "Químicos Verão" ou "Químicos Inverno".
+  // Compras — soma o valor pago por produto e divide pela quantidade comprada. Pra Sementes,
+  // também soma a Quantidade (que não vem mais de dose × área, é lançada direto no produto e
+  // somada aqui a partir das compras casadas por nome).
+  // categoriaCompra: "Adubação Verão/Inverno", "Sementes Verão/Inverno" ou "Químicos Verão/Inverno".
   function atualizarCustoPorCategoria(categoriaCompra) {
     const isVerao = categoriaCompra.includes("Verão");
     const isAdub = categoriaCompra.startsWith("Adubação");
+    const isSementes = categoriaCompra.startsWith("Sementes");
     const dAtual = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra);
@@ -2497,14 +2455,16 @@ function App() {
       const iaKey = normalizarNome(p.ingrediente_ativo);
       return medias.find(m => normalizarNome(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
     }
+    function relevante(cat) {
+      return isAdub ? cat.name==="Adubação" : isSementes ? cat.name==="Sementes" : (cat.name!=="Adubação" && cat.name!=="Sementes");
+    }
     // Calculado com o estado ATUAL (fora do setState) pra poder devolver o relatório de forma
     // síncrona — o updater do setState não roda de forma síncrona, então não dá pra confiar
     // num valor só preenchido lá dentro pra decidir o que devolver logo em seguida.
     const atingidos = new Set();
     Object.values(dAtual).forEach(cultura => {
       (cultura.categories||[]).forEach(cat => {
-        const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
-        if (!relevante) return;
+        if (!relevante(cat)) return;
         (cat.products||[]).forEach(p => { const match = procuraMatch(p); if (match) atingidos.add(match.produto); });
       });
     });
@@ -2512,14 +2472,14 @@ function App() {
       const nd = JSON.parse(JSON.stringify(d));
       Object.values(nd).forEach(cultura => {
         (cultura.categories||[]).forEach(cat => {
-          const relevante = isAdub ? cat.name==="Adubação" : (cat.name!=="Adubação" && cat.name!=="Sementes");
-          if (!relevante) return;
+          if (!relevante(cat)) return;
           (cat.products||[]).forEach(p => {
             const match = procuraMatch(p);
             if (match) {
               p.preco_unit = match.precoMedio;
               p.preco_compra = match.precoMedio;
               p.fornecedor_compra = "Compra manual";
+              if (isSementes) p.qtd = match.totalQtd;
               if (match.fornecedores && match.fornecedores.size) p.revenda = [...match.fornecedores].join(" + ");
             }
           });
@@ -3759,8 +3719,12 @@ function App() {
             const icon = CAT_ICONS[cat.name]||"📦";
             const showIA = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas"].includes(cat.name);
             const isTS = cat.name === "TS";
-            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), "Dose", ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
-            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), "dose", ...(isTS?["kgHa"]:[]), "area",null,null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
+            // Sementes não usa mais dose × área: Quantidade é lançada direto (manual ou somada
+            // dos lançamentos de Compras) e Total = Quantidade × Preço, sem a Dose (que já não
+            // significa mais nada aqui) nem a Área (que fica só como referência pro R$/ha).
+            const isSementes = cat.name === "Sementes";
+            const progHeaders = ["Produto", ...(showIA?["I.A."]:[]), ...(isSementes?[]:["Dose"]), ...(isTS?["Kg semente/ha"]:[]), "Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""];
+            const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), ...(isSementes?[]:["dose"]), ...(isTS?["kgHa"]:[]), "area",null,null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
             // table-layout:fixed obriga cada tabela a respeitar exatamente as larguras de PROG_COL_W,
             // em vez de recalcular por conta própria conforme o conteúdo — é o que garante que a
             // mesma coluna (ex: Venc.) fique na mesma posição em todas as categorias.
@@ -3791,7 +3755,7 @@ function App() {
                       <tbody>
                         {(cat.products||[]).map((p,prodIdx)=>{
                           const preco = p.preco_compra||p.preco_unit;
-                          const qtd = isTS ? calcQtdTS(p,culture) : (p.dose>0?p.dose*p.area:p.area);
+                          const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                           const total = qtd*preco;
                           const bg = prodIdx%2===0?"#fff":"#fafafa";
                           const comprado = p.preco_compra!=null;
@@ -3799,16 +3763,20 @@ function App() {
                             <tr key={prodIdx} style={{background:bg}}>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Produto"],textAlign:"center",fontWeight:600,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
                               {showIA && <td style={{padding:"6px 8px",width:PROG_COL_W["I.A."],textAlign:"center",color:"#666",fontSize:10,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
-                              <td style={{padding:"6px 8px",width:PROG_COL_W["Dose"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>
+                              {!isSementes && <td style={{padding:"6px 8px",width:PROG_COL_W["Dose"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>}
                               {isTS && <td style={{padding:"6px 8px",width:PROG_COL_W["Kg semente/ha"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Área(ha)"],textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
-                              <td style={{padding:"6px 8px",width:PROG_COL_W["Qtd"],textAlign:"center",color:"#555",whiteSpace:"nowrap"}}>{fmtN(qtd,1)}</td>
+                              <td style={{padding:"6px 8px",width:PROG_COL_W["Qtd"],textAlign:"center",color:"#555",whiteSpace:"nowrap"}}>
+                                {isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}
+                              </td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Unid."],textAlign:"center",whiteSpace:"nowrap"}}>
                                 <select value={p.unidade||"kg"} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
                                   style={{padding:"2px 4px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
                                   <option value="kg">kg</option>
                                   <option value="Lt">Lt</option>
                                   <option value="Tn">Tn</option>
+                                  <option value="bag">bag</option>
+                                  <option value="sc">sc</option>
                                 </select>
                               </td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Fase"],textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
@@ -6490,9 +6458,7 @@ function App() {
                     style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
                   {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
                     <button onClick={()=>{
-                        const relatorio = comprasCatSel.startsWith("Sementes")
-                          ? atualizarCustoSementesDoPlano(comprasCatSel)
-                          : atualizarCustoPorCategoria(comprasCatSel);
+                        const relatorio = atualizarCustoPorCategoria(comprasCatSel);
                         setCustoCompraMsg({categoria:comprasCatSel, relatorio});
                         setTimeout(()=>setCustoCompraMsg(null), 8000);
                       }}
@@ -6898,6 +6864,7 @@ function App() {
                             <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:10}}>
                               {(c.categories||[]).map((cat,catIdx)=>{
                                 const isTSarq = cat.name==="TS";
+                                const isSementesArq = cat.name==="Sementes";
                                 const showIAarq = CAT_IA.has(cat.name);
                                 return (
                                   <div key={catIdx}>
@@ -6913,7 +6880,7 @@ function App() {
                                         </thead>
                                         <tbody>
                                           {(cat.products||[]).map((p,pi)=>{
-                                            const qtd = isTSarq ? calcQtdTS(p,c) : (p.dose>0?p.dose*p.area:p.area);
+                                            const qtd = isTSarq ? calcQtdTS(p,c) : isSementesArq ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                                             const preco = p.preco_compra||p.preco_unit;
                                             return (
                                               <tr key={pi} style={{background:pi%2===0?"#fff":"#fafafa"}}>
