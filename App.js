@@ -173,6 +173,12 @@ function normalizarNome(str) {
     .replace(/[óòôõö]/g,"o").replace(/[úùûü]/g,"u").replace(/ç/g,"c").replace(/ñ/g,"n")
     .replace(/\s+/g," ");
 }
+// Link de busca pro Ingrediente Ativo de um produto na hora de cadastrar — não dá pra consultar o
+// Agrofit ao vivo de dentro do app (base de dados gigante, sem servidor por trás), então abre uma
+// busca já pronta numa aba nova pra conferir e colar o resultado de volta no campo.
+function agrofitSearchUrl(nome) {
+  return "https://www.google.com/search?q=" + encodeURIComponent((nome||"produto agrícola").trim()+" ingrediente ativo agrofit");
+}
 // Normaliza nome de lote pra casar planilhas de terceiros (consultoria, grupo de compras) com
 // os nomes já cadastrados no Planejamento — trata "Pivô"/"Pivot"/"PC" e "Sequeiro"/"Seq" como
 // a mesma coisa, e ignora a palavra "Lote".
@@ -5050,7 +5056,12 @@ function App() {
                         </select>
                       </td>
                       <td style={{padding:"5px 6px"}}><input placeholder="Nome do produto" value={newInsumoEstoque.nome} onChange={e=>setNewInsumoEstoque(p=>({...p,nome:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
-                      <td style={{padding:"5px 6px"}}><input placeholder="Ing. ativo" value={newInsumoEstoque.ingredienteAtivo} onChange={e=>setNewInsumoEstoque(p=>({...p,ingredienteAtivo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/></td>
+                      <td style={{padding:"5px 6px"}}>
+                        <div style={{display:"flex",gap:3,alignItems:"center"}}>
+                          <input placeholder="Ing. ativo" value={newInsumoEstoque.ingredienteAtivo} onChange={e=>setNewInsumoEstoque(p=>({...p,ingredienteAtivo:e.target.value}))} style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}/>
+                          <a href={agrofitSearchUrl(newInsumoEstoque.nome)} target="_blank" rel="noopener noreferrer" title="Buscar ingrediente ativo" style={{fontSize:13,textDecoration:"none",flexShrink:0}}>🔍</a>
+                        </div>
+                      </td>
                       <td style={{padding:"5px 6px"}}>
                         <select value={newInsumoEstoque.unidade} onChange={e=>setNewInsumoEstoque(p=>({...p,unidade:e.target.value}))}
                           style={{width:"100%",padding:"3px 5px",fontSize:11,border:"1px solid #ccc",borderRadius:3}}>
@@ -6291,10 +6302,11 @@ function App() {
                             style={{width:100,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
                           <input placeholder="Preço ref. (R$)" type="number" step="any" value={newInsumo.preco_ref} onChange={e=>setNewInsumo(p=>({...p,preco_ref:e.target.value}))}
                             style={{width:120,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none",textAlign:"right"}}/>
-                          {CAT_IA.has(newInsumo.categoria) && (
+                          {CAT_IA.has(newInsumo.categoria) && (<>
                             <input placeholder="Ingrediente ativo" value={newInsumo.ingrediente_ativo} onChange={e=>setNewInsumo(p=>({...p,ingrediente_ativo:e.target.value}))}
                               style={{width:130,padding:"6px 9px",background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:5,color:"#e8f4fd",fontSize:12,outline:"none"}}/>
-                          )}
+                            <a href={agrofitSearchUrl(newInsumo.nome)} target="_blank" rel="noopener noreferrer" title="Buscar ingrediente ativo" style={{fontSize:15,textDecoration:"none"}}>🔍</a>
+                          </>)}
                           <button onClick={addInsumoRow} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:5,color:"#fff",fontSize:12,cursor:"pointer"}}>✓ Adicionar</button>
                           <button onClick={()=>setAddingInsumo(false)} style={{padding:"7px 10px",background:"#1e3a5f",border:"none",borderRadius:5,color:"#7a9ab8",fontSize:12,cursor:"pointer"}}>✕</button>
                         </div>
