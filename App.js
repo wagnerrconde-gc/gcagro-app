@@ -1183,6 +1183,71 @@ const PLAN_SAFRINHA_INICIAL = [
   {id:"ps10",lote:"LOTE 11 MUTHEMA + BICO DIVISA",area:75,cultura:"Sorgo",variedade:"1G100",adubacaoPlantio:"MAP 52 kg",cobertura:"KCl 150 kg",nCobertura:"Ureia 150 kg",populacao:12.5,dataPlantio:"",previsaoColheita:"",obs:""},
 ];
 
+// ── TS / Kit Sulco alimentado a partir da Programação ──
+// Formata "produto dose+unidade" pra linha de texto (ex: "Dermacor 0,8L", "Azos 2kg") — sem
+// espaço entre número e unidade, igual ao padrão que já era digitado manualmente na tela.
+const UNID_TEXTO_TS = { kg:"kg", Lt:"L", Tn:"t", bag:"bag", sc:"sc" };
+function fmtDoseTexto(n) {
+  return Number(n||0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+function formatarLinhaProdutoTS(p) {
+  const unid = UNID_TEXTO_TS[p.unidade] ?? (p.unidade||"");
+  return `${p.produto} ${fmtDoseTexto(p.dose)}${unid}`.trim();
+}
+// Agrupa os produtos de TS e Kit Sulco de cada cultura por variedade, a partir da Observação de
+// cada produto na Programação: produto sem Observação é comum a todas as variedades da cultura;
+// produto com Observação preenchida é específico daquela variedade. Uma variedade = um grupo de
+// texto (comuns + específicos), casando por nome normalizado pra não duplicar por acento/maiúscula
+// digitados diferente em dois produtos. Sem nenhuma Observação preenchida na cultura inteira,
+// gera um grupo só, sem variedade (tratamento único pra todo mundo).
+function computarGruposTS(dProg) {
+  const grupos = [];
+  Object.entries(dProg||{}).forEach(([cultura, c]) => {
+    const prodsTS = ((c.categories||[]).find(cat=>cat.name==="TS")||{}).products || [];
+    const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
+    if (!prodsTS.length && !prodsKS.length) return;
+    const obsMap = new Map();
+    [...prodsTS, ...prodsKS].forEach(p => {
+      const raw = (p.obs||"").trim();
+      if (raw && !obsMap.has(normalizarNome(raw))) obsMap.set(normalizarNome(raw), raw);
+    });
+    const entradas = obsMap.size ? [...obsMap.entries()] : [["", ""]];
+    entradas.forEach(([key, display]) => {
+      const pertence = p => { const raw=(p.obs||"").trim(); return !raw || normalizarNome(raw)===key; };
+      grupos.push({
+        origemKey: cultura+"||"+key,
+        cultura,
+        variedadeDefault: display,
+        dose100kg: prodsTS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
+        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join(" + "),
+      });
+    });
+  });
+  return grupos;
+}
+// Mescla os grupos calculados da Programação na lista de TS/Kit Sulco: atualiza dose100kg/kitSulco
+// dos registros já ligados a um grupo (achados pelo origemKey, não pelo nome da variedade — assim
+// continua reconhecendo mesmo se o usuário renomear a variedade depois), cria registro novo pra
+// grupo sem correspondência, e NUNCA mexe em registro sem origemKey (criado manualmente) nem no
+// nome da variedade/observação já preenchidos por quem usa o app.
+function mesclarGruposTS(atual, grupos) {
+  let changed = false;
+  const existentes = new Set(atual.filter(r=>r.origemKey).map(r=>r.origemKey));
+  const atualizado = atual.map(r => {
+    if (!r.origemKey) return r;
+    const g = grupos.find(x=>x.origemKey===r.origemKey);
+    if (!g) return r;
+    if (r.cultura===g.cultura && r.dose100kg===g.dose100kg && r.kitSulco===g.kitSulco) return r;
+    changed = true;
+    return { ...r, cultura:g.cultura, dose100kg:g.dose100kg, kitSulco:g.kitSulco };
+  });
+  const novos = grupos.filter(g=>!existentes.has(g.origemKey)).map(g => {
+    changed = true;
+    return { id:newId(), origemKey:g.origemKey, cultura:g.cultura, variedade:g.variedadeDefault, dose100kg:g.dose100kg, kitSulco:g.kitSulco, obs:"" };
+  });
+  return changed ? [...atualizado, ...novos] : atual;
+}
+
 const TS_VERAO_INICIAL = [
   {id:"ts1",cultura:"Soja",variedade:"B 5830 CE",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:"SEM AVEO"},
   {id:"ts2",cultura:"Soja",variedade:"Demais variedades",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:""},
@@ -1571,22 +1636,27 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
                   </select>
                 </div>
                 <div style={{marginBottom:8}}>
-                  <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Variedade/Híbrido</div>
+                  <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase",display:"flex",alignItems:"center",gap:6}}>
+                    Variedade/Híbrido
+                    {row.origemKey && <span title="Dose por 100kg e Kit Sulco vêm automáticos da Programação" style={{background:"#e0f2f1",color:"#00695c",borderRadius:8,padding:"1px 7px",fontSize:9,textTransform:"none",fontWeight:700}}>🔗 auto</span>}
+                  </div>
                   <input value={row.variedade||""} onChange={e=>upd(row.id,"variedade",e.target.value)}
                     style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
                   <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente</div>
-                    <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5}
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente{row.origemKey && " (vem da Programação)"}</div>
+                    <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5} readOnly={!!row.origemKey}
                       placeholder={"80ml Dermacor\n200ml Torino\n300ml Cruiser\n200ml Raiz F Plus"}
-                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6}}/>
+                      title={row.origemKey?"Editado direto na categoria TS da Programação, não aqui":undefined}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
                   </div>
                   <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha)</div>
-                    <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5}
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha){row.origemKey && " (vem da Programação)"}</div>
+                    <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5} readOnly={!!row.origemKey}
                       placeholder={"Azos 2 doses\nNodugran 10 doses\nTorpeno 0,12 L/ha"}
-                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6}}/>
+                      title={row.origemKey?"Editado direto na categoria Kit Sulco da Programação, não aqui":undefined}
+                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
                   </div>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1917,6 +1987,11 @@ function App() {
   useFirebaseSync("gcagro/planejamento/obs_safrinha2", planObsSafrinha2, setPlanObsSafrinha2);
   useFirebaseSync("gcagro/planejamento/ts_verao", tsVerao, setTsVerao);
   useFirebaseSync("gcagro/planejamento/ts_safrinha", tsSafrinha, setTsSafrinha);
+  // TS/Kit Sulco alimentado sozinho a partir dos produtos das categorias "TS" e "Kit Sulco" na
+  // Programação (agrupados por variedade via a Observação de cada produto) — roda de novo toda
+  // vez que a Programação muda, mas só mexe nos registros que ele mesmo já criou (origemKey).
+  useEffect(() => { setTsVerao(rs => mesclarGruposTS(rs, computarGruposTS(dataVerao))); }, [dataVerao]);
+  useEffect(() => { setTsSafrinha(rs => mesclarGruposTS(rs, computarGruposTS(dataInverno))); }, [dataInverno]);
   useFirebaseSync("gcagro/safras/ativa", safraAtiva, setSafraAtiva);
   useFirebaseSync("gcagro/safras/arquivo", safrasArquivadas, setSafrasArquivadas);
   useEffect(() => { saveLS(KEY_SAFRAS+"_ativa", safraAtiva); }, [safraAtiva]);
