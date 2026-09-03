@@ -1194,12 +1194,27 @@ function formatarLinhaProdutoTS(p) {
   const unid = UNID_TEXTO_TS[p.unidade] ?? (p.unidade||"");
   return `${p.produto} ${fmtDoseTexto(p.dose)}${unid}`.trim();
 }
+// Extrai a variedade de uma Observação no formato "Cultura Variedade" (ex.: "Soja TMG 7062" pra
+// cultura "Soja" vira "TMG 7062") — casa palavra por palavra ignorando acento/maiúscula. Observação
+// que não começa com o nome da cultura (anotação livre antiga, tipo "2 doses" ou "850 hectares") é
+// desconsiderada pro agrupamento: retorna null e o produto entra como comum a todas as variedades.
+function extrairVariedadeObs(raw, cultura) {
+  const palavras = (raw||"").trim().split(/\s+/).filter(Boolean);
+  if (!palavras.length) return null;
+  const cultPalavras = normalizarNome(cultura).split(" ").filter(Boolean);
+  for (let i=0;i<cultPalavras.length;i++) {
+    if (normalizarNome(palavras[i]||"") !== cultPalavras[i]) return null;
+  }
+  return palavras.slice(cultPalavras.length).join(" ").trim();
+}
 // Agrupa os produtos de TS e Kit Sulco de cada cultura por variedade, a partir da Observação de
-// cada produto na Programação: produto sem Observação é comum a todas as variedades da cultura;
-// produto com Observação preenchida é específico daquela variedade. Uma variedade = um grupo de
-// texto (comuns + específicos), casando por nome normalizado pra não duplicar por acento/maiúscula
-// digitados diferente em dois produtos. Sem nenhuma Observação preenchida na cultura inteira,
-// gera um grupo só, sem variedade (tratamento único pra todo mundo).
+// cada produto na Programação, no formato "Cultura Variedade" (ex.: "Soja TMG 7062"): produto sem
+// Observação, com Observação que não segue esse formato, ou só com o nome da cultura sem variedade
+// depois, é comum a todas as variedades da cultura; produto com "Cultura Variedade" reconhecido é
+// específico daquela variedade. Uma variedade = um grupo de texto (comuns + específicos), casando
+// por nome normalizado pra não duplicar por acento/maiúscula digitados diferente em dois produtos.
+// Sem nenhuma variedade reconhecida na cultura inteira, gera um grupo só, sem variedade (tratamento
+// único pra todo mundo).
 function computarGruposTS(dProg) {
   const grupos = [];
   Object.entries(dProg||{}).forEach(([cultura, c]) => {
@@ -1208,12 +1223,12 @@ function computarGruposTS(dProg) {
     if (!prodsTS.length && !prodsKS.length) return;
     const obsMap = new Map();
     [...prodsTS, ...prodsKS].forEach(p => {
-      const raw = (p.obs||"").trim();
-      if (raw && !obsMap.has(normalizarNome(raw))) obsMap.set(normalizarNome(raw), raw);
+      const v = extrairVariedadeObs(p.obs, cultura);
+      if (v && !obsMap.has(normalizarNome(v))) obsMap.set(normalizarNome(v), v);
     });
     const entradas = obsMap.size ? [...obsMap.entries()] : [["", ""]];
     entradas.forEach(([key, display]) => {
-      const pertence = p => { const raw=(p.obs||"").trim(); return !raw || normalizarNome(raw)===key; };
+      const pertence = p => { const v = extrairVariedadeObs(p.obs, cultura); return !v || normalizarNome(v)===key; };
       grupos.push({
         origemKey: cultura+"||"+key,
         cultura,
