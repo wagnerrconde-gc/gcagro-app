@@ -2375,7 +2375,9 @@ function App() {
   // diferente do que está na Programação, cai para o casamento por ingrediente ativo
   // (mesmo princípio do sistema antigo). Em ambos os casos alimenta preco_unit, que é
   // o valor usado para gerar os custos — preco_compra fica só como referência visual.
-  function fecharCotacao(prodKey, fornecedores_qtds, precoMedio, nomeReal, iaReal) {
+  // Pra Sementes, também alimenta a Quantidade (qtd_total da Cotação) — sem isso o Total
+  // (Quantidade × Preço) e o R$/ha da Programação ficavam zerados mesmo com o preço certo.
+  function fecharCotacao(prodKey, fornecedores_qtds, precoMedio, nomeReal, iaReal, qtdTotal) {
     // fornecedores_qtds: [{nome, qtd, preco, venc}]
     const setD = cotContext?.safra==="verao" ? setDataVerao : setDataInverno;
     const vencLabels = getVencLabels(cotContext);
@@ -2397,6 +2399,7 @@ function App() {
               p.vencimento = vencimentoLabel;
               if (nomeMatch && nomeReal) p.produto = nomeReal;
               if (iaReal) p.ingrediente_ativo = iaReal;
+              if (cat.name === "Sementes" && qtdTotal!=null) p.qtd = qtdTotal;
             }
           });
         });
@@ -7192,8 +7195,8 @@ function App() {
             if (!dec.splits.some(s=>s.nome&&s.preco>0)) return;
             const pm = calcPrecoMedio(dec.splits);
             const forns = dec.splits.filter(s=>s.nome&&s.preco>0);
-            fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal);
             const prod = produtos.find(p=>p.nome.toLowerCase()===key);
+            fecharCotacao(key, forns, pm, dec.nomeReal, dec.iaReal, prod?.qtd_total||0);
             const unidade = prod?.unidade||unidadePadrao;
             const fornLabel = f => `${f.nome} (${vencLabels[f.venc||"v1"]})`;
             novasCompras.push({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva,
