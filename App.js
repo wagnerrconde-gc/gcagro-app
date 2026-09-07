@@ -2499,20 +2499,23 @@ function App() {
       const partes = [];
       const base = cat.products[0];
       item.baseIdx = 0;
-      item.baseDose = base.unidade==="Tn" ? mediaAdub/1000 : mediaAdub;
-      partes.push(`Adubação → ${base.produto} = ${fmtN(item.baseDose,3)}`);
+      // Preço de adubo em Compras é sempre lançado por tonelada — a média calculada no
+      // Planejamento (kg/ha) vai pra Programação já em toneladas/ha, e força a unidade do
+      // produto pra "Tn", pra bater com o preço/ton lançado em Compras.
+      item.baseDose = mediaAdub/1000;
+      partes.push(`Adubação → ${base.produto} = ${fmtN(item.baseDose,3)}Tn`);
       const kclIdx = cat.products.findIndex(p=>normalizarNome(p.produto).includes("kcl"));
       if (kclIdx>=0) {
         item.kclIdx = kclIdx;
-        item.kclDose = cat.products[kclIdx].unidade==="Tn" ? mediaKcl/1000 : mediaKcl;
-        partes.push(`KCl → ${cat.products[kclIdx].produto} = ${fmtN(item.kclDose,3)}`);
+        item.kclDose = mediaKcl/1000;
+        partes.push(`KCl → ${cat.products[kclIdx].produto} = ${fmtN(item.kclDose,3)}Tn`);
       }
       if (!isVerao && mediaNCob!=null) {
         const ureiaIdx = cat.products.findIndex(p=>normalizarNome(p.produto).includes("ureia"));
         if (ureiaIdx>=0) {
           item.ureiaIdx = ureiaIdx;
-          item.ureiaDose = cat.products[ureiaIdx].unidade==="Tn" ? mediaNCob/1000 : mediaNCob;
-          partes.push(`N Cobertura → ${cat.products[ureiaIdx].produto} = ${fmtN(item.ureiaDose,3)}`);
+          item.ureiaDose = mediaNCob/1000;
+          partes.push(`N Cobertura → ${cat.products[ureiaIdx].produto} = ${fmtN(item.ureiaDose,3)}Tn`);
         }
       }
       plano.push(item);
@@ -2524,8 +2527,9 @@ function App() {
         plano.forEach(item => {
           const cat = nd[item.cultura].categories[item.catIdx];
           cat.products[item.baseIdx].dose = item.baseDose;
-          if (item.kclIdx!=null) cat.products[item.kclIdx].dose = item.kclDose;
-          if (item.ureiaIdx!=null) cat.products[item.ureiaIdx].dose = item.ureiaDose;
+          cat.products[item.baseIdx].unidade = "Tn";
+          if (item.kclIdx!=null) { cat.products[item.kclIdx].dose = item.kclDose; cat.products[item.kclIdx].unidade = "Tn"; }
+          if (item.ureiaIdx!=null) { cat.products[item.ureiaIdx].dose = item.ureiaDose; cat.products[item.ureiaIdx].unidade = "Tn"; }
         });
         return nd;
       });
