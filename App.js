@@ -1184,15 +1184,23 @@ const PLAN_SAFRINHA_INICIAL = [
 ];
 
 // ── TS / Kit Sulco alimentado a partir da Programação ──
-// Formata "produto dose+unidade" pra linha de texto (ex: "Dermacor 0,8L", "Azos 2kg") — sem
-// espaço entre número e unidade, igual ao padrão que já era digitado manualmente na tela.
+// Formata "produto dose unidade" pra linha de texto (ex: "Dermacor 0,166 L (166 ml)", "Azos 2 kg"),
+// com espaço entre número e unidade, valor exato (sem arredondar) e conversão pra ml quando a
+// unidade é litro.
 const UNID_TEXTO_TS = { kg:"kg", Lt:"L", Tn:"t", bag:"bag", sc:"sc" };
+// toFixed(6) só neutraliza erro de ponto flutuante do JS (ex.: 0.1+0.2), não arredonda a dose real —
+// doses digitadas não chegam nem perto de 6 casas decimais. Zeros à direita são cortados depois.
 function fmtDoseTexto(n) {
-  return Number(n||0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+  let s = Number(n||0).toFixed(6);
+  if (s.includes(".")) s = s.replace(/0+$/,"").replace(/\.$/,"");
+  return s.replace(".", ",");
 }
 function formatarLinhaProdutoTS(p) {
-  const unid = UNID_TEXTO_TS[p.unidade] ?? (p.unidade||"");
-  return `${p.produto} ${fmtDoseTexto(p.dose)}${unid}`.trim();
+  const unidRaw = p.unidade || "";
+  const unid = UNID_TEXTO_TS[unidRaw] ?? unidRaw;
+  let linha = `${p.produto} ${fmtDoseTexto(p.dose)}${unid?" "+unid:""}`.trim();
+  if (unidRaw === "Lt") linha += ` (${fmtDoseTexto((Number(p.dose)||0)*1000)} ml)`;
+  return linha;
 }
 // Extrai a variedade de uma Observação no formato "Cultura Variedade" (ex.: "Soja TMG 7062" pra
 // cultura "Soja" vira "TMG 7062") — casa palavra por palavra ignorando acento/maiúscula. Observação
