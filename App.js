@@ -1829,6 +1829,16 @@ function App() {
   const [activeCultureInverno, setActiveCultureInverno] = useState("Milho");
   const [expandedCats, setExpandedCats]   = useState({});
   const [editingCell, setEditingCell]     = useState(null);
+  // Sincroniza a rolagem horizontal entre as tabelas de todas as categorias da Programação —
+  // como cada categoria tem colunas diferentes, rolar uma pra ver Revenda/Venc. rolava só
+  // aquela, deixando as colunas desencontradas entre categorias quando cada uma parava numa
+  // posição diferente. Rolando uma, todas acompanham.
+  const progScrollRefs = useRef({});
+  function syncProgScroll(catIdx, scrollLeft) {
+    Object.entries(progScrollRefs.current).forEach(([idx, el]) => {
+      if (el && Number(idx)!==catIdx && el.scrollLeft!==scrollLeft) el.scrollLeft = scrollLeft;
+    });
+  }
   const [editingOp, setEditingOp]         = useState(null);
   const [addingTo, setAddingTo]           = useState(null);
   const [editingArea, setEditingArea]     = useState(false);
@@ -3988,7 +3998,7 @@ function App() {
                   </div>
                 </div>
                 {isOpen&&(
-                  <div style={{overflowX:"auto"}}>
+                  <div style={{overflowX:"auto"}} ref={el=>{progScrollRefs.current[catIdx]=el;}} onScroll={e=>syncProgScroll(catIdx,e.target.scrollLeft)}>
                     <table style={{borderCollapse:"collapse",fontSize:11,tableLayout:"fixed",width:PROG_MAX_TABLE_WIDTH}}>
                       <thead>
                         <tr style={{background:colors.light}}>
