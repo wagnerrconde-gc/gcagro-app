@@ -1437,7 +1437,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   }
 
   return (
-    <div style={{maxWidth:1200,margin:"0 auto",padding:14}}>
+    <div style={{padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -1690,7 +1690,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg}) {
   }
 
   return (
-    <div style={{maxWidth:900,margin:"0 auto",padding:14}}>
+    <div style={{padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor||"#1a3a1a"}}>{titulo}</div>
         <div style={{display:"flex",gap:8}}>
@@ -3774,7 +3774,7 @@ function App() {
             {/* faixa escura de indicadores, largura total */}
             <div style={{background:"linear-gradient(165deg,#0d1712 0%,#101c15 100%)",position:"relative"}}>
               <div style={{height:2,background:"linear-gradient(90deg,#3fae6c,#9c6b1f 65%,#9c6b1f 100%)"}}/>
-              <div style={{maxWidth:1180,margin:"0 auto",padding:"24px 16px 22px",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
+              <div style={{padding:"24px 16px 22px",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
                 <div style={{width:"100%",marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:"uppercase",color:"#8ba190"}}>Resumo da safra</div>
                   <div style={{fontFamily:"Sora,ui-sans-serif,sans-serif",fontSize:20,fontWeight:700,color:"#f3faf5",letterSpacing:-0.2}}>
@@ -3837,7 +3837,7 @@ function App() {
               </div>
             </div>
 
-            <div style={{maxWidth:1180,margin:"0 auto",padding:"16px"}}>
+            <div style={{padding:"16px"}}>
               <div style={{...EYEBROW,marginBottom:12,marginTop:10}}>Área plantada por cultura</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,marginBottom:22}}>
                 {[{titulo:"Verão", culturas:culturasVerao, total:totalVerao, cores:CULTURE_COLORS_VERAO, swatch:"#1a5c2e"},
@@ -4114,7 +4114,7 @@ function App() {
         const totalArea = summary.filter(c=>c.ativo).reduce((s,c)=>s+c.area,0);
 
         return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
               <div style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Área Total</div>
@@ -4168,7 +4168,7 @@ function App() {
         const faltantes = planData.filter(l=>l.lote && l.lote.trim() && !jaTem.has(l.id));
         const corTab = colheitaTipoTab==="verao" ? "#1a5c2e" : "#5c4a00";
         return (
-        <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+        <div style={{padding:"16px"}}>
           <div style={{display:"flex",gap:6,marginBottom:14}}>
             {[["verao","🌱 Verão"],["inv","🌾 Inverno"]].map(([t,l])=>(
               <button key={t} onClick={()=>setColheitaTipoTab(t)}
@@ -4290,7 +4290,7 @@ function App() {
         const totalQtd = filtradas.reduce((s,v)=>s+(v.qtd||0),0);
         const cc = CULTURE_COLORS_VERAO[vendaCulturaTab] || CULTURE_COLORS_INVERNO[vendaCulturaTab] || {bg:"#1565C0"};
         return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
               {CULTS.map(c=>(
                 <button key={c} onClick={()=>{setVendaCulturaTab(c);setVendaFiltroSafra("Todas");}}
@@ -4404,7 +4404,7 @@ function App() {
         const resultadoRealizado = financeiroRecords.filter(o=>o.status==="Liquidada").reduce((s,o)=>s+(o.resultado||0),0);
         const cor = "#4527A0";
         return (
-          <div style={{maxWidth:1300,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:14}}>
               <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Operações abertas</div>
@@ -4547,7 +4547,7 @@ function App() {
         }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
 
         if (!comissaoSafraSel) return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
               <div style={{fontSize:13,color:"#555"}}>Gerente:</div>
               {editingGerenteNome ? (
@@ -4590,7 +4590,7 @@ function App() {
         const saldo = totalComissao - totalAdiant;
 
         return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
               <span onClick={()=>setComissaoSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#8d6e63"}}>🤝 Comissões — {gerenteNome}</span>
               <span style={{color:"#bbb"}}>›</span>
@@ -4741,7 +4741,7 @@ function App() {
         }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
 
         if (!chuvaSafraSel) return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{fontSize:12,color:"#888",marginBottom:12}}>Safra agrícola: agosto a julho do ano seguinte.</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:16}}>
               {chuvaSafrasList.map(s=>(
@@ -4780,7 +4780,7 @@ function App() {
         const mesesList = Object.values(porMes).sort((a,b)=>a.sortKey-b.sortKey);
 
         return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
               <span onClick={()=>setChuvaSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#0288D1"}}>🌧️ Pluviometria</span>
               <span style={{color:"#bbb"}}>›</span>
@@ -4893,7 +4893,7 @@ function App() {
         ).sort((a,b)=>(a.nome||"").localeCompare(b.nome||""));
 
         return (
-          <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
               <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{fontSize:11,color:"#888"}}>Peças cadastradas</div>
@@ -5029,7 +5029,7 @@ function App() {
         const formCardSt = {background:"#fff",borderRadius:6,padding:20,marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"};
 
         return (
-          <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
               {SUBTABS_INSUMOS.map(([id,label])=>(
                 <button key={id} onClick={()=>setInsumoSubTab(id)}
@@ -6585,7 +6585,7 @@ function App() {
           COMPRAS
       ══════════════════════════════════════════════════════ */}
       {appView==="compras" && (
-        <div style={{maxWidth:1200,margin:"0 auto",padding:"16px"}}>
+        <div style={{padding:"16px"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
             <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
               <div style={{fontSize:11,color:"#888"}}>Total comprado (histórico)</div>
@@ -6898,7 +6898,7 @@ function App() {
         }
         const TABS = [["adub","🌱 Adubação",fornecedoresAdub],["ins","💊 Insumos",fornecedoresIns],["sem","🌾 Sementes",sementesFornecedores]];
         return (
-          <div style={{maxWidth:900,margin:"0 auto",padding:"16px"}}>
+          <div style={{padding:"16px"}}>
             <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:4}}>👥 Cadastro de Fornecedores</div>
             <div style={{fontSize:12,color:"#667",marginBottom:16}}>Gerencie os fornecedores de cada cotação. Cada um tem um token único para acessar sem precisar digitar o nome exato.</div>
             <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -6960,7 +6960,7 @@ function App() {
           SAFRAS
       ══════════════════════════════════════════════════════ */}
       {appView==="safras" && (
-        <div style={{maxWidth:900,margin:"0 auto",padding:"20px 16px"}}>
+        <div style={{padding:"20px 16px"}}>
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:20}}>
             <div style={{fontSize:18,fontWeight:800,color:"#1a3a1a",marginBottom:4}}>Safra Ativa</div>
             {editingSafraNome ? (
@@ -7010,7 +7010,7 @@ function App() {
           BACKUP
       ══════════════════════════════════════════════════════ */}
       {appView==="backup" && (
-        <div style={{maxWidth:600,margin:"0 auto",padding:"20px 16px"}}>
+        <div style={{padding:"20px 16px"}}>
           <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:16}}>💾 Backup dos Dados</div>
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
             <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>📤 Exportar Backup</div>
