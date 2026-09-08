@@ -3906,7 +3906,7 @@ function App() {
           PROGRAMAÇÃO
       ══════════════════════════════════════════════════════ */}
       {(appView==="prog_verao"||appView==="prog_inv") && (
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+        <div style={{padding:"16px 12px"}}>
           {/* Culture header */}
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
