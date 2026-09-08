@@ -2327,10 +2327,18 @@ function App() {
     const cat = data[activeCulture].categories[catIdx];
     const pAtual = cat.products[prodIdx];
     const novoValor = ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
+    // Clicar numa célula e sair sem mudar nada não deve reavaliar/relançar nada em Compras —
+    // evita disparar o auto-lançamento só por reabrir e fechar uma célula à toa.
+    if (novoValor === pAtual[field]) return;
     const p = { ...pAtual, [field]: novoValor };
     // Sementes não tem mais dose/área alimentando quantidade — só lança em Compras sozinho se já
-    // tiver uma Quantidade digitada (senão o lançamento sairia com quantidade zerada).
-    const fechado = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim()
+    // tiver uma Quantidade digitada (senão o lançamento sairia com quantidade zerada). Só avalia
+    // "fechado" quando o campo editado agora é um dos que efetivamente completa esse estado —
+    // editar outro campo (ex: Obs, Fase, Área) num produto que já ficou "fechado" por outro
+    // motivo (ex: preço/quantidade vieram de "Atualizar Custo na Programação", que já lê de
+    // Compras) não deve criar um lançamento duplicado em Compras.
+    const camposQueFecham = cat.name==="Sementes" ? ["preco_unit","revenda","vencimento","qtd"] : ["preco_unit","revenda","vencimento"];
+    const fechado = camposQueFecham.includes(field) && p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim()
       && (cat.name!=="Sementes" || (p.qtd||0)>0);
     let novoCompraId = null, compraNova = null, compraSync = null;
     if (fechado) {
