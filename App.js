@@ -1299,7 +1299,7 @@ const TS_SAFRINHA_INICIAL = [
   {id:"tsi4",cultura:"Sorgo",variedade:"K200 / 1G100",dose100kg:"Beneficiado",kitSulco:"",obs:"K200 Pivots 40/80/57 - 15kg sem/ha"},
 ];
 
-function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onEnviarMedias, obs, setObs, obs2, setObs2}) {
+function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, onGerarCotacaoAdub, onEnviarMedias, obs, setObs, obs2, setObs2}) {
   const isVerao = tipo === "verao";
   const cor = isVerao ? "#1a5c2e" : "#5c4a00";
   const culturaOpts = isVerao
@@ -1307,6 +1307,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     : ["Milho","Feijão Irrigado","Trigo","Sorgo","Milho Irrigado","Milho Semente","Milho Sequeiro"];
   const total = data.reduce((s,r)=>s+(r.area||0),0);
   const [genMsg, setGenMsg] = useState(null);
+  const [genAdubMsg, setGenAdubMsg] = useState(null);
   const [enviarMsg, setEnviarMsg] = useState(null);
 
   function upd(i, field, val) {
@@ -1336,6 +1337,11 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     const n = onGerarCotacao(data, isVerao);
     setGenMsg(n);
     setTimeout(()=>setGenMsg(null), 4000);
+  }
+  function gerarCotacaoAdub() {
+    const n = onGerarCotacaoAdub(mediasPorCultura, isVerao);
+    setGenAdubMsg(n);
+    setTimeout(()=>setGenAdubMsg(null), 4000);
   }
   const cols = isVerao
     ? [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
@@ -1499,9 +1505,18 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
         <div className="print-hide" style={{background:"#fff",borderRadius:10,padding:14,marginTop:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:12,fontWeight:700,color:cor,textTransform:"uppercase",letterSpacing:1}}>⚖️ Taxa média de Adubação{isVerao?" e KCl":", KCl e N Cobertura"} (kg/ha) por cultura</div>
-            <button onClick={()=>{ const rel = onEnviarMedias(mediasPorCultura, isVerao); setEnviarMsg(rel); }}
-              style={{padding:"6px 12px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📤 Enviar médias pra Programação</button>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={gerarCotacaoAdub} title="Manda a taxa média planejada pra Cotação de Adubação, antes de comprar nada"
+                style={{padding:"6px 12px",background:"none",border:"1px dashed "+cor,color:cor,borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação de Adubos</button>
+              <button onClick={()=>{ const rel = onEnviarMedias(mediasPorCultura, isVerao); setEnviarMsg(rel); }}
+                style={{padding:"6px 12px",background:cor,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📤 Enviar médias pra Programação</button>
+            </div>
           </div>
+          {genAdubMsg!==null && (
+            <div style={{padding:"8px 14px",background:"#e8f5e9",color:"#2e7d32",borderRadius:6,fontSize:12,marginBottom:10}}>
+              ✓ {genAdubMsg>0 ? `${genAdubMsg} produto(s) novo(s) enviado(s) pra Cotação de Adubação.` : "Nenhum produto novo — já estavam todos na Cotação de Adubação."}
+            </div>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
             {mediasPorCultura.map(m=>{
               const cc = cultureColors[m.cultura] || { bg:cor, light:"#f5f5f5" };
@@ -2500,6 +2515,30 @@ function App() {
     const atual = isVerao ? cotSemProdVerao : cotSemProdInv;
     const merged = mergeNovosProdutos(atual, derivados);
     (isVerao ? setCotSemProdVerao : setCotSemProdInv)(merged);
+    return merged.length - atual.length;
+  }
+  // Gera cotação de Adubação a partir da taxa média planejada por cultura (Planejamento de
+  // Campo) — pra cotar os adubos ANTES de comprar, no início da safra, sem precisar já ter
+  // nada lançado na Programação. Nome do produto base vem do texto do Planejamento (ex: "Yara
+  // Basa"); KCl e Ureia entram com nome fixo, já que são sempre o mesmo produto. Quantidade em
+  // toneladas (dose média × área), somada entre culturas que usem o mesmo produto.
+  function gerarCotacaoAdubacaoDoPlano(medias, isVerao) {
+    const map = {};
+    function add(nome, qtdTon) {
+      if (!nome || !(qtdTon>0)) return;
+      const key = nome.trim().toLowerCase();
+      if (map[key]) { map[key].qtd_total += qtdTon; }
+      else { map[key] = { nome:nome.trim(), unidade:"TN", qtd_total:qtdTon, categoria:"Adubação", preco_ref:0, ingrediente_ativo:"" }; }
+    }
+    medias.filter(m => !normalizarNome(m.cultura).includes("semente")).forEach(({area, mediaAdub, mediaKcl, mediaNCob, nomeAdub}) => {
+      add(nomeAdub, (mediaAdub/1000)*area);
+      add("KCl", (mediaKcl/1000)*area);
+      if (mediaNCob!=null) add("Ureia", (mediaNCob/1000)*area);
+    });
+    const derivados = Object.values(map);
+    const atual = isVerao ? cotAdubProdVerao : cotAdubProdInv;
+    const merged = mergeNovosProdutos(atual, derivados);
+    (isVerao ? setCotAdubProdVerao : setCotAdubProdInv)(merged);
     return merged.length - atual.length;
   }
 
@@ -4072,8 +4111,8 @@ function App() {
       {/* ══════════════════════════════════════════════════════
           PLANEJAMENTO DE CAMPO
       ══════════════════════════════════════════════════════ */}
-      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
-      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
+      {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
+      {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
 
