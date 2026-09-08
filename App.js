@@ -314,6 +314,13 @@ const PROG_COL_W = {
   "Produto":140,"I.A.":80,"Dose":45,"Kg semente/ha":100,"Área(ha)":65,"Qtd":45,"Unid.":48,
   "Fase":115,"Obs":170,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
 };
+// Largura da tabela de produtos da Programação com TODAS as colunas possíveis (I.A., Dose e
+// Kg semente/ha juntas, mesmo que nenhuma categoria mostre as três ao mesmo tempo) — usada como
+// largura fixa em toda categoria, pra nenhuma tabela ficar mais estreita que as outras (a
+// diferença de largura, quando a categoria não usa alguma dessas colunas, é absorvida pela
+// coluna Obs, que só cresce em vez de sobrar espaço vazio na caixa).
+const PROG_MAX_TABLE_WIDTH = ["Produto","I.A.","Dose","Kg semente/ha","Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""]
+  .reduce((s,h)=>s+PROG_COL_W[h],0);
 // Categorias de Insumos/Defensivos (tudo que não é Adubação nem Sementes) e as que mostram
 // coluna de Ingrediente Ativo na Cotação — só faz sentido pra defensivos de verdade.
 const CATEGORIAS_INSUMOS = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas","Foliares","TS","Kit Sulco","Óleos / Adjuvantes"];
@@ -3962,8 +3969,11 @@ function App() {
             const addRowFields = ["produto", ...(showIA?["ingrediente_ativo"]:[]), ...(isSementes?[]:["dose"]), ...(isTS?["kgHa"]:[]), "area",null,null,"fase","obs","preco_unit",null,null,null,"revenda","vencimento"];
             // table-layout:fixed obriga cada tabela a respeitar exatamente as larguras de PROG_COL_W,
             // em vez de recalcular por conta própria conforme o conteúdo — é o que garante que a
-            // mesma coluna (ex: Venc.) fique na mesma posição em todas as categorias.
+            // mesma coluna (ex: Venc.) fique na mesma posição em todas as categorias. Todas as
+            // tabelas usam a mesma largura total (PROG_MAX_TABLE_WIDTH) — a diferença de quem
+            // não tem I.A./Dose/Kg semente/ha entra na coluna Obs, que só cresce.
             const progTableWidth = progHeaders.reduce((s,h)=>s+(PROG_COL_W[h]||0),0);
+            const obsColW = PROG_COL_W["Obs"] + (PROG_MAX_TABLE_WIDTH - progTableWidth);
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
                 <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
@@ -3979,11 +3989,11 @@ function App() {
                 </div>
                 {isOpen&&(
                   <div style={{overflowX:"auto"}}>
-                    <table style={{borderCollapse:"collapse",fontSize:11,tableLayout:"fixed",width:progTableWidth}}>
+                    <table style={{borderCollapse:"collapse",fontSize:11,tableLayout:"fixed",width:PROG_MAX_TABLE_WIDTH}}>
                       <thead>
                         <tr style={{background:colors.light}}>
                           {progHeaders.map(h=>(
-                            <th key={h} style={{padding:"6px 8px",width:PROG_COL_W[h],textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
+                            <th key={h} style={{padding:"6px 8px",width:h==="Obs"?obsColW:PROG_COL_W[h],textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -4015,7 +4025,7 @@ function App() {
                                 </select>
                               </td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Fase"],textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
-                              <td style={{padding:"3px 4px",width:PROG_COL_W["Obs"],textAlign:"center",color:"#888",overflowWrap:"break-word",verticalAlign:"middle"}}><ObsCell catIdx={catIdx} prodIdx={prodIdx} value={p.obs}/></td>
+                              <td style={{padding:"3px 4px",width:obsColW,textAlign:"center",color:"#888",overflowWrap:"break-word",verticalAlign:"middle"}}><ObsCell catIdx={catIdx} prodIdx={prodIdx} value={p.obs}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Ref.(R$)"],textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Compra(R$)"],textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Total"],textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</td>
