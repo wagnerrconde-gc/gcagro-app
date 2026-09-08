@@ -2307,10 +2307,15 @@ function App() {
   }
   function addProduct(catIdx) {
     if (!newProd.produto.trim()) return;
+    // Preço digitado ao adicionar manualmente é o preço já pago (preço de compra), não uma
+    // referência — lança em preco_unit E preco_compra direto, já marcando como "comprado"
+    // (mesma convenção usada em Compras/Fechar Cotação). Sem preço ainda (0), fica só como
+    // referência pendente, sem marcar como comprado.
+    const preco = parseFloat(newProd.preco_unit)||0;
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d));
       nd[activeCulture].categories[catIdx].products.push({...newProd,
         dose:parseFloat(newProd.dose)||0, kgHa:parseFloat(newProd.kgHa)||0, area:parseFloat(newProd.area)||nd[activeCulture].area,
-        qtd:0, preco_unit:parseFloat(newProd.preco_unit)||0, preco_compra:null, fornecedor_compra:null});
+        qtd:0, preco_unit:preco, preco_compra:preco>0?preco:null, fornecedor_compra:null});
       return nd; });
     setNewProd({produto:"",dose:"",kgHa:"",area:"",fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});
     setAddingTo(null);
