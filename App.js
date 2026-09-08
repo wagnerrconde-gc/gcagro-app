@@ -2542,9 +2542,11 @@ function App() {
     return relatorio;
   }
   // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
-  // Compras — soma o valor pago por produto e divide pela quantidade comprada. Pra Sementes,
-  // também soma a Quantidade (que não vem mais de dose × área, é lançada direto no produto e
-  // somada aqui a partir das compras casadas por nome).
+  // Compras — soma o valor pago por produto e divide pela quantidade comprada. Pra Sementes, a
+  // compra normalmente vem com o nome da variedade (ex: "TMG 7062"), não da cultura — então em
+  // vez de casar produto por produto, classifica cada compra por cultura (classificarCulturaSemente,
+  // a mesma classificação já usada na prévia "Média de preço de sementes por cultura" em Compras)
+  // e agrupa o preço médio e a Quantidade total no(s) produto(s) de Sementes daquela cultura.
   // categoriaCompra: "Adubação Verão/Inverno", "Sementes Verão/Inverno" ou "Químicos Verão/Inverno".
   function atualizarCustoPorCategoria(categoriaCompra) {
     const isVerao = categoriaCompra.includes("Verão");
@@ -2553,18 +2555,29 @@ function App() {
     const dAtual = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
     const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra);
+    const culturasComArea = isSementes ? Object.keys(dAtual).filter(c=>(dAtual[c]?.area||0)>0) : null;
     const grupos = {};
     recs.forEach(r=>{
-      const key = normalizarNome(r.produto);
-      if (!key || !r.quantidade) return;
-      if (!grupos[key]) grupos[key] = { produto:r.produto.trim(), totalPago:0, totalQtd:0, fornecedores:new Set() };
+      if (!r.quantidade) return;
+      let key, label;
+      if (isSementes) {
+        const cultura = classificarCulturaSemente(r.produto, culturasComArea);
+        if (!cultura) return;
+        key = normalizarNome(cultura); label = cultura;
+      } else {
+        key = normalizarNome(r.produto);
+        if (!key) return;
+        label = r.produto.trim();
+      }
+      if (!grupos[key]) grupos[key] = { produto:label, totalPago:0, totalQtd:0, fornecedores:new Set() };
       grupos[key].totalPago += r.valorTotal||0;
       grupos[key].totalQtd += r.quantidade||0;
       if (r.fornecedor) grupos[key].fornecedores.add(r.fornecedor);
     });
     const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
     if (!medias.length) return [];
-    function procuraMatch(p) {
+    function procuraMatch(p, culturaNome) {
+      if (isSementes) return medias.find(m => normalizarNome(m.produto)===normalizarNome(culturaNome));
       const nomeKey = normalizarNome(p.produto);
       const iaKey = normalizarNome(p.ingrediente_ativo);
       return medias.find(m => normalizarNome(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
@@ -2576,19 +2589,19 @@ function App() {
     // síncrona — o updater do setState não roda de forma síncrona, então não dá pra confiar
     // num valor só preenchido lá dentro pra decidir o que devolver logo em seguida.
     const atingidos = new Set();
-    Object.values(dAtual).forEach(cultura => {
+    Object.entries(dAtual).forEach(([culturaNome, cultura]) => {
       (cultura.categories||[]).forEach(cat => {
         if (!relevante(cat)) return;
-        (cat.products||[]).forEach(p => { const match = procuraMatch(p); if (match) atingidos.add(match.produto); });
+        (cat.products||[]).forEach(p => { const match = procuraMatch(p, culturaNome); if (match) atingidos.add(match.produto); });
       });
     });
     setD(d => {
       const nd = JSON.parse(JSON.stringify(d));
-      Object.values(nd).forEach(cultura => {
+      Object.entries(nd).forEach(([culturaNome, cultura]) => {
         (cultura.categories||[]).forEach(cat => {
           if (!relevante(cat)) return;
           (cat.products||[]).forEach(p => {
-            const match = procuraMatch(p);
+            const match = procuraMatch(p, culturaNome);
             if (match) {
               p.preco_unit = match.precoMedio;
               p.preco_compra = match.precoMedio;
