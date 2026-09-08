@@ -2330,16 +2330,14 @@ function App() {
     setData(d=>{
       const nd=JSON.parse(JSON.stringify(d));
       const cultura = nd[activeCulture];
-      const areaAntiga = cultura.area;
       cultura.area = novaArea;
-      // Acompanha a área de cada produto (Adubação, Sementes, TS, Kit Sulco, Foliares,
-      // Fungicidas, Inseticidas, Adjuvantes...) junto com a área total da cultura — mas só
-      // dos que ainda estavam seguindo a área total (área igual à antiga); um produto que já
-      // foi editado pra uma área diferente (ex: aplicado só numa parte da área) fica intocado.
-      // Tolerância de 0,01 ha em vez de igualdade exata: área salva com um resquício de
-      // arredondamento de ponto flutuante (ex: 957.0000000001) não deve travar a cascata.
+      // Editar a área total no cabeçalho força a mesma área em TODOS os produtos de TODAS as
+      // categorias (Adubação, Sementes, TS, Kit Sulco, Herbicidas, Foliares, Fungicidas,
+      // Inseticidas, Óleos/Adjuvantes...) — mesmo os que já estavam com uma área diferente
+      // (ex: aplicação em dobro ou parcial); esses precisam ser reajustados manualmente nesta
+      // linha de novo depois, se for o caso.
       (cultura.categories||[]).forEach(cat => {
-        (cat.products||[]).forEach(p => { if (Math.abs((p.area||0)-areaAntiga)<0.01) p.area = novaArea; });
+        (cat.products||[]).forEach(p => { p.area = novaArea; });
       });
       return nd;
     });
