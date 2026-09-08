@@ -312,7 +312,7 @@ const CAT_ICONS = {
 // verticalmente entre si (ex: "Venc." de Sementes numa posição, "Venc." de TS em outra).
 const PROG_COL_W = {
   "Produto":140,"I.A.":80,"Dose":45,"Kg semente/ha":100,"Área(ha)":65,"Qtd":45,"Unid.":48,
-  "Fase":115,"Obs":170,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
+  "Fase":115,"Obs":85,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
 };
 // Largura da tabela de produtos da Programação com TODAS as colunas possíveis (I.A., Dose e
 // Kg semente/ha juntas, mesmo que nenhuma categoria mostre as três ao mesmo tempo) — usada como
