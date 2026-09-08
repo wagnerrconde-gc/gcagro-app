@@ -400,22 +400,27 @@ function calcProdTotal(p, cat, culture) {
   if (cat && cat.name === "Sementes") return (p.qtd||0) * p.preco_unit;
   return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
 }
-// Extrai a dose numérica (kg/ha) de um texto livre do Planejamento de Campo, tipo
-// "Yara Basa 128 kg" ou "241 kg" — pega o primeiro número que aparecer no texto.
-function extrairDoseKg(texto) {
-  const m = String(texto||"").match(/(\d+(?:[.,]\d+)?)/);
-  return m ? parseFloat(m[1].replace(",",".")) : 0;
-}
-// Extrai o nome do produto (a parte antes do número) do mesmo texto livre do Planejamento,
-// tipo "Yara Basa 128 kg" -> "Yara Basa" — usado pra manter o nome do produto base de
-// Adubação na Programação igual ao que está escrito no Planejamento, em vez de um nome
-// antigo que sobrou lá.
-function extrairNomeAdubacao(texto) {
+// Extrai nome + dose (kg/ha) de um texto livre do Planejamento de Campo, tipo "Yara Basa 128 kg",
+// "5-37-00 150 kg" (fórmula NPK com números e hífen no nome, tipo adubo formulado) ou só "241 kg"
+// (sem nome). A dose é o primeiro número "solto" do texto — um token que é só dígitos (com vírgula
+// ou ponto decimal opcional), sem hífen grudado — pra não confundir com um nome de fórmula tipo
+// "5-37-00", que também começa com dígito mas não é a dose. O nome é tudo antes desse número.
+function parseAdubacaoTexto(texto) {
   const t = String(texto||"").trim();
-  const m = t.match(/\d/);
-  if (!m) return "";
-  return t.slice(0, m.index).trim();
+  if (!t) return { nome:"", dose:0 };
+  const tokens = t.split(/\s+/);
+  for (let i=0;i<tokens.length;i++) {
+    if (/^\d+(?:[.,]\d+)?$/.test(tokens[i])) {
+      return { nome: tokens.slice(0,i).join(" ").trim(), dose: parseFloat(tokens[i].replace(",",".")) };
+    }
+  }
+  return { nome:"", dose:0 };
 }
+function extrairDoseKg(texto) { return parseAdubacaoTexto(texto).dose; }
+// Nome do produto (a parte antes da dose) do mesmo texto — usado pra manter o nome do produto
+// base de Adubação na Programação igual ao que está escrito no Planejamento, em vez de um nome
+// antigo que sobrou lá.
+function extrairNomeAdubacao(texto) { return parseAdubacaoTexto(texto).nome; }
 // Quantidade de sementes (bags/sacos) a partir da população (sementes/metro) e área do lote.
 // Fórmula do usuário: sementes totais = população × 20000 × área; bag de soja = 5.000.000 sementes; saco de milho = 60.000 sementes.
 const SEMENTES_POR_UNIDADE = { bag: 5000000, saco: 60000 };
