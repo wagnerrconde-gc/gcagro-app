@@ -311,8 +311,8 @@ const CAT_ICONS = {
 // cada coluna de forma independente (auto, baseada no próprio conteúdo) e ficam desalinhadas
 // verticalmente entre si (ex: "Venc." de Sementes numa posição, "Venc." de TS em outra).
 const PROG_COL_W = {
-  "Produto":140,"I.A.":110,"Dose":60,"Kg semente/ha":100,"Área(ha)":65,"Qtd":55,"Unid.":55,
-  "Fase":75,"Obs":110,"Ref.(R$)":90,"Compra(R$)":100,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
+  "Produto":140,"I.A.":80,"Dose":45,"Kg semente/ha":100,"Área(ha)":65,"Qtd":45,"Unid.":48,
+  "Fase":115,"Obs":170,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
 };
 // Categorias de Insumos/Defensivos (tudo que não é Adubação nem Sementes) e as que mostram
 // coluna de Ingrediente Ativo na Cotação — só faz sentido pra defensivos de verdade.
@@ -3340,6 +3340,21 @@ function App() {
     return <span onClick={()=>setEditingCell({catIdx,prodIdx,field})} style={{cursor:"pointer",display:"block",minWidth:30}} title="Clique para editar">{value||<span style={{color:"#ccc"}}>—</span>}<span style={{fontSize:8,color:"#bbb",marginLeft:2}}>✏</span></span>;
   };
 
+  // Observação da Programação: textarea sempre visível (não precisa clicar pra ler/editar) que
+  // cresce sozinha em altura conforme o texto quebra em mais linhas — em vez de um campo de uma
+  // linha só, que escondia o texto comprido rolando dentro do campo.
+  const ObsCell = ({catIdx,prodIdx,value}) => {
+    const ref = useRef(null);
+    const ajustarAltura = el => { if (el) { el.style.height="auto"; el.style.height=el.scrollHeight+"px"; } };
+    useEffect(()=>{ ajustarAltura(ref.current); });
+    return (
+      <textarea ref={ref} defaultValue={value||""} rows={1}
+        onInput={e=>ajustarAltura(e.target)}
+        onBlur={e=>updateField(catIdx,prodIdx,"obs",e.target.value)}
+        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid transparent",borderRadius:4,background:"transparent",resize:"none",overflow:"hidden",fontFamily:"inherit",color:"#888",textAlign:"center",display:"block"}}/>
+    );
+  };
+
   // ── PDF print helper ──
   function printView(title) {
     window.print();
@@ -4000,7 +4015,7 @@ function App() {
                                 </select>
                               </td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Fase"],textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
-                              <td style={{padding:"6px 8px",width:PROG_COL_W["Obs"],textAlign:"center",color:"#888",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="obs" type="text" value={p.obs}/></td>
+                              <td style={{padding:"3px 4px",width:PROG_COL_W["Obs"],textAlign:"center",color:"#888",overflowWrap:"break-word",verticalAlign:"middle"}}><ObsCell catIdx={catIdx} prodIdx={prodIdx} value={p.obs}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Ref.(R$)"],textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Compra(R$)"],textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
                               <td style={{padding:"6px 8px",width:PROG_COL_W["Total"],textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</td>
