@@ -406,6 +406,16 @@ function extrairDoseKg(texto) {
   const m = String(texto||"").match(/(\d+(?:[.,]\d+)?)/);
   return m ? parseFloat(m[1].replace(",",".")) : 0;
 }
+// Extrai o nome do produto (a parte antes do número) do mesmo texto livre do Planejamento,
+// tipo "Yara Basa 128 kg" -> "Yara Basa" — usado pra manter o nome do produto base de
+// Adubação na Programação igual ao que está escrito no Planejamento, em vez de um nome
+// antigo que sobrou lá.
+function extrairNomeAdubacao(texto) {
+  const t = String(texto||"").trim();
+  const m = t.match(/\d/);
+  if (!m) return "";
+  return t.slice(0, m.index).trim();
+}
 // Quantidade de sementes (bags/sacos) a partir da população (sementes/metro) e área do lote.
 // Fórmula do usuário: sementes totais = população × 20000 × área; bag de soja = 5.000.000 sementes; saco de milho = 60.000 sementes.
 const SEMENTES_POR_UNIDADE = { bag: 5000000, saco: 60000 };
@@ -1347,16 +1357,19 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
       const vNorm = normalizarNome(r.variedade);
       if (vNorm.includes("campo") && vNorm.includes("semente")) return;
       const area = r.area||0;
-      if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0, nCobKg:0 };
+      if (!grupos[c]) grupos[c] = { area:0, adubKg:0, kclKg:0, nCobKg:0, nomeAdub:"" };
       grupos[c].area += area;
       grupos[c].adubKg += extrairDoseKg(r[campoAdubacao]) * area;
       grupos[c].kclKg += extrairDoseKg(r[campoKcl]) * area;
       if (campoNCob) grupos[c].nCobKg += extrairDoseKg(r[campoNCob]) * area;
+      // Nome do produto de Adubação, lido do primeiro lote que tiver um escrito — pra usar
+      // como nome do produto base na Programação, em vez de manter um nome antigo lá.
+      if (!grupos[c].nomeAdub) { const n = extrairNomeAdubacao(r[campoAdubacao]); if (n) grupos[c].nomeAdub = n; }
     });
     return Object.entries(grupos)
       .filter(([,g])=>g.area>0)
       .map(([cultura,g]) => ({ cultura, area:g.area, mediaAdub:g.adubKg/g.area, mediaKcl:g.kclKg/g.area,
-        mediaNCob: campoNCob ? g.nCobKg/g.area : null }));
+        mediaNCob: campoNCob ? g.nCobKg/g.area : null, nomeAdub:g.nomeAdub }));
   }, [data, campoAdubacao, campoKcl, campoNCob]);
 
   // ── Importar planilha (Lote,Texto) pra preencher um campo agronômico (Adubação, KCl...)
@@ -2486,10 +2499,11 @@ function App() {
   }
 
   // Manda a taxa média de Adubação/KCl/N-Cobertura calculada no Planejamento de Campo pra
-  // Programação (Verão ou Inverno): dose do 1º produto da categoria "Adubação" recebe a média
-  // de Adubação; o produto cujo nome contém "kcl" recebe a média de KCl; no Inverno, o produto
-  // cujo nome contém "ureia" recebe a média de N Cobertura. Converte kg/ha → t/ha quando a
-  // unidade do produto for "Tn".
+  // Programação (Verão ou Inverno): dose (já em toneladas/ha) do 1º produto da categoria
+  // "Adubação" recebe a média de Adubação, e o NOME desse produto é atualizado pro que estiver
+  // escrito no Planejamento (ex: "Yara Basa"), substituindo um nome antigo que tenha ficado na
+  // Programação (ex: "Map"); o produto cujo nome contém "kcl" recebe a média de KCl; no
+  // Inverno, o produto cujo nome contém "ureia" recebe a média de N Cobertura.
   function enviarMediasParaProgramacao(medias, isVerao) {
     const dProg = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
@@ -2497,7 +2511,7 @@ function App() {
     const plano = [];
     // "Milho Semente" é uma cultura própria na Programação de Inverno (produção de semente, não
     // comercial) — não recebe a média calculada em cima do milho comercial.
-    medias.filter(m => !normalizarNome(m.cultura).includes("semente")).forEach(({cultura, mediaAdub, mediaKcl, mediaNCob}) => {
+    medias.filter(m => !normalizarNome(m.cultura).includes("semente")).forEach(({cultura, mediaAdub, mediaKcl, mediaNCob, nomeAdub}) => {
       const c = dProg[cultura];
       if (!c) { relatorio.push(`⚠ ${cultura}: cultura não encontrada na Programação.`); return; }
       const catIdx = (c.categories||[]).findIndex(cat=>cat.name==="Adubação");
@@ -2511,7 +2525,11 @@ function App() {
       // Planejamento (kg/ha) vai pra Programação já em toneladas/ha, e força a unidade do
       // produto pra "Tn", pra bater com o preço/ton lançado em Compras.
       item.baseDose = mediaAdub/1000;
-      partes.push(`Adubação → ${base.produto} = ${fmtN(item.baseDose,3)}Tn`);
+      // O nome do produto base também vem do que está escrito no Planejamento (ex: "Yara Basa"),
+      // substituindo um nome antigo que tenha sobrado na Programação (ex: "Map").
+      const nomeFinal = nomeAdub && normalizarNome(nomeAdub)!==normalizarNome(base.produto) ? nomeAdub : base.produto;
+      item.baseNome = nomeFinal;
+      partes.push(`Adubação → ${nomeFinal} = ${fmtN(item.baseDose,3)}Tn`);
       const kclIdx = cat.products.findIndex(p=>normalizarNome(p.produto).includes("kcl"));
       if (kclIdx>=0) {
         item.kclIdx = kclIdx;
@@ -2536,6 +2554,7 @@ function App() {
           const cat = nd[item.cultura].categories[item.catIdx];
           cat.products[item.baseIdx].dose = item.baseDose;
           cat.products[item.baseIdx].unidade = "Tn";
+          cat.products[item.baseIdx].produto = item.baseNome;
           if (item.kclIdx!=null) { cat.products[item.kclIdx].dose = item.kclDose; cat.products[item.kclIdx].unidade = "Tn"; }
           if (item.ureiaIdx!=null) { cat.products[item.ureiaIdx].dose = item.ureiaDose; cat.products[item.ureiaIdx].unidade = "Tn"; }
         });
