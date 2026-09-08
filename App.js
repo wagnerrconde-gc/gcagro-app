@@ -2338,50 +2338,20 @@ function App() {
     });
     setShowImportModal(false);
   }
+  // Só atualiza o campo do produto na Programação — nunca cria nem atualiza nada em Compras
+  // sozinho. O fluxo de verdade é sempre Planejamento/Compras alimentando a Programação (via
+  // "Atualizar Custo na Programação" e "Fechar Cotação"), nunca o contrário: editar Preço,
+  // Revenda ou Vencimento direto num produto aqui é só informação de referência.
   function updateField(catIdx, prodIdx, field, value) {
-    // Quando o produto fica "fechado" (preço + revenda + vencimento preenchidos, direto na
-    // Programação, sem passar pela Cotação) já lança/atualiza o registro correspondente em
-    // Compras sozinho — do jeito que o Fechar Cotação já faz, só que pra quem compra fora do
-    // app (ex: fechando com um grupo de compras) e só digita o resultado aqui.
-    // Calculado fora do setData: o updater do setState não roda de forma síncrona, então não
-    // dá pra confiar em variável capturada de dentro dele pra decidir o que fazer em seguida.
     const cat = data[activeCulture].categories[catIdx];
     const pAtual = cat.products[prodIdx];
     const novoValor = ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
-    // Clicar numa célula e sair sem mudar nada não deve reavaliar/relançar nada em Compras —
-    // evita disparar o auto-lançamento só por reabrir e fechar uma célula à toa.
     if (novoValor === pAtual[field]) return;
-    const p = { ...pAtual, [field]: novoValor };
-    // Sementes não tem mais dose/área alimentando quantidade — só lança em Compras sozinho se já
-    // tiver uma Quantidade digitada (senão o lançamento sairia com quantidade zerada). Só avalia
-    // "fechado" quando o campo editado agora é um dos que efetivamente completa esse estado —
-    // editar outro campo (ex: Obs, Fase, Área) num produto que já ficou "fechado" por outro
-    // motivo (ex: preço/quantidade vieram de "Atualizar Custo na Programação", que já lê de
-    // Compras) não deve criar um lançamento duplicado em Compras.
-    const camposQueFecham = cat.name==="Sementes" ? ["preco_unit","revenda","vencimento","qtd"] : ["preco_unit","revenda","vencimento"];
-    const fechado = camposQueFecham.includes(field) && p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim()
-      && (cat.name!=="Sementes" || (p.qtd||0)>0);
-    let novoCompraId = null, compraNova = null, compraSync = null;
-    if (fechado) {
-      const qtd = cat.name==="Sementes" ? (p.qtd||0) : (p.dose>0 ? p.dose*p.area : p.area);
-      const unidadeCompra = p.unidade==="Tn"?"TN":p.unidade==="Lt"?"L":(p.unidade||"kg");
-      const categoriaCompra = cat.name==="Adubação" ? "Adubação "+(isVerao?"Verão":"Inverno")
-                            : cat.name==="Sementes" ? "Sementes "+(isVerao?"Verão":"Inverno")
-                            : "Químicos "+(isVerao?"Verão":"Inverno");
-      const campos = { produto:p.produto, unidade:unidadeCompra, quantidade:qtd,
-        precoUnitario:p.preco_unit, valorTotal:p.preco_unit*qtd, fornecedor:p.revenda, obs:p.vencimento, categoria:categoriaCompra };
-      if (p.compraId) { compraSync = { id:p.compraId, ...campos }; }
-      else { novoCompraId = newId(); compraNova = { id:novoCompraId, data:new Date().toLocaleDateString("pt-BR"), safra:safraAtiva, tratamento:"", ...campos }; }
-    }
     setData(d=>{
       const nd=JSON.parse(JSON.stringify(d));
-      const pp = nd[activeCulture].categories[catIdx].products[prodIdx];
-      pp[field] = novoValor;
-      if (novoCompraId && !pp.compraId) pp.compraId = novoCompraId;
+      nd[activeCulture].categories[catIdx].products[prodIdx][field] = novoValor;
       return nd;
     });
-    if (compraNova) setComprasRecords(rs => [...rs, compraNova]);
-    if (compraSync) setComprasRecords(rs => rs.map(r => r.id===compraSync.id ? {...r, ...compraSync} : r));
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
