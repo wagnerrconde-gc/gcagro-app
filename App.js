@@ -1263,6 +1263,21 @@ function computarGruposTS(dProg) {
   });
   return grupos;
 }
+// Produtos de TS/Kit Sulco comuns a qualquer variedade daquela cultura (sem Observação
+// reconhecida como variedade) — usado como ponto de partida ao adicionar manualmente uma nova
+// variedade na tela de TS/Kit Sulco, em vez de um texto fixo de exemplo sem relação com o que
+// foi realmente lançado na Programação.
+function produtosComunsTS(dProg, cultura) {
+  const c = (dProg||{})[cultura];
+  if (!c) return { dose100kg:"", kitSulco:"" };
+  const prodsTS = ((c.categories||[]).find(cat=>cat.name==="TS")||{}).products || [];
+  const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
+  const comum = p => !extrairVariedadeObs(p.obs, cultura);
+  return {
+    dose100kg: prodsTS.filter(comum).map(formatarLinhaProdutoTS).join("\n"),
+    kitSulco: prodsKS.filter(comum).map(formatarLinhaProdutoTS).join(" + "),
+  };
+}
 // Mescla os grupos calculados da Programação na lista de TS/Kit Sulco: atualiza dose100kg/kitSulco
 // dos registros já ligados a um grupo (achados pelo origemKey, não pelo nome da variedade — assim
 // continua reconhecendo mesmo se o usuário renomear a variedade depois), cria registro novo pra
@@ -1623,14 +1638,20 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   );
 }
 
-function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
+function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg}) {
   const culturas = [...new Set(data.map(r=>r.cultura))];
   const grouped = {};
   culturas.forEach(c=>{ grouped[c]=data.filter(r=>r.cultura===c); });
 
   function upd(id, field, val) { setData(d => d.map(r => r.id===id ? {...r,[field]:val} : r)); }
   function remover(id) { if (window.confirm("Remover este registro?")) setData(d => d.filter(r=>r.id!==id)); }
-  function adicionar(cultura) { setData(d => [...d, { id:newId(), cultura:cultura||"Soja", variedade:"", dose100kg:"", kitSulco:"", obs:"" }]); }
+  // Começa já com os produtos comuns daquela cultura (sem variedade marcada) na Programação —
+  // ponto de partida real pra editar, em vez de um texto de exemplo fixo.
+  function adicionar(cultura) {
+    const cult = cultura || "Soja";
+    const comuns = produtosComunsTS(dProg, cult);
+    setData(d => [...d, { id:newId(), cultura:cult, variedade:"", dose100kg:comuns.dose100kg, kitSulco:comuns.kitSulco, obs:"" }]);
+  }
   function exportarWord() {
     let html = `<html><head><meta charset='utf-8'><style>
       body{font-family:Arial,sans-serif;margin:40px;color:#222;}
@@ -1674,7 +1695,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
         <div style={{fontSize:16,fontWeight:800,color:cor||"#1a3a1a"}}>{titulo}</div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={exportarWord} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📄 Exportar Word</button>
-          <button onClick={adicionar} style={{padding:"7px 14px",background:cor||"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar</button>
+          <button onClick={()=>adicionar()} style={{padding:"7px 14px",background:cor||"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar</button>
         </div>
       </div>
       {Object.entries(grouped).map(([cult,rows])=>{
@@ -1703,14 +1724,12 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors}) {
                   <div>
                     <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente{row.origemKey && " (vem da Programação)"}</div>
                     <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5} readOnly={!!row.origemKey}
-                      placeholder={"80ml Dermacor\n200ml Torino\n300ml Cruiser\n200ml Raiz F Plus"}
                       title={row.origemKey?"Editado direto na categoria TS da Programação, não aqui":undefined}
                       style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
                   </div>
                   <div>
                     <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha){row.origemKey && " (vem da Programação)"}</div>
                     <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5} readOnly={!!row.origemKey}
-                      placeholder={"Azos 2 doses\nNodugran 10 doses\nTorpeno 0,12 L/ha"}
                       title={row.origemKey?"Editado direto na categoria Kit Sulco da Programação, não aqui":undefined}
                       style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
                   </div>
@@ -4113,8 +4132,8 @@ function App() {
       ══════════════════════════════════════════════════════ */}
       {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
       {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
-      {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO}/>}
-      {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO}/>}
+      {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO} dProg={dataVerao}/>}
+      {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO} dProg={dataInverno}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
