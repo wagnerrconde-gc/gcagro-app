@@ -527,6 +527,42 @@ function produtoJaResolvido(p) {
   const fechadoNaPlanilha = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
   return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra!=null || fechadoNaPlanilha;
 }
+// Mesmo produto escrito com e sem a marca da empresa na frente: "NutriNicomomag" e "Nicomomag"
+// (o "Nutri" é só o nome da empresa), "Fox Xpro" e "Xpro". Recebe duas chaves já normalizadas.
+// A regra é conservadora de propósito, porque juntar errado é pior que deixar separado:
+//  - só junta quando um nome TERMINA com o outro (a marca vem na frente), nunca quando apenas
+//    começa — senão "Prêmio Plus" viraria "Prêmio", que é outro produto;
+//  - o que sobra na frente tem que ser UMA palavra só, o nome da empresa;
+//  - o nome menor precisa ter pelo menos 5 letras, pra não juntar sigla curta;
+//  - nenhum dos dois pode ter número: é justamente aí que mora a diferença real em fórmula
+//    ("20-05-20" x "20-05-30") e em código de variedade ("AS 1868" x "AS 1868 PRO2");
+//  - nome com barra ("A / B") só junta se for igualzinho, porque a barra já é uma composição.
+function mesmoProdutoQuaseIgual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (/\d/.test(a) || /\d/.test(b)) return false;
+  if (a.includes("/") || b.includes("/")) return false;
+  const [curto, longo] = a.length <= b.length ? [a, b] : [b, a];
+  if (curto.length < 5 || !longo.endsWith(curto)) return false;
+  const marca = longo.slice(0, longo.length - curto.length).trim();
+  return !!marca && !marca.includes(" ");
+}
+// Junta no mapa de cotação as entradas que são o mesmo produto escrito de um jeito e de outro,
+// somando as quantidades. O rótulo que sobra é a grafia mais completa — é o nome que o fornecedor
+// reconhece.
+function juntarQuaseIguais(map) {
+  const chaves = Object.keys(map);
+  for (let i = 0; i < chaves.length; i++) {
+    for (let j = i + 1; j < chaves.length; j++) {
+      const a = chaves[i], b = chaves[j];
+      if (!map[a] || !map[b] || !mesmoProdutoQuaseIgual(a, b)) continue;
+      const [alvo, extra] = map[a].nome.length >= map[b].nome.length ? [a, b] : [b, a];
+      map[alvo].qtd_total += map[extra].qtd_total;
+      delete map[extra];
+    }
+  }
+  return map;
+}
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
   Object.values(data||{}).forEach(culture => {
@@ -548,7 +584,7 @@ function derivarProdutos(data, excluirAdubacao=false) {
       });
     });
   });
-  return Object.values(map);
+  return Object.values(juntarQuaseIguais(map));
 }
 function derivarAdubacao(data) {
   const map = {};
@@ -566,7 +602,7 @@ function derivarAdubacao(data) {
       });
     });
   });
-  return Object.values(map);
+  return Object.values(juntarQuaseIguais(map));
 }
 function derivarSementes(data) {
   const map = {};
@@ -584,7 +620,7 @@ function derivarSementes(data) {
       });
     });
   });
-  return Object.values(map);
+  return Object.values(juntarQuaseIguais(map));
 }
 
 // Liquidação (payoff) de cada tipo de operação financeira de hedge, na data de referência,
@@ -2643,7 +2679,7 @@ function App() {
       Object.values(nd).forEach(culture => {
         (culture.categories||[]).forEach(cat => {
           (cat.products||[]).forEach(p => {
-            const nomeMatch = chaveProduto(p.produto) === chaveProduto(prodKey);
+            const nomeMatch = mesmoProdutoQuaseIgual(chaveProduto(p.produto), chaveProduto(prodKey));
             const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
             if (nomeMatch || iaMatch) {
               p.preco_unit = precoMedio;
@@ -2865,7 +2901,8 @@ function App() {
       if (isSementes) return medias.find(m => normalizarNome(m.produto)===normalizarNome(culturaNome));
       const nomeKey = chaveProduto(p.produto);
       const iaKey = normalizarNome(p.ingrediente_ativo);
-      return medias.find(m => chaveProduto(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
+      return medias.find(m => mesmoProdutoQuaseIgual(chaveProduto(m.produto), nomeKey)
+        || (iaKey && normalizarNome(m.produto)===iaKey));
     }
     function relevante(cat) {
       return isAdub ? cat.name==="Adubação" : isSementes ? cat.name==="Sementes" : (cat.name!=="Adubação" && cat.name!=="Sementes");
