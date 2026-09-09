@@ -1867,6 +1867,11 @@ function App() {
   const [activeCultureVerao, setActiveCultureVerao] = useState("Soja");
   const [activeCultureInverno, setActiveCultureInverno] = useState("Milho");
   const [expandedCats, setExpandedCats]   = useState({});
+  // Cartões da Programação no celular: começam fechados, mostrando só a linha de resumo. Abrir um
+  // produto (toque) revela os campos editáveis. Sem isso a lista de uma categoria virava uma
+  // rolagem enorme, com um cartão de meia tela por produto.
+  const [expandedProds, setExpandedProds] = useState({});
+  function toggleProd(chave) { setExpandedProds(e=>({...e,[chave]:!e[chave]})); }
   const [editingCell, setEditingCell]     = useState(null);
   // Sincroniza a rolagem horizontal entre as tabelas de todas as categorias da Programação —
   // como cada categoria tem colunas diferentes, rolar uma pra ver Revenda/Venc. rolava só
@@ -4043,16 +4048,38 @@ function App() {
                       const total = qtd*preco;
                       const comprado = p.preco_compra!=null;
                       const areaRef = isSementes ? (p.area||0) : culture.area;
+                      const unidTxt = p.unidade||(isSementes?"bag":"kg");
+                      const chaveProd = activeCulture+"|"+catIdx+"|"+prodIdx;
+                      const aberto = !!expandedProds[chaveProd];
+                      const resumo = [
+                        !isSementes && p.dose>0 ? fmtN(p.dose,3)+" "+unidTxt+"/ha" : null,
+                        p.area>0 ? fmtN(p.area,1)+" ha" : null,
+                        qtd>0 ? fmtN(qtd,1)+" "+unidTxt : null,
+                        (p.fase||"").trim() || null,
+                      ].filter(Boolean).join(" · ");
                       return (
                         <div key={prodIdx} style={{border:"1px solid #e6e6e6",borderRadius:9,overflow:"hidden"}}>
-                          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,padding:"8px 10px",background:colors.light}}>
-                            <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:14,color:colors.accent}}>
-                              <EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/>
+                          {/* Linha de resumo — toque abre/fecha os campos */}
+                          <div onClick={()=>toggleProd(chaveProd)}
+                            style={{display:"flex",alignItems:"flex-start",gap:8,padding:"9px 10px",background:aberto?colors.light:"#fff",cursor:"pointer"}}>
+                            <span style={{color:colors.accent,fontSize:11,marginTop:3}}>{aberto?"▾":"▸"}</span>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                                <span style={{fontWeight:700,fontSize:14,color:colors.accent,minWidth:0,overflowWrap:"break-word"}}>{p.produto||"—"}</span>
+                                <span style={{fontWeight:700,fontSize:13,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</span>
+                              </div>
+                              <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:2}}>
+                                <span style={{fontSize:11,color:"#888",minWidth:0,overflowWrap:"break-word"}}>{resumo||"—"}</span>
+                                <span style={{fontSize:11,color:"#888",whiteSpace:"nowrap"}}>{areaRef>0?fmt(total/areaRef):"-"}/ha</span>
+                              </div>
+                              {!aberto && (p.obs||"").trim() && (
+                                <div style={{fontSize:11,color:"#aaa",marginTop:2,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{p.obs}</div>
+                              )}
                             </div>
-                            <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}}
-                              style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:16,padding:"0 2px"}}>✕</button>
                           </div>
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:"10px"}}>
+                          {aberto && (<>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:"10px",borderTop:"1px solid #eee"}}>
+                            <CampoCard label="Produto" wide><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></CampoCard>
                             {showIA && <CampoCard label="Ingrediente ativo" wide><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></CampoCard>}
                             {!isSementes && <CampoCard label="Dose"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></CampoCard>}
                             {isTS && <CampoCard label="Kg sem./ha"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></CampoCard>}
@@ -4075,12 +4102,13 @@ function App() {
                             <CampoCard label="Revenda"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></CampoCard>
                             <CampoCard label="Venc."><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></CampoCard>
                           </div>
-                          <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"9px 12px",background:"#fafafa",borderTop:"1px solid #eee"}}>
-                            <div><span style={{fontSize:9,letterSpacing:0.6,textTransform:"uppercase",color:"#9e9e9e",marginRight:6}}>Total</span>
-                              <b style={{fontSize:14,color:comprado?"#2e7d32":colors.bg}}>{fmt(total)}</b></div>
-                            <div><span style={{fontSize:9,letterSpacing:0.6,textTransform:"uppercase",color:"#9e9e9e",marginRight:6}}>R$/ha</span>
-                              <b style={{fontSize:14,color:"#555"}}>{areaRef>0?fmt(total/areaRef):"-"}</b></div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 12px",background:"#fafafa",borderTop:"1px solid #eee"}}>
+                            <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}}
+                              style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:12,padding:0}}>🗑 Remover produto</button>
+                            <button onClick={()=>toggleProd(chaveProd)}
+                              style={{background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:12,padding:0}}>Fechar ▴</button>
                           </div>
+                          </>)}
                         </div>
                       );
                     })}
