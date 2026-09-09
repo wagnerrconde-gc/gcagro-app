@@ -2190,6 +2190,28 @@ function App() {
     if (ctx.safra==="inv"   && ctx.tipo==="sem")  return cotSemProdInv;
     return [];
   }
+  function setProdutosCtx(ctx, val) {
+    if (!ctx) return;
+    if (ctx.safra==="verao" && ctx.tipo==="adub") setCotAdubProdVerao(val);
+    if (ctx.safra==="verao" && ctx.tipo==="ins")  setCotInsumoProdVerao(val);
+    if (ctx.safra==="verao" && ctx.tipo==="sem")  setCotSemProdVerao(val);
+    if (ctx.safra==="inv"   && ctx.tipo==="adub") setCotAdubProdInv(val);
+    if (ctx.safra==="inv"   && ctx.tipo==="ins")  setCotInsumoProdInv(val);
+    if (ctx.safra==="inv"   && ctx.tipo==="sem")  setCotSemProdInv(val);
+  }
+  // Zera a lista desta cotação. Necessário na virada de safra: o "Gerar Cotação" só ACRESCENTA
+  // o que falta (pra não apagar linha editada à mão no meio de uma cotação em andamento), então
+  // sem limpar, produto da safra passada continua pendurado na planilha mandada pro fornecedor.
+  // Os preços já cotados vão junto — senão preço do ano passado reaparece assim que um produto
+  // de mesmo nome for gerado de novo. Programação e Compras não são tocadas.
+  function limparCotacao() {
+    if (!cotContext) return;
+    const n = getProdutos(cotContext).length;
+    if (!n) { window.alert("Esta cotação já está vazia."); return; }
+    if (!window.confirm(`Remover os ${n} produtos desta cotação e apagar os preços já cotados?\n\nA Programação e as Compras não são alteradas — depois é só clicar em "Gerar Cotação" na Programação pra montar a lista da safra nova.`)) return;
+    setProdutosCtx(cotContext, []);
+    setCotData(cotContext, {});
+  }
   function getFornecedorList(tipo) {
     return tipo==="adub" ? fornecedoresAdub : tipo==="sem" ? sementesFornecedores : fornecedoresIns;
   }
@@ -6332,6 +6354,8 @@ function App() {
                   <SyncBadge/>
                   <button onClick={exportarCotacaoPlanilha} title="Exporta em .xlsx pra enviar pro grupo de compras preencher fora do app" style={{padding:"9px 16px",background:"#1565C0",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📊 Exportar planilha</button>
                   <button onClick={abrirFecharCotacao} style={{padding:"9px 16px",background:"#2e7d32",border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✅ Fechar Cotação</button>
+                  <button onClick={limparCotacao} title="Zera a lista desta cotação (produtos e preços cotados) pra começar uma safra nova. Não mexe na Programação nem em Compras."
+                    style={{padding:"9px 16px",background:"none",border:"1px solid #7f1d1d",borderRadius:7,color:"#f87171",fontSize:12,fontWeight:700,cursor:"pointer"}}>🗑 Limpar lista</button>
                   <button onClick={()=>{const fresh=getCotData(cotContext);setCotData(cotContext,{...fresh});}} style={{padding:"9px 16px",background:"#1e3a5f",border:"1px solid #2a5080",borderRadius:7,color:"#7ab8ff",fontSize:12,cursor:"pointer"}}>↻</button>
                   <button onClick={handleCotLogout} style={{padding:"9px 14px",background:"transparent",border:"1px solid #1e3a5f",borderRadius:7,color:"#5a7a9a",fontSize:11,cursor:"pointer"}}>Sair</button>
                 </div>
