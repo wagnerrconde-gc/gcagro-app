@@ -214,6 +214,20 @@ function classificarCulturaSemente(produto, culturas) {
   if (porPrefixo) return porPrefixo;
   return culturas.includes("Soja") ? "Soja" : null;
 }
+// Área que vale pro custo de semente por hectare: a das linhas da categoria Sementes da
+// Programação (área de plantio comercial), NÃO a do cabeçalho da cultura. No milho, por exemplo, o
+// cabeçalho tem 293 ha mas só 252 ha são de milho comercial — o resto é campo de semente, onde a
+// semente não é comprada. É a mesma área que a Programação usa no R$/ha da linha de Sementes; se
+// as duas contas usarem áreas diferentes, o mesmo custo aparece diferente em cada tela.
+// Soma as áreas DISTINTAS das linhas: duas variedades lançadas com a mesma área são o mesmo talhão
+// (não dobra), e uma área dividida em duas linhas (150 + 102) soma de verdade. Sem linha de
+// Sementes com área, cai na área do cabeçalho.
+function areaSementesCultura(cultura, dProg) {
+  const cat = ((dProg||{})[cultura]?.categories||[]).find(c => c.name === "Sementes");
+  const areas = (cat?.products||[]).map(p => p.area||0).filter(a => a > 0);
+  const soma = [...new Set(areas)].reduce((s,a)=>s+a, 0);
+  return soma > 0 ? soma : ((dProg||{})[cultura]?.area || 0);
+}
 function hexA(hex, alpha) {
   const h = hex.replace("#","");
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
@@ -3092,7 +3106,7 @@ function App() {
     });
     const linhas = [];
     culturas.forEach(cultura=>{
-      const areaTotal = dProg[cultura]?.area||0;
+      const areaTotal = areaSementesCultura(cultura, dProg);
       const totalPago = porCultura[cultura];
       if (!areaTotal || !totalPago) return;
       linhas.push({ label, cultura, totalPago, areaTotal, precoMedio: totalPago/areaTotal });
@@ -7273,6 +7287,7 @@ function App() {
                       <div style={{fontSize:12,fontWeight:700,color:"#00695c",marginBottom:4}}>{m.cultura} <span style={{fontWeight:400,fontSize:10,color:"#888"}}>({m.label})</span></div>
                       <div style={{fontSize:15,fontWeight:800,color:"#004d40"}}>{fmt(m.precoMedio)}/ha</div>
                       <div style={{fontSize:10,color:"#888",marginTop:2}}>{fmt(m.totalPago)} ÷ {fmtN(m.areaTotal,1)} ha</div>
+                      <div style={{fontSize:9,color:"#aaa"}}>área da linha de Sementes</div>
                     </div>
                   ))}
                 </div>
