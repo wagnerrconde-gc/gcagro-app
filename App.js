@@ -338,7 +338,13 @@ const PROG_COL_PCT = Object.fromEntries(Object.entries(PROG_COL_W).map(([h,w])=>
 // No celular, no modo tabela, as colunas voltam a ter largura em pixel (a tela é estreita demais
 // pra porcentagem) e a rolagem é lateral. Produto e Obs ganham folga porque são as duas que a
 // gente lê de verdade rodando lavoura.
-const PROG_COL_W_MOBILE = { ...PROG_COL_W, "Produto":150, "Obs":150, "Fase":100, "Dose":70, "Área(ha)":70, "Qtd":78 };
+const PROG_COL_W_MOBILE = { ...PROG_COL_W, "Produto":150, "Obs":150, "Fase":100, "Dose":70,
+  "Área(ha)":70, "Qtd":78, "Total":115, "R$/ha":85, "Ref.(R$)":85, "Compra(R$)":90 };
+// Igual ao PROG_MAX_TABLE_WIDTH: a folga de quem não tem I.A./Dose/Kg semente/ha vai toda pra
+// coluna Obs, pra que TODA categoria tenha a mesma largura e as colunas fiquem alinhadas de uma
+// categoria pra outra mesmo rolando pro lado.
+const PROG_MAX_TABLE_WIDTH_MOBILE = ["Produto","I.A.","Dose","Kg semente/ha","Área(ha)","Qtd","Unid.","Fase","Obs","Ref.(R$)","Compra(R$)","Total","R$/ha","Revenda","Venc.",""]
+  .reduce((s,h)=>s+PROG_COL_W_MOBILE[h],0);
 // No celular a tabela de 16 colunas não cabe: numa tela de ~390px cada coluna fica com ~24px, os
 // títulos se sobrepõem ("DOSEÁREA(HA)QTD") e o número transborda por cima do vizinho. Abaixo de
 // PROG_MOBILE_BP cada produto vira um cartão com os campos empilhados, rotulados um por um — os
@@ -346,6 +352,9 @@ const PROG_COL_W_MOBILE = { ...PROG_COL_W, "Produto":150, "Obs":150, "Fase":100,
 // 900px: celular em qualquer orientação e tablet em pé (768/834) entram no modo cartão; notebook
 // (a partir de 1024) e tablet deitado continuam com a tabela.
 const PROG_MOBILE_BP = 900;
+// Deitado, a partir dessa largura (celular na horizontal já passa disso), a Programação volta pra
+// tabela completa, do mesmo jeito que aparece no computador.
+const PROG_LANDSCAPE_MIN = 640;
 const PROG_CAMPO_LABEL = {
   produto:"Produto", ingrediente_ativo:"Ingrediente ativo", dose:"Dose", kgHa:"Kg semente/ha",
   area:"Área (ha)", fase:"Fase", obs:"Observação", preco_unit:"Preço ref. (R$)",
@@ -1893,14 +1902,23 @@ function App() {
       if (el && Number(idx)!==catIdx && el.scrollLeft!==scrollLeft) el.scrollLeft = scrollLeft;
     });
   }
-  // Largura da tela: abaixo de PROG_MOBILE_BP a Programação troca a tabela por cartões.
-  const [isMobile, setIsMobile] = useState(() => typeof window!=="undefined" && window.innerWidth < PROG_MOBILE_BP);
+  // Tamanho da tela. Celular em pé (estreito) troca a tabela da Programação por cartões; deitado,
+  // a partir de PROG_LANDSCAPE_MIN de largura, volta a tabela inteira igual à do computador — é
+  // como se lê a programação rodando lavoura, virando o aparelho de lado.
+  const medirTela = () => ({ w: window.innerWidth, h: window.innerHeight });
+  const [tela, setTela] = useState(() => typeof window!=="undefined" ? medirTela() : {w:1200,h:800});
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < PROG_MOBILE_BP);
+    // orientationchange dispara antes de o navegador atualizar as medidas; relê depois de um tico.
+    const onResize = () => { setTela(medirTela()); setTimeout(()=>setTela(medirTela()), 300); };
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
     return () => { window.removeEventListener("resize", onResize); window.removeEventListener("orientationchange", onResize); };
   }, []);
+  const telaDeitada = tela.w > tela.h;
+  // Celular deitado: mostra a tabela inteira (com rolagem lateral e o Produto fixo), que é como se
+  // lê a programação rodando lavoura. Em pé é que entra o modo cartão / alternador.
+  const paisagemCompacta = telaDeitada && tela.w >= PROG_LANDSCAPE_MIN && tela.w < PROG_MOBILE_BP;
+  const isMobile = tela.w < PROG_MOBILE_BP && !paisagemCompacta;
   const [editingOp, setEditingOp]         = useState(null);
   const [addingTo, setAddingTo]           = useState(null);
   const [editingArea, setEditingArea]     = useState(false);
@@ -4055,9 +4073,18 @@ function App() {
             const obsColPct = ((PROG_COL_W["Obs"] + (PROG_MAX_TABLE_WIDTH - progTableWidth)) / PROG_MAX_TABLE_WIDTH * 100) + "%";
             // Modo tabela no celular: largura em pixel + rolagem lateral, com a coluna Produto
             // grudada na esquerda pra não perder de vista de qual produto é a linha.
-            const tabelaMobile = isMobile && progMobileView==="tabela";
+            const tabelaMobile = (isMobile && progMobileView==="tabela") || paisagemCompacta;
             const progTableWidthMobile = progHeaders.reduce((s,h)=>s+(PROG_COL_W_MOBILE[h]||0),0);
-            const colW = h => tabelaMobile ? PROG_COL_W_MOBILE[h] : (h==="Obs" ? obsColPct : PROG_COL_PCT[h]);
+            const obsColMobile = PROG_COL_W_MOBILE["Obs"] + (PROG_MAX_TABLE_WIDTH_MOBILE - progTableWidthMobile);
+            const colW = h => tabelaMobile ? (h==="Obs" ? obsColMobile : PROG_COL_W_MOBILE[h])
+                                           : (h==="Obs" ? obsColPct : PROG_COL_PCT[h]);
+            // Celular/tablet deitado: a tabela inteira cabe na tela, mas as colunas ficam mais
+            // estreitas que no computador. Letra e espaçamento menores, e o número passa a quebrar
+            // linha em vez de vazar por cima da coluna vizinha.
+            const tabelaEstreita = !isMobile && !tabelaMobile && tela.w < 1000;
+            const semQuebra = tabelaEstreita ? "normal" : "nowrap";
+            const fonteTabela = tabelaMobile ? 12 : tabelaEstreita ? 10 : 11;
+            const padCel = tabelaEstreita ? "5px 4px" : "6px 8px";
             const stickyCol = (bg) => tabelaMobile ? {position:"sticky",left:0,zIndex:1,background:bg,boxShadow:"1px 0 0 #e8e8e8"} : null;
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
@@ -4168,11 +4195,11 @@ function App() {
                 )}
                 {isOpen&&(!isMobile||progMobileView==="tabela")&&(
                   <div style={{overflowX:"auto"}} ref={el=>{progScrollRefs.current[catIdx]=el;}} onScroll={e=>syncProgScroll(catIdx,e.target.scrollLeft)}>
-                    <table style={{borderCollapse:"collapse",fontSize:tabelaMobile?12:11,tableLayout:"fixed",width:tabelaMobile?progTableWidthMobile:"100%",minWidth:tabelaMobile?progTableWidthMobile:640}}>
+                    <table style={{borderCollapse:"collapse",fontSize:fonteTabela,tableLayout:"fixed",width:tabelaMobile?PROG_MAX_TABLE_WIDTH_MOBILE:"100%",minWidth:tabelaMobile?PROG_MAX_TABLE_WIDTH_MOBILE:640}}>
                       <thead>
                         <tr style={{background:colors.light}}>
                           {progHeaders.map(h=>(
-                            <th key={h} style={{padding:"6px 8px",width:colW(h),textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap",borderBottom:"1px solid "+colors.badge+"44",...(h==="Produto"?stickyCol(colors.light):null)}}>{h}</th>
+                            <th key={h} style={{padding:padCel,width:colW(h),textAlign:"center",color:colors.accent,fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:semQuebra,borderBottom:"1px solid "+colors.badge+"44",...(h==="Produto"?stickyCol(colors.light):null)}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -4185,15 +4212,15 @@ function App() {
                           const comprado = p.preco_compra!=null;
                           return (
                             <tr key={prodIdx} style={{background:bg}}>
-                              <td style={{padding:"6px 8px",width:colW("Produto"),textAlign:"center",fontWeight:600,overflowWrap:"break-word",...stickyCol(bg)}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
-                              {showIA && <td style={{padding:"6px 8px",width:colW("I.A."),textAlign:"center",color:"#666",fontSize:10,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
-                              {!isSementes && <td style={{padding:"6px 8px",width:colW("Dose"),textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>}
-                              {isTS && <td style={{padding:"6px 8px",width:colW("Kg semente/ha"),textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
-                              <td style={{padding:"6px 8px",width:colW("Área(ha)"),textAlign:"center",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
-                              <td style={{padding:"6px 8px",width:colW("Qtd"),textAlign:"center",color:"#555",whiteSpace:"nowrap"}}>
+                              <td style={{padding:padCel,width:colW("Produto"),textAlign:"center",fontWeight:600,overflowWrap:"break-word",...stickyCol(bg)}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
+                              {showIA && <td style={{padding:padCel,width:colW("I.A."),textAlign:"center",color:"#666",fontSize:10,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
+                              {!isSementes && <td style={{padding:padCel,width:colW("Dose"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>}
+                              {isTS && <td style={{padding:padCel,width:colW("Kg semente/ha"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
+                              <td style={{padding:padCel,width:colW("Área(ha)"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
+                              <td style={{padding:padCel,width:colW("Qtd"),textAlign:"center",color:"#555",whiteSpace:semQuebra}}>
                                 {isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}
                               </td>
-                              <td style={{padding:"6px 8px",width:colW("Unid."),textAlign:"center",whiteSpace:"nowrap"}}>
+                              <td style={{padding:padCel,width:colW("Unid."),textAlign:"center",whiteSpace:semQuebra}}>
                                 <select value={p.unidade||(isSementes?"bag":"kg")} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
                                   style={{padding:"2px 4px",border:"1px solid #ddd",borderRadius:3,fontSize:11}}>
                                   <option value="kg">kg</option>
@@ -4203,14 +4230,14 @@ function App() {
                                   <option value="sc">sc</option>
                                 </select>
                               </td>
-                              <td style={{padding:"6px 8px",width:colW("Fase"),textAlign:"center",color:"#777",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
+                              <td style={{padding:padCel,width:colW("Fase"),textAlign:"center",color:"#777",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></td>
                               <td style={{padding:"3px 4px",width:colW("Obs"),textAlign:"center",color:"#888",overflowWrap:"break-word",verticalAlign:"middle"}}><ObsCell catIdx={catIdx} prodIdx={prodIdx} value={p.obs}/></td>
-                              <td style={{padding:"6px 8px",width:colW("Ref.(R$)"),textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
-                              <td style={{padding:"6px 8px",width:colW("Compra(R$)"),textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
-                              <td style={{padding:"6px 8px",width:colW("Total"),textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:"nowrap"}}>{fmt(total)}</td>
-                              <td style={{padding:"6px 8px",width:colW("R$/ha"),textAlign:"center",color:"#666",whiteSpace:"nowrap"}}>{(()=>{ const areaRef = isSementes ? (p.area||0) : culture.area; return areaRef>0?fmt(total/areaRef):"-"; })()}</td>
-                              <td style={{padding:"6px 8px",width:colW("Revenda"),textAlign:"center",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
-                              <td style={{padding:"6px 8px",width:colW("Venc."),textAlign:"center",color:"#888",fontSize:10,whiteSpace:"nowrap"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
+                              <td style={{padding:padCel,width:colW("Ref.(R$)"),textAlign:"center",color:"#888",textDecoration:comprado?"line-through":"",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></td>
+                              <td style={{padding:padCel,width:colW("Compra(R$)"),textAlign:"center",fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></td>
+                              <td style={{padding:padCel,width:colW("Total"),textAlign:"center",fontWeight:700,color:comprado?"#2e7d32":colors.bg,whiteSpace:semQuebra}}>{fmt(total)}</td>
+                              <td style={{padding:padCel,width:colW("R$/ha"),textAlign:"center",color:"#666",whiteSpace:semQuebra}}>{(()=>{ const areaRef = isSementes ? (p.area||0) : culture.area; return areaRef>0?fmt(total/areaRef):"-"; })()}</td>
+                              <td style={{padding:padCel,width:colW("Revenda"),textAlign:"center",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
+                              <td style={{padding:padCel,width:colW("Venc."),textAlign:"center",color:"#888",fontSize:10,whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
                               <td style={{padding:"6px 4px",width:colW(""),textAlign:"center"}}>
                                 <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                               </td>
