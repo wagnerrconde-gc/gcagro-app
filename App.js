@@ -334,6 +334,26 @@ const PROG_MAX_TABLE_WIDTH = ["Produto","I.A.","Dose","Kg semente/ha","Área(ha)
 // 100%) em vez de pixels fixos, pra sempre caber na largura da tela sem precisar de barra de
 // rolagem, guardando a mesma proporção entre colunas de antes.
 const PROG_COL_PCT = Object.fromEntries(Object.entries(PROG_COL_W).map(([h,w])=>[h, (w/PROG_MAX_TABLE_WIDTH*100)+"%"]));
+// No celular a tabela de 16 colunas não cabe: numa tela de ~390px cada coluna fica com ~24px, os
+// títulos se sobrepõem ("DOSEÁREA(HA)QTD") e o número transborda por cima do vizinho. Abaixo de
+// PROG_MOBILE_BP cada produto vira um cartão com os campos empilhados, rotulados um por um — os
+// mesmos campos editáveis, só que legíveis. Acima disso, a tabela continua igual.
+// 900px: celular em qualquer orientação e tablet em pé (768/834) entram no modo cartão; notebook
+// (a partir de 1024) e tablet deitado continuam com a tabela.
+const PROG_MOBILE_BP = 900;
+const PROG_CAMPO_LABEL = {
+  produto:"Produto", ingrediente_ativo:"Ingrediente ativo", dose:"Dose", kgHa:"Kg semente/ha",
+  area:"Área (ha)", fase:"Fase", obs:"Observação", preco_unit:"Preço ref. (R$)",
+  revenda:"Revenda", vencimento:"Vencimento",
+};
+function CampoCard({ label, wide, children }) {
+  return (
+    <div style={{gridColumn: wide?"1 / -1":"auto", minWidth:0}}>
+      <div style={{fontSize:9,letterSpacing:0.6,textTransform:"uppercase",color:"#9e9e9e",marginBottom:3}}>{label}</div>
+      <div style={{fontSize:13,color:"#333",overflowWrap:"break-word"}}>{children}</div>
+    </div>
+  );
+}
 // Categorias de Insumos/Defensivos (tudo que não é Adubação nem Sementes) e as que mostram
 // coluna de Ingrediente Ativo na Cotação — só faz sentido pra defensivos de verdade.
 const CATEGORIAS_INSUMOS = ["Herbicidas - Dessecação e Pós","Fungicidas","Inseticidas","Foliares","TS","Kit Sulco","Óleos / Adjuvantes"];
@@ -1858,6 +1878,14 @@ function App() {
       if (el && Number(idx)!==catIdx && el.scrollLeft!==scrollLeft) el.scrollLeft = scrollLeft;
     });
   }
+  // Largura da tela: abaixo de PROG_MOBILE_BP a Programação troca a tabela por cartões.
+  const [isMobile, setIsMobile] = useState(() => typeof window!=="undefined" && window.innerWidth < PROG_MOBILE_BP);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < PROG_MOBILE_BP);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => { window.removeEventListener("resize", onResize); window.removeEventListener("orientationchange", onResize); };
+  }, []);
   const [editingOp, setEditingOp]         = useState(null);
   const [addingTo, setAddingTo]           = useState(null);
   const [editingArea, setEditingArea]     = useState(false);
@@ -3371,7 +3399,7 @@ function App() {
   // Observação da Programação: textarea sempre visível (não precisa clicar pra ler/editar) que
   // cresce sozinha em altura conforme o texto quebra em mais linhas — em vez de um campo de uma
   // linha só, que escondia o texto comprido rolando dentro do campo.
-  const ObsCell = ({catIdx,prodIdx,value}) => {
+  const ObsCell = ({catIdx,prodIdx,value,align="center",boxed=false}) => {
     const ref = useRef(null);
     const ajustarAltura = el => { if (el) { el.style.height="auto"; el.style.height=el.scrollHeight+"px"; } };
     useEffect(()=>{ ajustarAltura(ref.current); });
@@ -3379,7 +3407,7 @@ function App() {
       <textarea ref={ref} defaultValue={value||""} rows={1}
         onInput={e=>ajustarAltura(e.target)}
         onBlur={e=>updateField(catIdx,prodIdx,"obs",e.target.value)}
-        style={{width:"100%",padding:"4px 6px",fontSize:11,border:"1px solid transparent",borderRadius:4,background:"transparent",resize:"none",overflow:"hidden",fontFamily:"inherit",color:"#888",textAlign:"center",display:"block"}}/>
+        style={{width:"100%",padding:boxed?"6px 8px":"4px 6px",fontSize:boxed?13:11,border:"1px solid "+(boxed?"#e0e0e0":"transparent"),borderRadius:4,background:"transparent",resize:"none",overflow:"hidden",fontFamily:"inherit",color:boxed?"#333":"#888",textAlign:align,display:"block"}}/>
     );
   };
 
@@ -3686,14 +3714,14 @@ function App() {
 
       {/* ── TOP NAV ── */}
       <div style={{background:navBg,color:"#fff",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",height:52}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",rowGap:6,padding:isMobile?"7px 12px":"0 16px",minHeight:52}}>
+          <div style={{display:"flex",alignItems:"center",gap:isMobile?8:12}}>
             <button onClick={()=>setSidebarOpen(true)} aria-label="Abrir menu"
               style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,color:"#fff",width:34,height:34,fontSize:17,cursor:"pointer"}}>☰</button>
-            <span style={{fontSize:17,fontWeight:800,letterSpacing:1}}>🌿 GC Agro</span>
-            <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10}}>{safraAtiva}</span>
+            <span style={{fontSize:isMobile?15:17,fontWeight:800,letterSpacing:1,whiteSpace:"nowrap"}}>🌿 GC Agro</span>
+            <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{safraAtiva}</span>
           </div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <SyncBadge/>
             {(appView==="prog_verao"||appView==="prog_inv") && (
               <button onClick={gerarCotacao} style={{padding:"6px 12px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
@@ -3996,18 +4024,89 @@ function App() {
             const obsColPct = ((PROG_COL_W["Obs"] + (PROG_MAX_TABLE_WIDTH - progTableWidth)) / PROG_MAX_TABLE_WIDTH * 100) + "%";
             return (
               <div key={catIdx} style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:10}}>
-                <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div onClick={()=>toggleCat(catIdx)} style={{background:colors.bg,color:"#fff",padding:isMobile?"9px 12px":"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",rowGap:4,columnGap:8,cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                     <span>{icon}</span><span style={{fontWeight:700,fontSize:13}}>{cat.name}</span>
                     <span style={{background:"rgba(255,255,255,0.2)",borderRadius:10,padding:"1px 7px",fontSize:10}}>{(cat.products||[]).length}</span>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginLeft:"auto"}}>
                     <span style={{fontSize:13,fontWeight:700}}>{fmt(catTotal)}</span>
                     <span style={{fontSize:11,opacity:0.7}}>{culture.area>0?fmt(catTotal/culture.area):"-"}/ha</span>
                     <span>{isOpen?"▲":"▼"}</span>
                   </div>
                 </div>
-                {isOpen&&(
+                {isOpen&&isMobile&&(
+                  <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:10}}>
+                    {(cat.products||[]).map((p,prodIdx)=>{
+                      const preco = p.preco_compra||p.preco_unit;
+                      const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
+                      const total = qtd*preco;
+                      const comprado = p.preco_compra!=null;
+                      const areaRef = isSementes ? (p.area||0) : culture.area;
+                      return (
+                        <div key={prodIdx} style={{border:"1px solid #e6e6e6",borderRadius:9,overflow:"hidden"}}>
+                          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,padding:"8px 10px",background:colors.light}}>
+                            <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:14,color:colors.accent}}>
+                              <EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/>
+                            </div>
+                            <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}}
+                              style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:16,padding:"0 2px"}}>✕</button>
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,padding:"10px"}}>
+                            {showIA && <CampoCard label="Ingrediente ativo" wide><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></CampoCard>}
+                            {!isSementes && <CampoCard label="Dose"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></CampoCard>}
+                            {isTS && <CampoCard label="Kg sem./ha"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></CampoCard>}
+                            <CampoCard label="Área (ha)"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></CampoCard>
+                            <CampoCard label="Qtd">{isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}</CampoCard>
+                            <CampoCard label="Unid.">
+                              <select value={p.unidade||(isSementes?"bag":"kg")} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
+                                style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:4,fontSize:13,width:"100%",maxWidth:"100%"}}>
+                                <option value="kg">kg</option>
+                                <option value="Lt">Lt</option>
+                                <option value="Tn">Tn</option>
+                                <option value="bag">bag</option>
+                                <option value="sc">sc</option>
+                              </select>
+                            </CampoCard>
+                            <CampoCard label="Fase" wide><EditCell catIdx={catIdx} prodIdx={prodIdx} field="fase" type="text" value={p.fase}/></CampoCard>
+                            <CampoCard label="Observação" wide><ObsCell catIdx={catIdx} prodIdx={prodIdx} value={p.obs} align="left" boxed/></CampoCard>
+                            <CampoCard label="Ref. (R$)"><span style={{textDecoration:comprado?"line-through":"",color:"#888",display:"block"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_unit" value={fmt(p.preco_unit)}/></span></CampoCard>
+                            <CampoCard label="Compra (R$)"><span style={{fontWeight:comprado?700:400,color:comprado?"#2e7d32":"#bbb",display:"block"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="preco_compra" value={comprado?fmt(p.preco_compra):""}/></span></CampoCard>
+                            <CampoCard label="Revenda"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></CampoCard>
+                            <CampoCard label="Venc."><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></CampoCard>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"9px 12px",background:"#fafafa",borderTop:"1px solid #eee"}}>
+                            <div><span style={{fontSize:9,letterSpacing:0.6,textTransform:"uppercase",color:"#9e9e9e",marginRight:6}}>Total</span>
+                              <b style={{fontSize:14,color:comprado?"#2e7d32":colors.bg}}>{fmt(total)}</b></div>
+                            <div><span style={{fontSize:9,letterSpacing:0.6,textTransform:"uppercase",color:"#9e9e9e",marginRight:6}}>R$/ha</span>
+                              <b style={{fontSize:14,color:"#555"}}>{areaRef>0?fmt(total/areaRef):"-"}</b></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {addingTo?.catIdx===catIdx?(
+                      <div style={{border:"1px solid "+colors.badge,borderRadius:9,background:"#fffde7",padding:"10px"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
+                          {addRowFields.filter(Boolean).map(field=>(
+                            <CampoCard key={field} label={PROG_CAMPO_LABEL[field]||field} wide={["produto","ingrediente_ativo","obs","fase","revenda"].includes(field)}>
+                              <input type={["dose","kgHa","area","preco_unit"].includes(field)?"number":"text"} step="any"
+                                value={newProd[field]||""} onChange={e=>setNewProd(pv=>({...pv,[field]:e.target.value}))}
+                                style={{width:"100%",padding:"6px 8px",fontSize:13,border:"1px solid #ccc",borderRadius:4}}/>
+                            </CampoCard>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",gap:8,marginTop:12}}>
+                          <button onClick={()=>addProduct(catIdx)} style={{flex:1,background:colors.bg,color:"#fff",border:"none",borderRadius:6,padding:"9px",cursor:"pointer",fontSize:13,fontWeight:700}}>✓ Adicionar</button>
+                          <button onClick={()=>setAddingTo(null)} style={{background:"#eee",border:"none",borderRadius:6,padding:"9px 16px",cursor:"pointer",fontSize:13}}>Cancelar</button>
+                        </div>
+                      </div>
+                    ):(
+                      <button onClick={()=>{setAddingTo({catIdx});setNewProd({produto:"",dose:"",kgHa:"",area:culture.area,fase:"",obs:"",preco_unit:"",ingrediente_ativo:"",revenda:"",vencimento:""});}}
+                        style={{background:"none",border:"1px dashed "+colors.badge,color:colors.accent,borderRadius:6,padding:"9px",cursor:"pointer",fontSize:13,width:"100%"}}>+ Adicionar produto</button>
+                    )}
+                  </div>
+                )}
+                {isOpen&&!isMobile&&(
                   <div style={{overflowX:"auto"}} ref={el=>{progScrollRefs.current[catIdx]=el;}} onScroll={e=>syncProgScroll(catIdx,e.target.scrollLeft)}>
                     <table style={{borderCollapse:"collapse",fontSize:11,tableLayout:"fixed",width:"100%",minWidth:640}}>
                       <thead>
