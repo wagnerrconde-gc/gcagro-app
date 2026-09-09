@@ -64,6 +64,11 @@ const KEY_CHUVA = "gcagro_chuva_v1";
 const KEY_ESTOQUE_PECAS = "gcagro_estoque_pecas_v1";
 const KEY_ESTOQUE_INSUMOS = "gcagro_estoque_insumos_v1";
 const KEY_PROG_MOBILE_VIEW = "gcagro_prog_mobile_view_v1";
+// Catálogo de referência (ex: a lista do Agrofit com os produtos registrados no Brasil e seus
+// ingredientes ativos), usado só pra consulta: preencher o I.A. de um produto da Programação sem
+// eu ter que digitar. Fica só no aparelho (localStorage), fora do Firebase — são milhares de
+// linhas que nunca mudam, não faz sentido trafegar isso na sincronização a cada carregamento.
+const KEY_CATALOGO_IA = "gcagro_catalogo_ia_v1";
 
 // Estoque de Insumos: grupos e cor de cada um (badge nas tabelas)
 const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
@@ -805,6 +810,35 @@ const ALIASES_ESTOQUE_INSUMOS = {
   valorTotal:      ["valor_total","valor","total","valor_r"],
   obs:             ["obs","observacao","observacoes"],
 };
+// Procura o ingrediente ativo de um produto pelo nome, em três fontes, nesta ordem: o catálogo
+// importado (Agrofit), o estoque de insumos e os próprios produtos da Programação que já têm o
+// I.A. preenchido. O casamento é pelo nome normalizado; não achando igual, aceita um único
+// candidato que comece pelo nome digitado (ou o contrário) — com mais de um candidato fica sem
+// preencher, porque chutar entre "Premio" e "Premio Plus" seria pior que deixar vazio.
+// Nome no padrão "A / B" (dois produtos na mesma linha) procura cada parte e junta os dois I.A.
+function acharIA(nome, mapas) {
+  const chave = normalizarNome(nome);
+  if (!chave) return "";
+  for (const mapa of mapas) {
+    const direto = mapa.get(chave);
+    if (direto) return direto;
+  }
+  for (const mapa of mapas) {
+    const candidatos = [];
+    mapa.forEach((ia, k) => { if (k.startsWith(chave) || chave.startsWith(k)) candidatos.push(ia); });
+    const unicos = [...new Set(candidatos)];
+    if (unicos.length === 1) return unicos[0];
+  }
+  return "";
+}
+function buscarIngredienteAtivo(nome, mapas) {
+  const partes = (nome||"").split("/").map(s=>s.trim()).filter(Boolean);
+  if (partes.length > 1) {
+    const ias = partes.map(p => acharIA(p, mapas)).filter(Boolean);
+    return [...new Set(ias)].join(" / ");
+  }
+  return acharIA(nome, mapas);
+}
 function buildInsumoEstoqueRecord(m) {
   const nome = String(m.nome||"").trim();
   if (!nome) return null;
@@ -2026,6 +2060,13 @@ function App() {
   const [insumoEstoqueCatFiltro, setInsumoEstoqueCatFiltro] = useState("Todas");
   const [insumoSubTab, setInsumoSubTab] = useState("estoque"); // estoque | areas | safras | notas | aplicacoes | custos
   const [kmlMsg, setKmlMsg] = useState(null);
+  // Catálogo de consulta (Agrofit): [{nome, ia}], guardado só no aparelho.
+  const [catalogoIA, setCatalogoIA] = useState(() => loadLS(KEY_CATALOGO_IA, []));
+  useEffect(() => { saveLS(KEY_CATALOGO_IA, catalogoIA); }, [catalogoIA]);
+  const [showImportCatalogo, setShowImportCatalogo] = useState(false);
+  const [importCatalogoPreview, setImportCatalogoPreview] = useState(null);
+  const [importCatalogoErro, setImportCatalogoErro] = useState("");
+  const [preencherIAMsg, setPreencherIAMsg] = useState(null);
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
@@ -2450,6 +2491,47 @@ function App() {
       nd[activeCulture].categories[catIdx].products[prodIdx][field] = novoValor;
       return nd;
     });
+  }
+  // Preenche sozinho o Ingrediente Ativo dos produtos que estão com o campo vazio, consultando o
+  // catálogo importado (Agrofit), o estoque de insumos e os produtos que já têm I.A. preenchido.
+  // Só mexe em campo vazio — o que eu digitei à mão nunca é sobrescrito. Adubação e Sementes ficam
+  // de fora: ali "ingrediente ativo" não quer dizer nada.
+  function mapasIA() {
+    const doCatalogo = new Map();
+    catalogoIA.forEach(item => { const k = normalizarNome(item.nome); if (k && item.ia && !doCatalogo.has(k)) doCatalogo.set(k, item.ia); });
+    const doEstoque = new Map();
+    insumosEstoqueRecords.forEach(r => { const k = normalizarNome(r.nome); if (k && (r.ingredienteAtivo||"").trim() && !doEstoque.has(k)) doEstoque.set(k, r.ingredienteAtivo.trim()); });
+    const daProgramacao = new Map();
+    [dataVerao, dataInverno].forEach(d => Object.values(d||{}).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
+      const k = normalizarNome(p.produto||"");
+      if (k && (p.ingrediente_ativo||"").trim() && !daProgramacao.has(k)) daProgramacao.set(k, p.ingrediente_ativo.trim());
+    }))));
+    return [doCatalogo, doEstoque, daProgramacao];
+  }
+  function preencherIngredientesAtivos() {
+    const mapas = mapasIA();
+    if (mapas.every(m => m.size===0)) {
+      setPreencherIAMsg({ erro:"Nenhuma fonte de consulta disponível. Importe o catálogo do Agrofit no Estoque de Insumos (📚 Catálogo de I.A.)." });
+      setTimeout(()=>setPreencherIAMsg(null), 6000);
+      return;
+    }
+    // O preenchimento é calculado aqui fora e só depois entregue ao setData: dentro do updater do
+    // React os contadores ficariam zerados na mensagem, porque o updater roda depois desta linha.
+    let preenchidos = 0;
+    const naoAchados = [];
+    const nd = JSON.parse(JSON.stringify(data));
+    Object.values(nd).forEach(culture => (culture.categories||[]).forEach(cat => {
+      if (cat.name==="Adubação" || cat.name==="Sementes") return;
+      (cat.products||[]).forEach(p => {
+        if (!p.produto || (p.ingrediente_ativo||"").trim()) return;
+        const ia = buscarIngredienteAtivo(p.produto, mapas);
+        if (ia) { p.ingrediente_ativo = ia; preenchidos++; }
+        else if (!naoAchados.includes(p.produto.trim())) naoAchados.push(p.produto.trim());
+      });
+    }));
+    if (preenchidos) setData(nd);
+    setPreencherIAMsg({ preenchidos, naoAchados });
+    setTimeout(()=>setPreencherIAMsg(null), 8000);
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
@@ -3996,6 +4078,19 @@ function App() {
       ══════════════════════════════════════════════════════ */}
       {(appView==="prog_verao"||appView==="prog_inv") && (
         <div style={{padding:"16px 12px"}}>
+          {preencherIAMsg && (
+            <div style={{background:preencherIAMsg.erro?"#fff3e0":"#e0f2f1",border:"1px solid "+(preencherIAMsg.erro?"#ffb74d":"#80cbc4"),borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#00695c"}}>
+              {preencherIAMsg.erro ? <span style={{color:"#e65100"}}>⚠ {preencherIAMsg.erro}</span> : (<>
+                ✓ {preencherIAMsg.preenchidos} ingrediente(s) ativo(s) preenchido(s).
+                {preencherIAMsg.naoAchados.length>0 && (
+                  <div style={{color:"#888",marginTop:4}}>
+                    Sem correspondência ({preencherIAMsg.naoAchados.length}): {preencherIAMsg.naoAchados.slice(0,12).join(", ")}
+                    {preencherIAMsg.naoAchados.length>12 ? "…" : ""}
+                  </div>
+                )}
+              </>)}
+            </div>
+          )}
           {/* Culture header */}
           <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:16,boxShadow:"0 1px 4px rgba(0,0,0,0.08)",flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -4028,6 +4123,8 @@ function App() {
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Insumos/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(culture.area>0?insumoTotal/culture.area:0)}</div></div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Custo total/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(totalHa)}</div></div>
             <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+              <button onClick={preencherIngredientesAtivos} title="Preenche o Ingrediente Ativo dos produtos que estão sem, consultando o catálogo do Agrofit e o estoque. Não mexe no que já está preenchido."
+                style={{padding:"6px 12px",background:"#e0f2f1",border:"none",borderRadius:6,color:"#00695c",fontSize:11,cursor:"pointer"}}>🧪 Preencher I.A.</button>
               <button onClick={()=>setShowImportModal(true)} style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
                 {culture.ativo?"⏸ Desativar":"▶ Ativar"}
@@ -5290,6 +5387,11 @@ function App() {
                 style={{padding:"6px 14px",background:"#e3f2fd",border:"none",color:"#1565C0",borderRadius:6,fontSize:11,cursor:"pointer"}}>📥 Importar planilha</button>
               <button onClick={()=>{setShowImportIA(true);setImportIAPreview(null);setImportIAErro("");}}
                 style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>🧪 Atualizar Ing. Ativo</button>
+              <button onClick={()=>{setShowImportCatalogo(true);setImportCatalogoPreview(null);setImportCatalogoErro("");}}
+                title="Lista de consulta (ex: Agrofit) usada pelo botão 'Preencher I.A.' da Programação"
+                style={{padding:"6px 14px",background:"#ede7f6",border:"none",color:"#5e35b1",borderRadius:6,fontSize:11,cursor:"pointer"}}>
+                📚 Catálogo de I.A.{catalogoIA.length>0 ? ` (${catalogoIA.length.toLocaleString("pt-BR")})` : ""}
+              </button>
             </div>
 
             {showImportInsumoEstoque && (
@@ -5424,6 +5526,86 @@ function App() {
                         setShowImportIA(false); setImportIAPreview(null); setImportIAErro("");
                       }} style={{padding:"7px 14px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Atualizar {importIAPreview.filter(l=>l.matchIdx>=0).length} item(ns)</button>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Catálogo de consulta (Agrofit): só nome + ingrediente ativo, usado pelo botão
+                "Preencher I.A." da Programação. Não vira item de estoque nem sincroniza. */}
+            {showImportCatalogo && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+                <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:640,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#5e35b1",marginBottom:10}}>📚 Catálogo de Ingrediente Ativo</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+                    Arquivo .xlsx, .xls ou .csv com colunas <b>Nome</b> (ou Produto) e <b>Ingrediente Ativo</b> — por exemplo a lista do Agrofit com os produtos registrados no Brasil.
+                    Isso <b>não</b> vira item de estoque: fica só como lista de consulta pro botão <b>🧪 Preencher I.A.</b> da Programação.
+                    Importar de novo substitui o catálogo inteiro. Ele fica guardado neste aparelho, então precisa ser importado uma vez em cada um.
+                    {catalogoIA.length>0 && <div style={{marginTop:6,color:"#5e35b1"}}>Catálogo atual: <b>{catalogoIA.length.toLocaleString("pt-BR")}</b> produto(s).</div>}
+                  </div>
+                  {!importCatalogoPreview ? (
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
+                      const file = e.target.files[0]; if (!file) return;
+                      try {
+                        const rows = await readSpreadsheetRows(file);
+                        const vistos = new Set();
+                        const linhas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
+                          .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
+                          .filter(l => {
+                            if (!l.nome || !l.ia) return false;
+                            const k = normalizarNome(l.nome);
+                            if (vistos.has(k)) return false;
+                            vistos.add(k);
+                            return true;
+                          });
+                        if (!linhas.length) { setImportCatalogoErro("⚠ Nenhuma linha reconhecida. O arquivo precisa ter as colunas Nome e Ingrediente Ativo preenchidas."); return; }
+                        setImportCatalogoPreview(linhas);
+                        setImportCatalogoErro("");
+                      } catch (err) { setImportCatalogoErro("❌ Erro ao ler o arquivo: "+err.message); }
+                      e.target.value = "";
+                    }} style={{marginBottom:10}}/>
+                  ) : (
+                    <>
+                      <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
+                        {importCatalogoPreview.length.toLocaleString("pt-BR")} produto(s) reconhecido(s). Amostra:
+                      </div>
+                      <div style={{overflowX:"auto",marginBottom:14}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                          <thead><tr style={{background:"#f5f5f5"}}>
+                            {["Nome","Ingrediente Ativo"].map(h=>(
+                              <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#888",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {importCatalogoPreview.slice(0,15).map((l,i)=>(
+                              <tr key={i} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                                <td style={{padding:"5px 7px",fontWeight:600}}>{l.nome}</td>
+                                <td style={{padding:"5px 7px",color:"#888"}}>{l.ia}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                  {importCatalogoErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importCatalogoErro}</div>}
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <div>
+                      {catalogoIA.length>0 && !importCatalogoPreview && (
+                        <button onClick={()=>{ if(window.confirm(`Apagar o catálogo de ${catalogoIA.length.toLocaleString("pt-BR")} produto(s)?`)) setCatalogoIA([]); }}
+                          style={{padding:"7px 14px",background:"none",border:"1px solid #ef9a9a",borderRadius:6,color:"#c62828",fontSize:12,cursor:"pointer"}}>🗑 Apagar catálogo</button>
+                      )}
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{setShowImportCatalogo(false);setImportCatalogoPreview(null);setImportCatalogoErro("");}}
+                        style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+                      {importCatalogoPreview && (
+                        <button onClick={()=>{
+                          setCatalogoIA(importCatalogoPreview);
+                          setShowImportCatalogo(false); setImportCatalogoPreview(null); setImportCatalogoErro("");
+                        }} style={{padding:"7px 14px",background:"#5e35b1",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Guardar catálogo</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
