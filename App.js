@@ -2830,13 +2830,16 @@ function App() {
   // a mesma classificação já usada na prévia "Média de preço de sementes por cultura" em Compras)
   // e agrupa o preço médio e a Quantidade total no(s) produto(s) de Sementes daquela cultura.
   // categoriaCompra: "Adubação Verão/Inverno", "Sementes Verão/Inverno" ou "Químicos Verão/Inverno".
-  function atualizarCustoPorCategoria(categoriaCompra) {
+  function atualizarCustoPorCategoria(categoriaCompra, safraCompra) {
     const isVerao = categoriaCompra.includes("Verão");
     const isAdub = categoriaCompra.startsWith("Adubação");
     const isSementes = categoriaCompra.startsWith("Sementes");
     const dAtual = isVerao ? dataVerao : dataInverno;
     const setD = isVerao ? setDataVerao : setDataInverno;
-    const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra);
+    // Filtra pela safra da pasta aberta, além da categoria: a pasta "Adubação Verão" existe em
+    // toda safra, e sem esse filtro o preço médio misturava as notas da safra passada com as
+    // desta — puxando o custo pra um preço de mercado que não é mais o vigente.
+    const recs = comprasRecords.filter(r=>r.categoria===categoriaCompra && (!safraCompra || r.safra===safraCompra));
     const culturasComArea = isSementes ? Object.keys(dAtual).filter(c=>(dAtual[c]?.area||0)>0) : null;
     const grupos = {};
     recs.forEach(r=>{
@@ -7117,7 +7120,7 @@ function App() {
                     style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
                   {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
                     <button onClick={()=>{
-                        const relatorio = atualizarCustoPorCategoria(comprasCatSel);
+                        const relatorio = atualizarCustoPorCategoria(comprasCatSel, comprasSafraSel);
                         setCustoCompraMsg({categoria:comprasCatSel, relatorio});
                         setTimeout(()=>setCustoCompraMsg(null), 8000);
                       }}
