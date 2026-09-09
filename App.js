@@ -536,7 +536,11 @@ function derivarProdutos(data, excluirAdubacao=false) {
       (cat.products||[]).forEach(p => {
         if (!p || !p.produto || produtoJaResolvido(p)) return;
         const key = chaveProduto(p.produto);
-        const qtd = p.dose > 0 ? p.dose * p.area : p.area;
+        // TS tem a dose lançada por 100kg de semente, não por hectare: a quantidade é
+        // dose × (kg semente/ha ÷ 100) × área — a mesma conta que a Programação já mostra na
+        // coluna Qtd. Com dose × área a cotação de TS saía inflada (com 70 kg semente/ha, pedia
+        // ~43% a mais do que o necessário).
+        const qtd = cat.name === "TS" ? calcQtdTS(p, culture) : (p.dose > 0 ? p.dose * p.area : p.area);
         // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
         // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
         if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
