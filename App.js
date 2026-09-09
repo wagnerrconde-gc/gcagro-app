@@ -173,6 +173,15 @@ function normalizarNome(str) {
     .replace(/[óòôõö]/g,"o").replace(/[úùûü]/g,"u").replace(/ç/g,"c").replace(/ñ/g,"n")
     .replace(/\s+/g," ");
 }
+// Chave usada pra juntar o MESMO produto numa linha só na cotação/compra, mesmo repetido em
+// culturas e categorias diferentes. Além de ignorar acento/maiúscula/espaço (normalizarNome),
+// trata o padrão "A / B" (dois produtos equivalentes na mesma linha): ignora o espaçamento em
+// volta da barra e a ordem das partes — "Prêmio / Shenzi", "Premio/Shenzi" e "Shenzi / Prêmio"
+// contam como o mesmo item.
+function chaveProduto(nome) {
+  const partes = normalizarNome(nome).split("/").map(s=>s.trim()).filter(Boolean);
+  return partes.length>1 ? partes.sort().join("/") : normalizarNome(nome);
+}
 // Link de busca pro Ingrediente Ativo de um produto na hora de cadastrar — não dá pra consultar o
 // Agrofit ao vivo de dentro do app (base de dados gigante, sem servidor por trás), então abre uma
 // busca já pronta numa aba nova pra conferir e colar o resultado de volta no campo.
@@ -473,9 +482,11 @@ function derivarProdutos(data, excluirAdubacao=false) {
       if (excluirAdubacao && (cat.name === "Adubação" || cat.name === "Sementes")) return;
       (cat.products||[]).forEach(p => {
         if (!p || !p.produto || produtoJaResolvido(p)) return;
-        const key = p.produto.trim().toLowerCase();
+        const key = chaveProduto(p.produto);
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
-        if (map[key]) { map[key].qtd_total += qtd; }
+        // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
+        // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
+        if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
         else { map[key] = { nome:p.produto.trim(), unidade:p.fase&&p.fase.toLowerCase().includes("dose")?"doses":p.fase&&p.fase.toLowerCase().includes("kg")?"kg":"L", qtd_total:qtd, categoria:cat.name, preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
@@ -489,9 +500,11 @@ function derivarAdubacao(data) {
       if (cat.name !== "Adubação") return;
       (cat.products||[]).forEach(p => {
         if (!p || !p.produto || produtoJaResolvido(p)) return;
-        const key = p.produto.trim().toLowerCase();
+        const key = chaveProduto(p.produto);
         const qtd = p.dose > 0 ? p.dose * p.area : p.area;
-        if (map[key]) { map[key].qtd_total += qtd; }
+        // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
+        // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
+        if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
         else { map[key] = { nome:p.produto.trim(), unidade:"TN", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
@@ -505,9 +518,11 @@ function derivarSementes(data) {
       if (cat.name !== "Sementes") return;
       (cat.products||[]).forEach(p => {
         if (!p || !p.produto || produtoJaResolvido(p)) return;
-        const key = p.produto.trim().toLowerCase();
+        const key = chaveProduto(p.produto);
         const qtd = p.qtd||0;
-        if (map[key]) { map[key].qtd_total += qtd; }
+        // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
+        // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
+        if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
         else { map[key] = { nome:p.produto.trim(), unidade:"bag", qtd_total:qtd, categoria:"Sementes", preco_ref:p.preco_unit, ingrediente_ativo:"" }; }
       });
     });
@@ -2445,7 +2460,7 @@ function App() {
       Object.values(nd).forEach(culture => {
         (culture.categories||[]).forEach(cat => {
           (cat.products||[]).forEach(p => {
-            const nomeMatch = p.produto.trim().toLowerCase() === prodKey;
+            const nomeMatch = chaveProduto(p.produto) === chaveProduto(prodKey);
             const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
             if (nomeMatch || iaMatch) {
               p.preco_unit = precoMedio;
@@ -2492,8 +2507,8 @@ function App() {
 
   // ── Gerar Cotação (sincroniza Adubação/Sementes da Programação p/ as cotações editáveis) ──
   function mergeNovosProdutos(existentes, derivados) {
-    const nomes = new Set(existentes.map(p=>p.nome.trim().toLowerCase()));
-    const novos = derivados.filter(p=>!nomes.has(p.nome.trim().toLowerCase()));
+    const nomes = new Set(existentes.map(p=>chaveProduto(p.nome)));
+    const novos = derivados.filter(p=>!nomes.has(chaveProduto(p.nome)));
     return novos.length ? [...existentes, ...novos] : existentes;
   }
   function gerarCotacao() {
@@ -2662,9 +2677,9 @@ function App() {
     if (!medias.length) return [];
     function procuraMatch(p, culturaNome) {
       if (isSementes) return medias.find(m => normalizarNome(m.produto)===normalizarNome(culturaNome));
-      const nomeKey = normalizarNome(p.produto);
+      const nomeKey = chaveProduto(p.produto);
       const iaKey = normalizarNome(p.ingrediente_ativo);
-      return medias.find(m => normalizarNome(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
+      return medias.find(m => chaveProduto(m.produto)===nomeKey || (iaKey && normalizarNome(m.produto)===iaKey));
     }
     function relevante(cat) {
       return isAdub ? cat.name==="Adubação" : isSementes ? cat.name==="Sementes" : (cat.name!=="Adubação" && cat.name!=="Sementes");
