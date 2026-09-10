@@ -69,6 +69,26 @@ const KEY_PROG_MOBILE_VIEW = "gcagro_prog_mobile_view_v1";
 // eu ter que digitar. Fica só no aparelho (localStorage), fora do Firebase — são milhares de
 // linhas que nunca mudam, não faz sentido trafegar isso na sincronização a cada carregamento.
 const KEY_CATALOGO_IA = "gcagro_catalogo_ia_v1";
+// Pontos de retorno gravados ANTES de cada operação que apaga ou sobrescreve em massa. Como a
+// sincronização é instantânea, um clique errado num "limpar" ou num "substituir" se espalha pra
+// todos os aparelhos na hora e o único caminho de volta seria um backup manual antigo. Guarda só
+// as fatias que a operação mexe (não o app inteiro), pra caber no armazenamento do navegador.
+const KEY_SNAPSHOTS = "gcagro_snapshots_v1";
+const MAX_SNAPSHOTS = 12;
+// Quando foi a última vez que levei uma cópia pra fora do app (o arquivo .json baixado) e a última
+// cópia automática gravada no servidor. Uma protege contra erro meu, a outra contra perder o
+// aparelho — por isso as duas existem.
+const KEY_ULTIMO_DOWNLOAD = "gcagro_ultimo_download_backup_v1";
+const KEY_ULTIMA_COPIA_FB = "gcagro_ultima_copia_servidor_v1";
+const DIAS_COPIA_AUTOMATICA = 7;
+const DIAS_LEMBRETE_DOWNLOAD = 15;
+const MAX_COPIAS_SERVIDOR = 8;
+function diasDesde(iso) {
+  if (!iso) return Infinity;
+  const t = new Date(iso).getTime();
+  if (!t) return Infinity;
+  return (Date.now() - t) / 86400000;
+}
 
 // Estoque de Insumos: grupos e cor de cada um (badge nas tabelas)
 const GRUPOS_ESTOQUE_INSUMOS = ["Defensivos","Adubos","Foliares","Sementes"];
@@ -2091,6 +2111,38 @@ function App() {
   const [editingRecordCell, setEditingRecordCell] = useState(null); // "module|id|field"
   const [importMsg, setImportMsg]         = useState(null); // {modulo, texto}
   const [backupMsg, setBackupMsg]         = useState(null); // {ok, texto}
+  // ── Rede de proteção contra operação em massa feita por engano ──
+  // A sincronização é instantânea: um "limpar" ou "substituir" clicado sem querer se espalha pra
+  // todos os aparelhos na hora. Antes de cada operação dessas, guarda as fatias que ela vai mexer.
+  const [snapshots, setSnapshots] = useState(() => loadLS(KEY_SNAPSHOTS, []));
+  useEffect(() => { saveLS(KEY_SNAPSHOTS, snapshots); }, [snapshots]);
+  const [ultimoDownloadBackup, setUltimoDownloadBackup] = useState(() => loadLS(KEY_ULTIMO_DOWNLOAD, null));
+  useEffect(() => { saveLS(KEY_ULTIMO_DOWNLOAD, ultimoDownloadBackup); }, [ultimoDownloadBackup]);
+  function salvarSnapshot(descricao, fatias) {
+    setSnapshots(s => [{ id:newId(), quando:new Date().toISOString(), descricao,
+      fatias: JSON.parse(JSON.stringify(fatias)) }, ...s].slice(0, MAX_SNAPSHOTS));
+  }
+  function restaurarSnapshot(id) {
+    const snap = snapshots.find(s => s.id === id);
+    if (!snap) return;
+    if (!window.confirm(`Voltar ao estado de antes de "${snap.descricao}"?\n\nSó o que aquela operação mexeu é restaurado; o resto do app fica como está.`)) return;
+    const f = snap.fatias || {};
+    if (f.prog_verao) setDataVerao(f.prog_verao);
+    if (f.prog_inv) setDataInverno(f.prog_inv);
+    if (f.compras) setComprasRecords(f.compras);
+    if (f.cot) {
+      const ctx = f.cot.ctx;
+      if (f.cot.produtos) setProdutosCtx(ctx, f.cot.produtos);
+      if (f.cot.dados) setCotData(ctx, f.cot.dados);
+    }
+    setBackupMsg({ ok:true, texto:`✓ Restaurado o estado de antes de "${snap.descricao}".` });
+    setTimeout(()=>setBackupMsg(null), 6000);
+  }
+  // Fatia da Programação que a operação vai mexer, já no formato do snapshot.
+  function fatiaProgAtual() {
+    return appView==="prog_inv" || appView==="resumo_inv"
+      ? { prog_inv: dataInverno } : { prog_verao: dataVerao };
+  }
   const [addingColheita, setAddingColheita]     = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
   const [colheitaTipoTab, setColheitaTipoTab] = useState("verao");
@@ -2420,6 +2472,7 @@ function App() {
     const n = getProdutos(cotContext).length;
     if (!n) { window.alert("Esta cotação já está vazia."); return; }
     if (!window.confirm(`Remover os ${n} produtos desta cotação e apagar os preços já cotados?\n\nA Programação e as Compras não são alteradas — depois é só clicar em "Gerar Cotação" na Programação pra montar a lista da safra nova.`)) return;
+    salvarSnapshot("Limpar lista da cotação", { cot: { ctx: cotContext, produtos: getProdutos(cotContext), dados: getCotData(cotContext) } });
     setProdutosCtx(cotContext, []);
     setCotData(cotContext, {});
   }
@@ -2558,6 +2611,7 @@ function App() {
   }
   function deleteCultura(nome) {
     if (!window.confirm(`Remover cultura "${nome}"?`)) return;
+    salvarSnapshot(`Remover cultura ${nome}`, fatiaProgAtual());
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); delete nd[nome]; return nd; });
   }
   // Importa categorias/produtos de outra cultura da mesma safra (Verão ou Inverno) para
@@ -2677,6 +2731,7 @@ function App() {
   function aplicarPropostaIA() {
     const escolhidas = (propostaIA?.propostas||[]).filter(x=>x.marcado);
     if (!escolhidas.length) { setPropostaIA(null); return; }
+    salvarSnapshot(`Preencher I.A. (${escolhidas.length} produtos)`, fatiaProgAtual());
     const nd = JSON.parse(JSON.stringify(data));
     escolhidas.forEach(x => {
       const p = nd[x.cultura]?.categories?.[x.catIdx]?.products?.[x.prodIdx];
@@ -2722,6 +2777,7 @@ function App() {
       ? "TODOS os ingredientes ativos desta safra (inclusive os que você digitou à mão)"
       : `os ${iaAutomaticos} ingrediente(s) ativo(s) preenchidos automaticamente (o que você digitou à mão não é tocado)`;
     if (!window.confirm(`Apagar ${alvo}?`)) return;
+    salvarSnapshot(todos ? "Limpar todos os I.A." : "Limpar I.A. automáticos", fatiaProgAtual());
     const nd = JSON.parse(JSON.stringify(data));
     let limpos = 0;
     Object.values(nd).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
@@ -2795,6 +2851,7 @@ function App() {
   function aplicarImportProgramacao() {
     const escolhidas = (importProgPreview||[]).filter(l => l.marcado && !linhaImportBloqueada(l));
     if (!escolhidas.length) return;
+    salvarSnapshot(importProgSubstituir ? "Importar planilha (substituindo)" : "Importar planilha", fatiaProgAtual());
     const nd = JSON.parse(JSON.stringify(data));
     if (importProgSubstituir) {
       const alvos = new Set(escolhidas.map(l => l.cultura+"||"+l.categoria));
@@ -2865,6 +2922,7 @@ function App() {
     const n = (cat?.products||[]).length;
     if (!n) return;
     if (!window.confirm(`Apagar os ${n} produto(s) de "${cat.name}" em ${activeCulture}?\n\nAs outras categorias e culturas não são tocadas.`)) return;
+    salvarSnapshot(`Limpar ${cat.name} de ${activeCulture}`, fatiaProgAtual());
     setData(d => {
       const nd = JSON.parse(JSON.stringify(d));
       nd[activeCulture].categories[catIdx].products = [];
@@ -3194,6 +3252,7 @@ function App() {
     // Calculado com o estado ATUAL (fora do setState) pra poder devolver o relatório de forma
     // síncrona — o updater do setState não roda de forma síncrona, então não dá pra confiar
     // num valor só preenchido lá dentro pra decidir o que devolver logo em seguida.
+    salvarSnapshot(`Atualizar custo — ${categoriaCompra}`, isVerao ? { prog_verao: dataVerao } : { prog_inv: dataInverno });
     const atingidos = new Set();
     Object.entries(dAtual).forEach(([culturaNome, cultura]) => {
       (cultura.categories||[]).forEach(cat => {
@@ -3268,8 +3327,8 @@ function App() {
     saveLS(KEY_SAFRAS+"_ativa", nome);
   }
   // ── Backup (exportar/importar todos os dados) ──
-  function exportarBackup() {
-    const payload = {
+  function montarPayloadBackup() {
+    return {
       versao: "gcagro_backup_v1", dataExportacao: new Date().toISOString(),
       dataVerao, dataInverno, safraAtiva, safrasArquivadas,
       cotVeraoAdub, cotVeraoIns, cotVeraoSem, cotInvAdub, cotInvIns, cotInvSem, cotVencLabels, cotVencAtivos,
@@ -3279,12 +3338,41 @@ function App() {
       comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords,
       areasRecords, ciclosRecords, notasFiscaisRecords, aplicacoesRecords, movimentacoesEstoqueRecords,
     };
-    const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  }
+  function exportarBackup() {
+    const blob = new Blob([JSON.stringify(montarPayloadBackup(),null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `gcagro_backup_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`;
     a.click(); URL.revokeObjectURL(url);
+    // Registra que hoje eu levei uma cópia pra fora do app — é isso que o lembrete acompanha.
+    setUltimoDownloadBackup(new Date().toISOString());
   }
+  // Cópia automática no servidor, uma vez por semana, ao abrir o app. Fica num espaço separado
+  // (gcagro/backups/<data>), fora dos dados vivos — então um "limpar" errado não a alcança.
+  // Um app de navegador não roda com a aba fechada: a cópia acontece na primeira vez que eu abrir
+  // o GC Agro depois de passados os dias; por isso ela não substitui o arquivo baixado.
+  const copiaServidorFeita = useRef(false);
+  useEffect(() => {
+    if (copiaServidorFeita.current) return;
+    if (!fbDb) return; // sem nuvem configurada, só o arquivo baixado protege
+    if (diasDesde(loadLS(KEY_ULTIMA_COPIA_FB, null)) < DIAS_COPIA_AUTOMATICA) return;
+    copiaServidorFeita.current = true;
+    const agora = new Date();
+    const chave = agora.toISOString().slice(0,10);
+    const db = fbDb;
+    db.ref("gcagro/backups/"+chave).set({ ...montarPayloadBackup(), gravadoEm: agora.toISOString() })
+      .then(() => {
+        saveLS(KEY_ULTIMA_COPIA_FB, agora.toISOString());
+        // Mantém só as últimas cópias, pra não crescer sem fim.
+        return db.ref("gcagro/backups").once("value").then(snap => {
+          const todas = Object.keys(snap.val()||{}).sort();
+          const sobrando = todas.slice(0, Math.max(0, todas.length - MAX_COPIAS_SERVIDOR));
+          return Promise.all(sobrando.map(k => db.ref("gcagro/backups/"+k).remove()));
+        });
+      })
+      .catch(()=>{ copiaServidorFeita.current = false; });
+  }, [dataVerao, dataInverno]);
   function importarBackup(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -7844,6 +7932,53 @@ function App() {
       {appView==="backup" && (
         <div style={{padding:"20px 16px"}}>
           <div style={{fontSize:20,fontWeight:800,color:"#1a3a1a",marginBottom:16}}>💾 Backup dos Dados</div>
+
+          {/* Estado das três camadas de proteção, em uma olhada */}
+          {(()=>{
+            const diasDown = diasDesde(ultimoDownloadBackup);
+            const ultimaCopia = loadLS(KEY_ULTIMA_COPIA_FB, null);
+            const atrasado = diasDown > DIAS_LEMBRETE_DOWNLOAD;
+            return (
+              <div style={{background:atrasado?"#fff3e0":"#fff",border:atrasado?"1px solid #ffb74d":"none",borderRadius:12,padding:"14px 18px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14,fontSize:13,color:"#444"}}>
+                <div style={{fontWeight:700,marginBottom:8,color:atrasado?"#e65100":"#333"}}>
+                  {atrasado ? "⚠ Faz tempo que você não guarda uma cópia fora do app" : "🛡️ Proteção dos seus dados"}
+                </div>
+                <div style={{marginBottom:4}}>📥 <b>Arquivo baixado:</b> {ultimoDownloadBackup
+                  ? `há ${Math.floor(diasDown)} dia(s)` : "nunca"} — protege até se der problema na nuvem.</div>
+                <div style={{marginBottom:4}}>☁️ <b>Cópia automática no servidor:</b> {ultimaCopia
+                  ? `há ${Math.floor(diasDesde(ultimaCopia))} dia(s)` : (fbDb ? "será feita ao abrir o app" : "indisponível (sem nuvem)")} — a cada {DIAS_COPIA_AUTOMATICA} dias, guardando as últimas {MAX_COPIAS_SERVIDOR}.</div>
+                <div>↩️ <b>Pontos de retorno:</b> {snapshots.length} guardado(s) — gravados automaticamente antes de cada operação que apaga em massa.</div>
+              </div>
+            );
+          })()}
+
+          {/* Desfazer uma operação em massa */}
+          <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>↩️ Desfazer operação em massa</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+              Antes de cada operação que apaga ou sobrescreve vários registros de uma vez — limpar categoria, importar substituindo,
+              limpar ingredientes ativos, atualizar custo, limpar cotação, remover cultura — o app guarda como estava.
+              Restaurar traz de volta só o que aquela operação mexeu. Guarda os últimos {MAX_SNAPSHOTS}.
+            </div>
+            {snapshots.length===0
+              ? <div style={{fontSize:12,color:"#999"}}>Nenhuma operação em massa feita ainda.</div>
+              : (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {snapshots.map(s=>(
+                    <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"9px 12px",background:"#fafafa",borderRadius:8,flexWrap:"wrap"}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:"#333"}}>{s.descricao}</div>
+                        <div style={{fontSize:11,color:"#999"}}>{new Date(s.quando).toLocaleString("pt-BR")}</div>
+                      </div>
+                      <button onClick={()=>restaurarSnapshot(s.id)}
+                        style={{padding:"6px 14px",background:"#e8eaf6",border:"none",borderRadius:6,color:"#3949ab",fontSize:12,fontWeight:700,cursor:"pointer"}}>↩ Restaurar</button>
+                    </div>
+                  ))}
+                  <button onClick={()=>{ if(window.confirm("Descartar os pontos de retorno guardados?")) setSnapshots([]); }}
+                    style={{alignSelf:"flex-start",marginTop:4,padding:"5px 12px",background:"none",border:"1px solid #ddd",borderRadius:6,color:"#888",fontSize:11,cursor:"pointer"}}>Descartar todos</button>
+                </div>
+              )}
+          </div>
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
             <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>📤 Exportar Backup</div>
             <div style={{fontSize:12,color:"#666",marginBottom:14}}>Salva todos os dados do app (programação, cotações, colheita, vendas, compras, planejamento, safras) em um arquivo JSON. Guarde no Google Drive, OneDrive ou onde preferir.</div>
