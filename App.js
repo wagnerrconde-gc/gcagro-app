@@ -3352,27 +3352,34 @@ function App() {
   // (gcagro/backups/<data>), fora dos dados vivos — então um "limpar" errado não a alcança.
   // Um app de navegador não roda com a aba fechada: a cópia acontece na primeira vez que eu abrir
   // o GC Agro depois de passados os dias; por isso ela não substitui o arquivo baixado.
+  // A conta dos dias é feita pela data da última cópia que está NO SERVIDOR, não por um marcador
+  // de cada aparelho: senão o celular gravaria uma cópia mesmo com o computador tendo gravado
+  // ontem, e as vagas se gastariam à toa. Assim, tanto faz por onde eu abrir o app.
   const copiaServidorFeita = useRef(false);
   useEffect(() => {
     if (copiaServidorFeita.current) return;
     if (!fbDb) return; // sem nuvem configurada, só o arquivo baixado protege
-    if (diasDesde(loadLS(KEY_ULTIMA_COPIA_FB, null)) < DIAS_COPIA_AUTOMATICA) return;
     copiaServidorFeita.current = true;
-    const agora = new Date();
-    const chave = agora.toISOString().slice(0,10);
     const db = fbDb;
-    db.ref("gcagro/backups/"+chave).set({ ...montarPayloadBackup(), gravadoEm: agora.toISOString() })
-      .then(() => {
-        saveLS(KEY_ULTIMA_COPIA_FB, agora.toISOString());
-        // Mantém só as últimas cópias, pra não crescer sem fim.
-        return db.ref("gcagro/backups").once("value").then(snap => {
-          const todas = Object.keys(snap.val()||{}).sort();
+    // Lê só as chaves (as datas), não as cópias inteiras.
+    db.ref("gcagro/backups").once("value").then(snap => {
+      const datas = Object.keys(snap.val()||{}).sort();
+      const maisRecente = datas.length ? datas[datas.length-1] : null;
+      if (maisRecente) saveLS(KEY_ULTIMA_COPIA_FB, maisRecente);
+      if (maisRecente && diasDesde(maisRecente) < DIAS_COPIA_AUTOMATICA) return null;
+      const agora = new Date();
+      const chave = agora.toISOString().slice(0,10);
+      return db.ref("gcagro/backups/"+chave)
+        .set({ ...montarPayloadBackup(), gravadoEm: agora.toISOString() })
+        .then(() => {
+          saveLS(KEY_ULTIMA_COPIA_FB, agora.toISOString());
+          // Mantém só as últimas cópias, pra não crescer sem fim.
+          const todas = [...new Set([...datas, chave])].sort();
           const sobrando = todas.slice(0, Math.max(0, todas.length - MAX_COPIAS_SERVIDOR));
           return Promise.all(sobrando.map(k => db.ref("gcagro/backups/"+k).remove()));
         });
-      })
-      .catch(()=>{ copiaServidorFeita.current = false; });
-  }, [dataVerao, dataInverno]);
+    }).catch(()=>{ copiaServidorFeita.current = false; });
+  }, []);
   function importarBackup(e) {
     const file = e.target.files[0];
     if (!file) return;
