@@ -2129,6 +2129,7 @@ function App() {
   const [showImportCatalogo, setShowImportCatalogo] = useState(false);
   const [importCatalogoPreview, setImportCatalogoPreview] = useState(null);
   const [importCatalogoErro, setImportCatalogoErro] = useState("");
+  const [importCatalogoLidas, setImportCatalogoLidas] = useState(0);
   const [preencherIAMsg, setPreencherIAMsg] = useState(null);
   const [propostaIA, setPropostaIA] = useState(null);
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
@@ -2583,7 +2584,9 @@ function App() {
     return { mapa, ambiguos };
   }
   function mapasIA() {
-    const cat = indiceIA(catalogoIA.map(i => ({ nome:i.nome, ia:i.ia })));
+    // Produto marcado como conflitante na importação (o mesmo nome com ingredientes diferentes)
+    // fica fora da consulta: é melhor deixar em branco do que escolher um dos dois.
+    const cat = indiceIA(catalogoIA.filter(i => !i.amb).map(i => ({ nome:i.nome, ia:i.ia })));
     const est = indiceIA(insumosEstoqueRecords.map(r => ({ nome:r.nome, ia:r.ingredienteAtivo })));
     const prog = [];
     [dataVerao, dataInverno].forEach(d => Object.values(d||{}).forEach(c => (c.categories||[]).forEach(ct => (ct.products||[]).forEach(p => {
@@ -2655,6 +2658,21 @@ function App() {
   }, [data]);
   // Desfaz o preenchimento automático: apaga só os I.A. marcados como automáticos, deixando
   // intactos os que eu digitei ou corrigi à mão.
+  // Baixa o catálogo em planilha: o limpo (um produto por linha, pronto pra reimportar) ou só os
+  // nomes conflitantes, que é uma lista curta e dá pra resolver na mão ou me mandar pra revisar.
+  function exportarCatalogoIA(somenteConflitantes) {
+    const linhas = catalogoIA.filter(i => somenteConflitantes ? i.amb : !i.amb)
+      .sort((a,b)=>a.nome.localeCompare(b.nome))
+      .map(i => somenteConflitantes
+        ? { "Nome":i.nome, "Ingredientes Ativos em conflito":i.ia }
+        : { "Nome":i.nome, "Ingrediente Ativo":i.ia });
+    if (!linhas.length) return;
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    ws['!cols'] = [{wch:38},{wch:70}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, somenteConflitantes ? "Conflitantes" : "Catálogo");
+    XLSX.writeFile(wb, somenteConflitantes ? "Catalogo_IA_conflitantes.xlsx" : "Catalogo_IA_limpo.xlsx");
+  }
   function limparIAAutomaticos(todos=false) {
     const alvo = todos
       ? "TODOS os ingredientes ativos desta safra (inclusive os que você digitou à mão)"
@@ -5703,34 +5721,79 @@ function App() {
                     Arquivo .xlsx, .xls ou .csv com colunas <b>Nome</b> (ou Produto) e <b>Ingrediente Ativo</b> — por exemplo a lista do Agrofit com os produtos registrados no Brasil.
                     Isso <b>não</b> vira item de estoque: fica só como lista de consulta pro botão <b>🧪 Preencher I.A.</b> da Programação.
                     Importar de novo substitui o catálogo inteiro. Ele fica guardado neste aparelho, então precisa ser importado uma vez em cada um.
-                    {catalogoIA.length>0 && <div style={{marginTop:6,color:"#5e35b1"}}>Catálogo atual: <b>{catalogoIA.length.toLocaleString("pt-BR")}</b> produto(s).</div>}
+                    {catalogoIA.length>0 && (()=>{
+                      const amb = catalogoIA.filter(i=>i.amb);
+                      return (
+                        <div style={{marginTop:8,padding:"8px 10px",background:"#f3e5f5",borderRadius:6,color:"#4a148c"}}>
+                          <div>Catálogo atual: <b>{(catalogoIA.length-amb.length).toLocaleString("pt-BR")}</b> produto(s) utilizáveis
+                            {amb.length>0 && <> · <b style={{color:"#c62828"}}>{amb.length.toLocaleString("pt-BR")}</b> com ingrediente conflitante (não são usados)</>}
+                          </div>
+                          {amb.length>0 && (
+                            <div style={{marginTop:4,fontSize:11,color:"#7b1fa2"}}>
+                              Ex.: {amb.slice(0,4).map(i=>i.nome).join(", ")}{amb.length>4?"…":""} — o mesmo nome aparece no arquivo com composições diferentes.
+                            </div>
+                          )}
+                          <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                            <button onClick={()=>exportarCatalogoIA(false)}
+                              style={{padding:"4px 10px",background:"#5e35b1",border:"none",borderRadius:5,color:"#fff",fontSize:11,cursor:"pointer"}}>📊 Baixar catálogo limpo</button>
+                            {amb.length>0 && (
+                              <button onClick={()=>exportarCatalogoIA(true)}
+                                style={{padding:"4px 10px",background:"none",border:"1px solid #ce93d8",borderRadius:5,color:"#6a1b9a",fontSize:11,cursor:"pointer"}}>⚠ Baixar os conflitantes ({amb.length})</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   {!importCatalogoPreview ? (
                     <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
                       const file = e.target.files[0]; if (!file) return;
                       try {
                         const rows = await readSpreadsheetRows(file);
-                        const vistos = new Set();
-                        const linhas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
+                        // O Agrofit lista uma linha por REGISTRO, não por produto: o mesmo nome
+                        // comercial aparece várias vezes, de titulares diferentes e às vezes com
+                        // composição diferente. Então agrupa por nome: quando todas as linhas
+                        // concordam no ingrediente, vira um produto; quando divergem, o nome fica
+                        // marcado como conflitante e NUNCA é usado pra preencher — guardado só
+                        // pra eu poder olhar e resolver na mão.
+                        const porNome = new Map();
+                        let lidas = 0;
+                        rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
                           .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
-                          .filter(l => {
-                            if (!l.nome || !l.ia) return false;
+                          .forEach(l => {
+                            if (!l.nome || !l.ia) return;
+                            lidas++;
                             const k = normalizarNome(l.nome);
-                            if (vistos.has(k)) return false;
-                            vistos.add(k);
-                            return true;
+                            if (!porNome.has(k)) porNome.set(k, { nome:l.nome, ias:[l.ia] });
+                            else {
+                              const g = porNome.get(k);
+                              if (l.nome.length > g.nome.length) g.nome = l.nome;
+                              if (!g.ias.some(x => normalizarNome(x)===normalizarNome(l.ia))) g.ias.push(l.ia);
+                            }
                           });
+                        const linhas = [...porNome.values()].map(g => g.ias.length===1
+                          ? { nome:g.nome, ia:g.ias[0] }
+                          : { nome:g.nome, ia:g.ias.join("  |  "), amb:true });
                         if (!linhas.length) { setImportCatalogoErro("⚠ Nenhuma linha reconhecida. O arquivo precisa ter as colunas Nome e Ingrediente Ativo preenchidas."); return; }
                         setImportCatalogoPreview(linhas);
+                        setImportCatalogoLidas(lidas);
                         setImportCatalogoErro("");
                       } catch (err) { setImportCatalogoErro("❌ Erro ao ler o arquivo: "+err.message); }
                       e.target.value = "";
                     }} style={{marginBottom:10}}/>
                   ) : (
                     <>
-                      <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
-                        {importCatalogoPreview.length.toLocaleString("pt-BR")} produto(s) reconhecido(s). Amostra:
-                      </div>
+                      {(()=>{
+                        const amb = importCatalogoPreview.filter(l=>l.amb).length;
+                        return (
+                          <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
+                            <b>{importCatalogoLidas.toLocaleString("pt-BR")}</b> linha(s) lida(s) →{" "}
+                            <b>{(importCatalogoPreview.length-amb).toLocaleString("pt-BR")}</b> produto(s) utilizáveis
+                            {amb>0 && <> e <b style={{color:"#c62828"}}>{amb.toLocaleString("pt-BR")}</b> com o mesmo nome em composições diferentes (guardados, mas nunca usados pra preencher)</>}.
+                            {" "}Amostra:
+                          </div>
+                        );
+                      })()}
                       <div style={{overflowX:"auto",marginBottom:14}}>
                         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                           <thead><tr style={{background:"#f5f5f5"}}>
@@ -5739,10 +5802,10 @@ function App() {
                             ))}
                           </tr></thead>
                           <tbody>
-                            {importCatalogoPreview.slice(0,15).map((l,i)=>(
+                            {[...importCatalogoPreview].sort((a,b)=>(b.amb?1:0)-(a.amb?1:0)).slice(0,15).map((l,i)=>(
                               <tr key={i} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                                <td style={{padding:"5px 7px",fontWeight:600}}>{l.nome}</td>
-                                <td style={{padding:"5px 7px",color:"#888"}}>{l.ia}</td>
+                                <td style={{padding:"5px 7px",fontWeight:600}}>{l.amb?"⚠ ":""}{l.nome}</td>
+                                <td style={{padding:"5px 7px",color:l.amb?"#c62828":"#888"}}>{l.ia}</td>
                               </tr>
                             ))}
                           </tbody>
