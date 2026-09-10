@@ -2161,6 +2161,7 @@ function App() {
   const [importCatalogoPreview, setImportCatalogoPreview] = useState(null);
   const [importCatalogoErro, setImportCatalogoErro] = useState("");
   const [importCatalogoLidas, setImportCatalogoLidas] = useState(0);
+  const [buscaCatalogo, setBuscaCatalogo] = useState("");
   const [preencherIAMsg, setPreencherIAMsg] = useState(null);
   const [propostaIA, setPropostaIA] = useState(null);
   const [showImportProg, setShowImportProg] = useState(false);
@@ -5830,6 +5831,28 @@ function App() {
                               Ex.: {amb.slice(0,4).map(i=>i.nome).join(", ")}{amb.length>4?"…":""} — o mesmo nome aparece no arquivo com composições diferentes.
                             </div>
                           )}
+                          {/* Consulta rápida: "por que esse produto veio com o I.A. errado?" —
+                              mostra exatamente o que o arquivo trouxe pra esse nome. */}
+                          <div style={{marginTop:8}}>
+                            <input value={buscaCatalogo} onChange={e=>setBuscaCatalogo(e.target.value)}
+                              placeholder="Procurar um produto no catálogo (ex: aprove)"
+                              style={{width:"100%",padding:"6px 10px",fontSize:12,border:"1px solid #ce93d8",borderRadius:6,outline:"none"}}/>
+                            {buscaCatalogo.trim().length>1 && (()=>{
+                              const alvo = normalizarNome(buscaCatalogo);
+                              const achados = catalogoIA.filter(i => normalizarNome(i.nome).includes(alvo)).slice(0,12);
+                              return (
+                                <div style={{marginTop:6,background:"#fff",borderRadius:6,padding:"6px 8px",maxHeight:180,overflowY:"auto"}}>
+                                  {achados.length===0
+                                    ? <div style={{fontSize:11,color:"#c62828"}}>Nenhum produto com esse nome no catálogo — por isso o campo fica em branco (ou o I.A. veio do estoque / de outro produto da Programação).</div>
+                                    : achados.map((i,k)=>(
+                                        <div key={k} style={{fontSize:11,padding:"3px 0",borderBottom:k<achados.length-1?"1px solid #f0f0f0":"none"}}>
+                                          <b>{i.amb?"⚠ ":""}{i.nome}</b> — <span style={{color:i.amb?"#c62828":"#555"}}>{i.ia}</span>
+                                        </div>
+                                      ))}
+                                </div>
+                              );
+                            })()}
+                          </div>
                           <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
                             <button onClick={()=>exportarCatalogoIA(false)}
                               style={{padding:"4px 10px",background:"#5e35b1",border:"none",borderRadius:5,color:"#fff",fontSize:11,cursor:"pointer"}}>📊 Baixar catálogo limpo</button>
