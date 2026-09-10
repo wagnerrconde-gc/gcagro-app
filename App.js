@@ -877,9 +877,14 @@ function acharIA(nome, mapas) {
     const direto = mapa.get(chave);
     if (direto) return direto;
   }
+  // Sem nome igual, a única flexibilidade permitida é a marca da empresa na frente
+  // ("NutriNicomomag" = "Nicomomag") — a mesma regra usada pra juntar produto na cotação, que já
+  // é estreita de propósito. A busca antiga aceitava qualquer nome que "começasse com" o digitado
+  // (nos dois sentidos), e num catálogo com milhares de produtos isso preenchia I.A. errado o
+  // tempo todo: "Fox Xpro" pegava o ingrediente de "Fox", "Nimbus" o de "Nim", e por aí vai.
   for (const mapa of mapas) {
     const candidatos = [];
-    mapa.forEach((ia, k) => { if (k.startsWith(chave) || chave.startsWith(k)) candidatos.push(ia); });
+    mapa.forEach((ia, k) => { if (mesmoProdutoQuaseIgual(k, chave)) candidatos.push(ia); });
     const unicos = [...new Set(candidatos)];
     if (unicos.length === 1) return unicos[0];
   }
@@ -2542,7 +2547,11 @@ function App() {
     if (novoValor === pAtual[field]) return;
     setData(d=>{
       const nd=JSON.parse(JSON.stringify(d));
-      nd[activeCulture].categories[catIdx].products[prodIdx][field] = novoValor;
+      const prod = nd[activeCulture].categories[catIdx].products[prodIdx];
+      prod[field] = novoValor;
+      // I.A. digitado à mão deixa de contar como preenchimento automático — assim o "limpar os
+      // automáticos" não apaga o que eu conferi e corrigi.
+      if (field === "ingrediente_ativo") prod.ia_auto = false;
       return nd;
     });
   }
@@ -2579,13 +2588,37 @@ function App() {
       (cat.products||[]).forEach(p => {
         if (!p.produto || (p.ingrediente_ativo||"").trim()) return;
         const ia = buscarIngredienteAtivo(p.produto, mapas);
-        if (ia) { p.ingrediente_ativo = ia; preenchidos++; }
+        // Marca que este I.A. veio do preenchimento automático: é o que permite desfazer só o que
+        // o botão preencheu, sem encostar no que eu digitei à mão.
+        if (ia) { p.ingrediente_ativo = ia; p.ia_auto = true; preenchidos++; }
         else if (!naoAchados.includes(p.produto.trim())) naoAchados.push(p.produto.trim());
       });
     }));
     if (preenchidos) setData(nd);
     setPreencherIAMsg({ preenchidos, naoAchados });
     setTimeout(()=>setPreencherIAMsg(null), 8000);
+  }
+  // Quantos I.A. da safra aberta vieram do botão (e não da minha mão) — habilita o "limpar".
+  const iaAutomaticos = useMemo(() => {
+    let n = 0;
+    Object.values(data||{}).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
+      if (p.ia_auto && (p.ingrediente_ativo||"").trim()) n++;
+    })));
+    return n;
+  }, [data]);
+  // Desfaz o preenchimento automático: apaga só os I.A. marcados como automáticos, deixando
+  // intactos os que eu digitei ou corrigi à mão.
+  function limparIAAutomaticos() {
+    if (!iaAutomaticos) return;
+    if (!window.confirm(`Apagar os ${iaAutomaticos} ingrediente(s) ativo(s) preenchidos automaticamente?\n\nOs que você digitou ou corrigiu à mão não são tocados.`)) return;
+    const nd = JSON.parse(JSON.stringify(data));
+    let limpos = 0;
+    Object.values(nd).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
+      if (p.ia_auto && (p.ingrediente_ativo||"").trim()) { p.ingrediente_ativo = ""; p.ia_auto = false; limpos++; }
+    })));
+    setData(nd);
+    setPreencherIAMsg({ limpos });
+    setTimeout(()=>setPreencherIAMsg(null), 6000);
   }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
@@ -4138,7 +4171,9 @@ function App() {
         <div style={{padding:"16px 12px"}}>
           {preencherIAMsg && (
             <div style={{background:preencherIAMsg.erro?"#fff3e0":"#e0f2f1",border:"1px solid "+(preencherIAMsg.erro?"#ffb74d":"#80cbc4"),borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#00695c"}}>
-              {preencherIAMsg.erro ? <span style={{color:"#e65100"}}>⚠ {preencherIAMsg.erro}</span> : (<>
+              {preencherIAMsg.erro ? <span style={{color:"#e65100"}}>⚠ {preencherIAMsg.erro}</span>
+               : preencherIAMsg.limpos != null ? <span>↩ {preencherIAMsg.limpos} ingrediente(s) ativo(s) automático(s) apagado(s).</span>
+               : (<>
                 ✓ {preencherIAMsg.preenchidos} ingrediente(s) ativo(s) preenchido(s).
                 {preencherIAMsg.naoAchados.length>0 && (
                   <div style={{color:"#888",marginTop:4}}>
@@ -4181,8 +4216,12 @@ function App() {
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Insumos/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(culture.area>0?insumoTotal/culture.area:0)}</div></div>
             <div style={{borderLeft:"1px solid #eee",paddingLeft:16}}><div style={{fontSize:11,color:"#888"}}>Custo total/ha</div><div style={{fontSize:16,fontWeight:700,color:colors.bg}}>{fmt(totalHa)}</div></div>
             <div style={{marginLeft:"auto",display:"flex",gap:8}}>
-              <button onClick={preencherIngredientesAtivos} title="Preenche o Ingrediente Ativo dos produtos que estão sem, consultando o catálogo do Agrofit e o estoque. Não mexe no que já está preenchido."
+              <button onClick={preencherIngredientesAtivos} title="Preenche o Ingrediente Ativo dos produtos que estão sem, consultando o catálogo do Agrofit e o estoque. Só preenche quando tem certeza do nome; não mexe no que já está preenchido."
                 style={{padding:"6px 12px",background:"#e0f2f1",border:"none",borderRadius:6,color:"#00695c",fontSize:11,cursor:"pointer"}}>🧪 Preencher I.A.</button>
+              {iaAutomaticos>0 && (
+                <button onClick={limparIAAutomaticos} title="Apaga só os ingredientes ativos que o botão preencheu. O que você digitou ou corrigiu à mão fica."
+                  style={{padding:"6px 12px",background:"#fff3e0",border:"none",borderRadius:6,color:"#e65100",fontSize:11,cursor:"pointer"}}>↩ Limpar I.A. automáticos ({iaAutomaticos})</button>
+              )}
               <button onClick={()=>setShowImportModal(true)} style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
                 {culture.ativo?"⏸ Desativar":"▶ Ativar"}
