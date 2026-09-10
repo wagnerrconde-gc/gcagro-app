@@ -855,6 +855,37 @@ function buildColheitaRecord(m, safraAtiva, resolveLote) {
     data:formatMaybeDate(m.data), areaHa, sacas, umidade:toNum(m.umidade), pmg:toNum(m.pmg), obs:String(m.obs||"").trim() };
 }
 
+// Importação de produtos da Programação a partir de planilha — por exemplo a programação
+// exportada de outro app, que tem as mesmas categorias. A cultura vem da coluna quando existir;
+// senão, tudo entra na cultura aberta.
+const ALIASES_PROG_PRODUTO = {
+  cultura:          ["cultura","lavoura"],
+  categoria:        ["categoria","grupo","tipo","classe"],
+  produto:          ["produto","nome","item","insumo","descricao"],
+  ingredienteAtivo: ["ingrediente_ativo","ia","i_a","principio_ativo","formula"],
+  dose:             ["dose","dose_ha","dose_por_ha","dosagem"],
+  kgHa:             ["kg_semente_ha","kg_sementeha","kg_semente","kgha"],
+  area:             ["area","area_ha","hectares","ha"],
+  qtd:              ["qtd","quantidade","quantidade_total"],
+  unidade:          ["unidade","unid","un"],
+  fase:             ["fase","epoca","momento","aplicacao"],
+  obs:              ["obs","observacao","observacoes"],
+  preco:            ["preco","preco_ref","preco_referencia","preco_unitario","valor","preco_unit","ref"],
+};
+// Casa o nome da categoria da planilha com as categorias do app, aceitando o nome curto que
+// outros sistemas usam ("Herbicidas" em vez de "Herbicidas - Dessecação e Pós", "Óleos" em vez de
+// "Óleos / Adjuvantes"). Sem correspondência, devolve null e a linha é reportada, não chutada.
+function casarCategoriaProg(nomeCategoria, categoriasExistentes) {
+  const alvo = normalizarNome(nomeCategoria);
+  if (!alvo) return null;
+  const exato = categoriasExistentes.find(c => normalizarNome(c) === alvo);
+  if (exato) return exato;
+  const parciais = categoriasExistentes.filter(c => {
+    const n = normalizarNome(c);
+    return n.startsWith(alvo) || alvo.startsWith(n.split(" ")[0]);
+  });
+  return parciais.length === 1 ? parciais[0] : null;
+}
 const ALIASES_ESTOQUE_INSUMOS = {
   categoria:       ["categoria","grupo","tipo"],
   nome:            ["nome","produto","item","insumo"],
@@ -2132,6 +2163,9 @@ function App() {
   const [importCatalogoLidas, setImportCatalogoLidas] = useState(0);
   const [preencherIAMsg, setPreencherIAMsg] = useState(null);
   const [propostaIA, setPropostaIA] = useState(null);
+  const [showImportProg, setShowImportProg] = useState(false);
+  const [importProgPreview, setImportProgPreview] = useState(null);
+  const [importProgErro, setImportProgErro] = useState("");
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
@@ -2699,6 +2733,65 @@ function App() {
     })));
     return n;
   }, [data]);
+  // Lê a planilha de produtos e monta a prévia: cada linha vira {cultura, categoria, produto...},
+  // com o motivo quando a linha não pode entrar (cultura ou categoria que não existem aqui, ou
+  // produto que já está lançado naquela categoria).
+  async function lerPlanilhaProgramacao(file) {
+    try {
+      const rows = await readSpreadsheetRows(file);
+      const culturasApp = Object.keys(data);
+      const linhas = rows.map(row => mapRowByAliases(row, ALIASES_PROG_PRODUTO)).map(m => {
+        const produto = String(m.produto||"").trim();
+        if (!produto) return null;
+        const culturaTxt = String(m.cultura||"").trim();
+        const cultura = culturaTxt
+          ? (culturasApp.find(c => normalizarNome(c) === normalizarNome(culturaTxt))
+             || culturasApp.find(c => normalizarNome(culturaTxt).startsWith(normalizarNome(c))))
+          : activeCulture;
+        const categorias = cultura ? (data[cultura].categories||[]).map(c=>c.name) : [];
+        const categoria = cultura ? casarCategoriaProg(m.categoria, categorias) : null;
+        const jaTem = cultura && categoria && ((data[cultura].categories.find(c=>c.name===categoria)?.products)||[])
+          .some(p => chaveProduto(p.produto) === chaveProduto(produto));
+        const motivo = !cultura ? `cultura "${culturaTxt}" não existe aqui`
+          : !categoria ? `categoria "${String(m.categoria||"").trim()||"(vazia)"}" não reconhecida`
+          : jaTem ? "já existe nesta categoria" : "";
+        return {
+          cultura: cultura||culturaTxt, categoria: categoria||String(m.categoria||"").trim(), produto,
+          ingrediente_ativo: String(m.ingredienteAtivo||"").trim(),
+          dose: toNum(m.dose), kgHa: toNum(m.kgHa),
+          area: toNum(m.area) || (cultura ? (data[cultura].area||0) : 0),
+          qtd: toNum(m.qtd), unidade: String(m.unidade||"").trim(),
+          fase: String(m.fase||"").trim(), obs: String(m.obs||"").trim(),
+          preco: toNum(m.preco), motivo, marcado: !motivo,
+        };
+      }).filter(Boolean);
+      if (!linhas.length) { setImportProgErro("⚠ Nenhuma linha reconhecida. A planilha precisa ter pelo menos a coluna Produto (e, de preferência, Cultura e Categoria)."); return; }
+      setImportProgPreview(linhas);
+      setImportProgErro("");
+    } catch (err) { setImportProgErro("❌ Erro ao ler o arquivo: "+err.message); }
+  }
+  function aplicarImportProgramacao() {
+    const escolhidas = (importProgPreview||[]).filter(l => l.marcado && !l.motivo);
+    if (!escolhidas.length) return;
+    const nd = JSON.parse(JSON.stringify(data));
+    let add = 0;
+    escolhidas.forEach(l => {
+      const cat = (nd[l.cultura]?.categories||[]).find(c => c.name === l.categoria);
+      if (!cat) return;
+      const isSem = l.categoria === "Sementes";
+      cat.products.push({
+        produto:l.produto, ingrediente_ativo:l.ingrediente_ativo, dose:l.dose, area:l.area,
+        qtd:l.qtd, unidade:l.unidade || (isSem ? "bag" : "kg"), fase:l.fase, obs:l.obs,
+        preco_unit:l.preco, preco_compra:null, fornecedor_compra:null, revenda:"", vencimento:"",
+        ...(l.kgHa ? { kgHa:l.kgHa } : {}),
+      });
+      add++;
+    });
+    setData(nd);
+    setShowImportProg(false); setImportProgPreview(null); setImportProgErro("");
+    setPreencherIAMsg({ importados:add });
+    setTimeout(()=>setPreencherIAMsg(null), 8000);
+  }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
   }
@@ -4251,6 +4344,7 @@ function App() {
           {preencherIAMsg && (
             <div style={{background:preencherIAMsg.erro?"#fff3e0":"#e0f2f1",border:"1px solid "+(preencherIAMsg.erro?"#ffb74d":"#80cbc4"),borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12,color:"#00695c"}}>
               {preencherIAMsg.erro ? <span style={{color:"#e65100"}}>⚠ {preencherIAMsg.erro}</span>
+               : preencherIAMsg.importados != null ? <span>✓ {preencherIAMsg.importados} produto(s) importado(s) da planilha.</span>
                : preencherIAMsg.limpos != null ? <span>↩ {preencherIAMsg.limpos} ingrediente(s) ativo(s) automático(s) apagado(s).</span>
                : (<>
                 ✓ {preencherIAMsg.preenchidos} ingrediente(s) ativo(s) preenchido(s).
@@ -4305,7 +4399,10 @@ function App() {
                 <button onClick={()=>limparIAAutomaticos(true)} title="Apaga o ingrediente ativo de TODOS os produtos desta safra — inclusive os preenchidos pela versão antiga do botão, que não ficaram marcados."
                   style={{padding:"6px 12px",background:"none",border:"1px solid #ef9a9a",borderRadius:6,color:"#c62828",fontSize:11,cursor:"pointer"}}>🧹 Limpar todos os I.A. ({iaPreenchidos})</button>
               )}
-              <button onClick={()=>setShowImportModal(true)} style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
+              <button onClick={()=>setShowImportModal(true)} title="Copia os produtos de outra cultura deste mesmo app" style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
+              <button onClick={()=>{setShowImportProg(true);setImportProgPreview(null);setImportProgErro("");}}
+                title="Importa produtos de uma planilha — por exemplo a programação exportada de outro app"
+                style={{padding:"6px 12px",background:"#ede7f6",border:"none",borderRadius:6,color:"#5e35b1",fontSize:11,cursor:"pointer"}}>📄 Importar planilha</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
                 {culture.ativo?"⏸ Desativar":"▶ Ativar"}
               </button>
@@ -7902,6 +7999,72 @@ function App() {
           </div>
         );
       })()}
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL: IMPORTAR PRODUTOS DA PROGRAMAÇÃO (PLANILHA)
+      ══════════════════════════════════════════════════════ */}
+      {showImportProg && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:920,width:"100%",maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+            <div style={{fontWeight:700,fontSize:15,color:"#5e35b1",marginBottom:6}}>📄 Importar produtos de planilha</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+              Colunas aceitas: <b>Cultura</b>, <b>Categoria</b>, <b>Produto</b>, <b>Ingrediente Ativo</b>, <b>Dose</b>, <b>Área</b>, <b>Qtd</b>, <b>Unidade</b>, <b>Fase</b>, <b>Obs</b> e <b>Preço</b> — só Produto é obrigatório.
+              Maiúscula, acento e underline não importam. Sem coluna Cultura, tudo entra em <b>{activeCulture}</b>; sem Área, usa a área da cultura.
+              Categoria aceita o nome curto ("Herbicidas", "Óleos"). Linha que não puder entrar aparece marcada com o motivo e não é importada.
+            </div>
+            {!importProgPreview ? (
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{ const f=e.target.files[0]; if(f) lerPlanilhaProgramacao(f); e.target.value=""; }} style={{marginBottom:10}}/>
+            ) : (()=> {
+              const ok = importProgPreview.filter(l=>!l.motivo);
+              const nok = importProgPreview.filter(l=>l.motivo);
+              return (<>
+                <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
+                  <b>{importProgPreview.length}</b> linha(s) lida(s) · <b style={{color:"#2e7d32"}}>{ok.length}</b> prontas pra importar
+                  {nok.length>0 && <> · <b style={{color:"#c62828"}}>{nok.length}</b> com pendência</>}
+                </div>
+                <div style={{overflowY:"auto",flex:1,marginBottom:12}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead><tr style={{background:"#ede7f6",position:"sticky",top:0}}>
+                      {["","Cultura","Categoria","Produto","I.A.","Dose","Área","Preço","Situação"].map(h=>(
+                        <th key={h} style={{padding:"6px 7px",textAlign:"left",color:"#5e35b1",fontSize:9,letterSpacing:1,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {importProgPreview.map((l,i)=>(
+                        <tr key={i} style={{background:i%2===0?"#fff":"#fafafa",opacity:l.motivo?0.55:(l.marcado?1:0.5)}}>
+                          <td style={{padding:"4px 7px"}}>
+                            <input type="checkbox" checked={l.marcado&&!l.motivo} disabled={!!l.motivo}
+                              onChange={()=>setImportProgPreview(pv=>pv.map((y,j)=>j===i?{...y,marcado:!y.marcado}:y))}/>
+                          </td>
+                          <td style={{padding:"4px 7px"}}>{l.cultura||"—"}</td>
+                          <td style={{padding:"4px 7px"}}>{l.categoria||"—"}</td>
+                          <td style={{padding:"4px 7px",fontWeight:600}}>{l.produto}</td>
+                          <td style={{padding:"4px 7px",color:"#888"}}>{l.ingrediente_ativo||"—"}</td>
+                          <td style={{padding:"4px 7px",textAlign:"right"}}>{l.dose?fmtN(l.dose,3):"—"}</td>
+                          <td style={{padding:"4px 7px",textAlign:"right"}}>{l.area?fmtN(l.area,1):"—"}</td>
+                          <td style={{padding:"4px 7px",textAlign:"right"}}>{l.preco?fmt(l.preco):"—"}</td>
+                          <td style={{padding:"4px 7px",color:l.motivo?"#c62828":"#2e7d32"}}>{l.motivo||"ok"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>);
+            })()}
+            {importProgErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importProgErro}</div>}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>{setShowImportProg(false);setImportProgPreview(null);setImportProgErro("");}}
+                style={{padding:"8px 16px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+              {importProgPreview && (
+                <button onClick={aplicarImportProgramacao}
+                  style={{padding:"8px 16px",background:"#5e35b1",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  ✓ Importar {importProgPreview.filter(l=>l.marcado&&!l.motivo).length} produto(s)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════
           MODAL: CONFERIR OS INGREDIENTES ATIVOS ANTES DE GRAVAR
