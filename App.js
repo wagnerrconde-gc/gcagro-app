@@ -870,33 +870,37 @@ const ALIASES_ESTOQUE_INSUMOS = {
 // candidato que comece pelo nome digitado (ou o contrário) — com mais de um candidato fica sem
 // preencher, porque chutar entre "Premio" e "Premio Plus" seria pior que deixar vazio.
 // Nome no padrão "A / B" (dois produtos na mesma linha) procura cada parte e junta os dois I.A.
-function acharIA(nome, mapas) {
+// Procura o ingrediente ativo de um nome nas fontes, em ordem ({fonte, mapa, ambiguos}).
+// Devolve {ia, fonte} quando tem certeza, ou null quando não achou / o nome é ambíguo — nunca
+// chuta. A única flexibilidade além do nome igual é a marca da empresa na frente
+// ("NutriNicomomag" = "Nicomomag"), a mesma regra estreita usada pra juntar produto na cotação.
+function acharIA(nome, fontes) {
   const chave = normalizarNome(nome);
-  if (!chave) return "";
-  for (const mapa of mapas) {
-    const direto = mapa.get(chave);
-    if (direto) return direto;
+  if (!chave) return null;
+  for (const f of fontes) {
+    if (f.ambiguos.has(chave)) return null; // nome registrado com ingredientes diferentes
+    const direto = f.mapa.get(chave);
+    if (direto) return { ia: direto, fonte: f.fonte };
   }
-  // Sem nome igual, a única flexibilidade permitida é a marca da empresa na frente
-  // ("NutriNicomomag" = "Nicomomag") — a mesma regra usada pra juntar produto na cotação, que já
-  // é estreita de propósito. A busca antiga aceitava qualquer nome que "começasse com" o digitado
-  // (nos dois sentidos), e num catálogo com milhares de produtos isso preenchia I.A. errado o
-  // tempo todo: "Fox Xpro" pegava o ingrediente de "Fox", "Nimbus" o de "Nim", e por aí vai.
-  for (const mapa of mapas) {
+  for (const f of fontes) {
     const candidatos = [];
-    mapa.forEach((ia, k) => { if (mesmoProdutoQuaseIgual(k, chave)) candidatos.push(ia); });
-    const unicos = [...new Set(candidatos)];
-    if (unicos.length === 1) return unicos[0];
+    f.mapa.forEach((ia, k) => { if (mesmoProdutoQuaseIgual(k, chave)) candidatos.push(ia); });
+    const unicos = [...new Set(candidatos.map(normalizarNome))];
+    if (unicos.length === 1) return { ia: candidatos[0], fonte: f.fonte + " (marca)" };
   }
-  return "";
+  return null;
 }
-function buscarIngredienteAtivo(nome, mapas) {
+// Nome no padrão "A / B" (dois produtos na mesma linha) só é preenchido quando as DUAS partes
+// forem encontradas — meio ingrediente ativo é pior que nenhum.
+function buscarIngredienteAtivo(nome, fontes) {
   const partes = (nome||"").split("/").map(s=>s.trim()).filter(Boolean);
   if (partes.length > 1) {
-    const ias = partes.map(p => acharIA(p, mapas)).filter(Boolean);
-    return [...new Set(ias)].join(" / ");
+    const achados = partes.map(p => acharIA(p, fontes));
+    if (achados.some(a => !a)) return null;
+    const ias = [...new Set(achados.map(a => a.ia))];
+    return { ia: ias.join(" / "), fonte: achados[0].fonte };
   }
-  return acharIA(nome, mapas);
+  return acharIA(nome, fontes);
 }
 function buildInsumoEstoqueRecord(m) {
   const nome = String(m.nome||"").trim();
@@ -2126,6 +2130,7 @@ function App() {
   const [importCatalogoPreview, setImportCatalogoPreview] = useState(null);
   const [importCatalogoErro, setImportCatalogoErro] = useState("");
   const [preencherIAMsg, setPreencherIAMsg] = useState(null);
+  const [propostaIA, setPropostaIA] = useState(null);
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
@@ -2559,17 +2564,39 @@ function App() {
   // catálogo importado (Agrofit), o estoque de insumos e os produtos que já têm I.A. preenchido.
   // Só mexe em campo vazio — o que eu digitei à mão nunca é sobrescrito. Adubação e Sementes ficam
   // de fora: ali "ingrediente ativo" não quer dizer nada.
+  // Monta os índices de consulta. Nome que aparece mais de uma vez com ingredientes DIFERENTES
+  // (comum no Agrofit: o mesmo nome comercial registrado por empresas diferentes, ou em
+  // formulações diferentes) vira ambíguo e é DESCARTADO do índice — preencher com o primeiro que
+  // aparece é justamente o que colocava ingrediente errado.
+  function indiceIA(pares) {
+    const mapa = new Map();
+    const ambiguos = new Set();
+    pares.forEach(({ nome, ia }) => {
+      const k = normalizarNome(nome);
+      const v = (ia||"").trim();
+      if (!k || !v) return;
+      if (ambiguos.has(k)) return;
+      const atual = mapa.get(k);
+      if (atual == null) { mapa.set(k, v); return; }
+      if (normalizarNome(atual) !== normalizarNome(v)) { mapa.delete(k); ambiguos.add(k); }
+    });
+    return { mapa, ambiguos };
+  }
   function mapasIA() {
-    const doCatalogo = new Map();
-    catalogoIA.forEach(item => { const k = normalizarNome(item.nome); if (k && item.ia && !doCatalogo.has(k)) doCatalogo.set(k, item.ia); });
-    const doEstoque = new Map();
-    insumosEstoqueRecords.forEach(r => { const k = normalizarNome(r.nome); if (k && (r.ingredienteAtivo||"").trim() && !doEstoque.has(k)) doEstoque.set(k, r.ingredienteAtivo.trim()); });
-    const daProgramacao = new Map();
-    [dataVerao, dataInverno].forEach(d => Object.values(d||{}).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
-      const k = normalizarNome(p.produto||"");
-      if (k && (p.ingrediente_ativo||"").trim() && !daProgramacao.has(k)) daProgramacao.set(k, p.ingrediente_ativo.trim());
+    const cat = indiceIA(catalogoIA.map(i => ({ nome:i.nome, ia:i.ia })));
+    const est = indiceIA(insumosEstoqueRecords.map(r => ({ nome:r.nome, ia:r.ingredienteAtivo })));
+    const prog = [];
+    [dataVerao, dataInverno].forEach(d => Object.values(d||{}).forEach(c => (c.categories||[]).forEach(ct => (ct.products||[]).forEach(p => {
+      // Só produto conferido à mão vira fonte pros outros: se um I.A. preenchido automaticamente
+      // estiver errado, ele não pode sair contaminando os produtos de mesmo nome.
+      if (!p.ia_auto) prog.push({ nome:p.produto||"", ia:p.ingrediente_ativo||"" });
     }))));
-    return [doCatalogo, doEstoque, daProgramacao];
+    const pro = indiceIA(prog);
+    return [
+      { fonte:"Catálogo", ...cat },
+      { fonte:"Estoque", ...est },
+      { fonte:"Programação", ...pro },
+    ];
   }
   function preencherIngredientesAtivos() {
     const mapas = mapasIA();
@@ -2578,25 +2605,45 @@ function App() {
       setTimeout(()=>setPreencherIAMsg(null), 6000);
       return;
     }
-    // O preenchimento é calculado aqui fora e só depois entregue ao setData: dentro do updater do
-    // React os contadores ficariam zerados na mensagem, porque o updater roda depois desta linha.
-    let preenchidos = 0;
+    // Nada é gravado direto: monta a lista do que pretende preencher, com a fonte de cada um, e
+    // mostra pra conferir antes. Ingrediente ativo errado é pior que campo vazio, então quem
+    // decide sou eu, olhando produto por produto.
+    const propostas = [];
     const naoAchados = [];
-    const nd = JSON.parse(JSON.stringify(data));
-    Object.values(nd).forEach(culture => (culture.categories||[]).forEach(cat => {
+    Object.entries(data).forEach(([cultura, culture]) => (culture.categories||[]).forEach((cat, catIdx) => {
       if (cat.name==="Adubação" || cat.name==="Sementes") return;
-      (cat.products||[]).forEach(p => {
+      (cat.products||[]).forEach((p, prodIdx) => {
         if (!p.produto || (p.ingrediente_ativo||"").trim()) return;
-        const ia = buscarIngredienteAtivo(p.produto, mapas);
-        // Marca que este I.A. veio do preenchimento automático: é o que permite desfazer só o que
-        // o botão preencheu, sem encostar no que eu digitei à mão.
-        if (ia) { p.ingrediente_ativo = ia; p.ia_auto = true; preenchidos++; }
+        const achado = buscarIngredienteAtivo(p.produto, mapas);
+        if (achado) propostas.push({ cultura, catIdx, prodIdx, categoria:cat.name, produto:p.produto.trim(),
+          ia:achado.ia, fonte:achado.fonte, marcado:true });
         else if (!naoAchados.includes(p.produto.trim())) naoAchados.push(p.produto.trim());
       });
     }));
-    if (preenchidos) setData(nd);
-    setPreencherIAMsg({ preenchidos, naoAchados });
+    if (!propostas.length) {
+      setPreencherIAMsg({ preenchidos:0, naoAchados });
+      setTimeout(()=>setPreencherIAMsg(null), 8000);
+      return;
+    }
+    setPropostaIA({ propostas, naoAchados });
+  }
+  function aplicarPropostaIA() {
+    const escolhidas = (propostaIA?.propostas||[]).filter(x=>x.marcado);
+    if (!escolhidas.length) { setPropostaIA(null); return; }
+    const nd = JSON.parse(JSON.stringify(data));
+    escolhidas.forEach(x => {
+      const p = nd[x.cultura]?.categories?.[x.catIdx]?.products?.[x.prodIdx];
+      // Confere que ainda é o mesmo produto daquela posição antes de escrever.
+      if (!p || normalizarNome(p.produto) !== normalizarNome(x.produto)) return;
+      p.ingrediente_ativo = x.ia;
+      // Marca que veio do preenchimento automático: é o que permite desfazer só o que o botão
+      // preencheu, sem encostar no que eu digitei à mão.
+      p.ia_auto = true;
+    });
+    setData(nd);
+    setPreencherIAMsg({ preenchidos: escolhidas.length, naoAchados: propostaIA?.naoAchados||[] });
     setTimeout(()=>setPreencherIAMsg(null), 8000);
+    setPropostaIA(null);
   }
   // Quantos I.A. da safra aberta vieram do botão (e não da minha mão) — habilita o "limpar".
   const iaAutomaticos = useMemo(() => {
@@ -2608,18 +2655,32 @@ function App() {
   }, [data]);
   // Desfaz o preenchimento automático: apaga só os I.A. marcados como automáticos, deixando
   // intactos os que eu digitei ou corrigi à mão.
-  function limparIAAutomaticos() {
-    if (!iaAutomaticos) return;
-    if (!window.confirm(`Apagar os ${iaAutomaticos} ingrediente(s) ativo(s) preenchidos automaticamente?\n\nOs que você digitou ou corrigiu à mão não são tocados.`)) return;
+  function limparIAAutomaticos(todos=false) {
+    const alvo = todos
+      ? "TODOS os ingredientes ativos desta safra (inclusive os que você digitou à mão)"
+      : `os ${iaAutomaticos} ingrediente(s) ativo(s) preenchidos automaticamente (o que você digitou à mão não é tocado)`;
+    if (!window.confirm(`Apagar ${alvo}?`)) return;
     const nd = JSON.parse(JSON.stringify(data));
     let limpos = 0;
     Object.values(nd).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
-      if (p.ia_auto && (p.ingrediente_ativo||"").trim()) { p.ingrediente_ativo = ""; p.ia_auto = false; limpos++; }
+      if (!(p.ingrediente_ativo||"").trim()) return;
+      if (!todos && !p.ia_auto) return;
+      p.ingrediente_ativo = ""; p.ia_auto = false; limpos++;
     })));
     setData(nd);
     setPreencherIAMsg({ limpos });
     setTimeout(()=>setPreencherIAMsg(null), 6000);
   }
+  // Quantos produtos têm I.A. preenchido na safra aberta, marcado ou não. Os preenchidos pela
+  // versão antiga do botão não têm a marca de automático, então a limpeza precisa de uma opção
+  // que pegue tudo — senão não tem como desfazer aquele preenchimento errado.
+  const iaPreenchidos = useMemo(() => {
+    let n = 0;
+    Object.values(data||{}).forEach(c => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
+      if ((p.ingrediente_ativo||"").trim()) n++;
+    })));
+    return n;
+  }, [data]);
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
   }
@@ -4219,8 +4280,12 @@ function App() {
               <button onClick={preencherIngredientesAtivos} title="Preenche o Ingrediente Ativo dos produtos que estão sem, consultando o catálogo do Agrofit e o estoque. Só preenche quando tem certeza do nome; não mexe no que já está preenchido."
                 style={{padding:"6px 12px",background:"#e0f2f1",border:"none",borderRadius:6,color:"#00695c",fontSize:11,cursor:"pointer"}}>🧪 Preencher I.A.</button>
               {iaAutomaticos>0 && (
-                <button onClick={limparIAAutomaticos} title="Apaga só os ingredientes ativos que o botão preencheu. O que você digitou ou corrigiu à mão fica."
+                <button onClick={()=>limparIAAutomaticos(false)} title="Apaga só os ingredientes ativos que o botão preencheu. O que você digitou ou corrigiu à mão fica."
                   style={{padding:"6px 12px",background:"#fff3e0",border:"none",borderRadius:6,color:"#e65100",fontSize:11,cursor:"pointer"}}>↩ Limpar I.A. automáticos ({iaAutomaticos})</button>
+              )}
+              {iaPreenchidos>0 && (
+                <button onClick={()=>limparIAAutomaticos(true)} title="Apaga o ingrediente ativo de TODOS os produtos desta safra — inclusive os preenchidos pela versão antiga do botão, que não ficaram marcados."
+                  style={{padding:"6px 12px",background:"none",border:"1px solid #ef9a9a",borderRadius:6,color:"#c62828",fontSize:11,cursor:"pointer"}}>🧹 Limpar todos os I.A. ({iaPreenchidos})</button>
               )}
               <button onClick={()=>setShowImportModal(true)} style={{padding:"6px 12px",background:"#e3f2fd",border:"none",borderRadius:6,color:"#1565C0",fontSize:11,cursor:"pointer"}}>📥 Importar Produtos</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
@@ -7774,6 +7839,63 @@ function App() {
           </div>
         );
       })()}
+
+      {/* ══════════════════════════════════════════════════════
+          MODAL: CONFERIR OS INGREDIENTES ATIVOS ANTES DE GRAVAR
+      ══════════════════════════════════════════════════════ */}
+      {propostaIA && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:820,width:"100%",maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+            <div style={{fontWeight:700,fontSize:15,color:"#00695c",marginBottom:6}}>🧪 Conferir antes de preencher</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:12}}>
+              Desmarque o que estiver errado — só o que ficar marcado é gravado. A coluna <b>Fonte</b> mostra de onde veio cada ingrediente ativo.
+              Produto cujo nome aparece no catálogo com ingredientes diferentes não entra nesta lista, pra não chutar.
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <button onClick={()=>setPropostaIA(pv=>({...pv, propostas:pv.propostas.map(x=>({...x,marcado:true}))}))}
+                style={{padding:"4px 10px",background:"#e0f2f1",border:"none",borderRadius:5,color:"#00695c",fontSize:11,cursor:"pointer"}}>Marcar todos</button>
+              <button onClick={()=>setPropostaIA(pv=>({...pv, propostas:pv.propostas.map(x=>({...x,marcado:false}))}))}
+                style={{padding:"4px 10px",background:"#f5f5f5",border:"none",borderRadius:5,color:"#666",fontSize:11,cursor:"pointer"}}>Desmarcar todos</button>
+            </div>
+            <div style={{overflowY:"auto",flex:1,marginBottom:12}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#e0f2f1",position:"sticky",top:0}}>
+                  {["","Produto","Ingrediente ativo","Fonte","Cultura / Categoria"].map(h=>(
+                    <th key={h} style={{padding:"6px 8px",textAlign:"left",color:"#00695c",fontSize:9,letterSpacing:1,textTransform:"uppercase"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {propostaIA.propostas.map((x,i)=>(
+                    <tr key={i} style={{background:i%2===0?"#fff":"#fafafa",opacity:x.marcado?1:0.45}}>
+                      <td style={{padding:"5px 8px"}}>
+                        <input type="checkbox" checked={x.marcado}
+                          onChange={()=>setPropostaIA(pv=>({...pv, propostas:pv.propostas.map((y,j)=>j===i?{...y,marcado:!y.marcado}:y)}))}/>
+                      </td>
+                      <td style={{padding:"5px 8px",fontWeight:600}}>{x.produto}</td>
+                      <td style={{padding:"5px 8px",color:"#333"}}>{x.ia}</td>
+                      <td style={{padding:"5px 8px",color:x.fonte.includes("marca")?"#e65100":"#888",fontSize:11}}>{x.fonte}</td>
+                      <td style={{padding:"5px 8px",color:"#999",fontSize:11}}>{x.cultura} / {x.categoria}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {propostaIA.naoAchados.length>0 && (
+                <div style={{fontSize:11,color:"#888",marginTop:10}}>
+                  Sem correspondência segura ({propostaIA.naoAchados.length}), ficam em branco: {propostaIA.naoAchados.slice(0,20).join(", ")}{propostaIA.naoAchados.length>20?"…":""}
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+              <button onClick={()=>setPropostaIA(null)}
+                style={{padding:"8px 16px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
+              <button onClick={aplicarPropostaIA}
+                style={{padding:"8px 16px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                ✓ Preencher {propostaIA.propostas.filter(x=>x.marcado).length} produto(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════
           MODAL: FECHAR COTAÇÃO
