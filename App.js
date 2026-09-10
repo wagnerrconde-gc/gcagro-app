@@ -2824,6 +2824,42 @@ function App() {
   }
   // Esvazia uma categoria inteira da cultura aberta — o caminho direto pra recomeçar uma
   // categoria do zero (ex: antes de trazer a programação pronta de outra fazenda).
+  // Exporta a programação da safra aberta em planilha, com as MESMAS colunas que a importação
+  // entende — é assim que a programação vai de uma fazenda pra outra nos dois sentidos.
+  function exportarProgramacaoPlanilha() {
+    const linhas = [];
+    Object.entries(data).forEach(([cultura, c]) => (c.categories||[]).forEach(cat => (cat.products||[]).forEach(p => {
+      if (!p.produto) return;
+      linhas.push({
+        "Cultura": cultura,
+        "Categoria": cat.name,
+        "Produto": p.produto,
+        "Ingrediente Ativo": p.ingrediente_ativo||"",
+        "Dose": p.dose||0,
+        "Kg semente/ha": p.kgHa||"",
+        "Área": p.area||0,
+        "Qtd": p.qtd||0,
+        "Unidade": p.unidade||"",
+        "Fase": p.fase||"",
+        "Obs": p.obs||"",
+        "Preço": p.preco_compra!=null ? p.preco_compra : (p.preco_unit||0),
+      });
+    })));
+    if (!linhas.length) { window.alert("Nenhum produto pra exportar nesta safra."); return; }
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    ws['!cols'] = [{wch:10},{wch:26},{wch:30},{wch:30},{wch:9},{wch:13},{wch:10},{wch:9},{wch:9},{wch:16},{wch:24},{wch:12}];
+    linhas.forEach((_,ri)=>{
+      const preco = ws[XLSX.utils.encode_cell({r:ri+1,c:11})];
+      if (preco) preco.z = 'R$ #,##0.00';
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Programação");
+    const temporada = appView==="prog_verao" ? "Verao" : "Inverno";
+    // Nome do arquivo sem acento nem espaço: com caracteres fora do ASCII o navegador ignora o
+    // nome sugerido e salva como "download".
+    const safraSlug = safraAtiva.normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^\w-]+/g,"_");
+    XLSX.writeFile(wb, `Programacao_${temporada}_${safraSlug}.xlsx`);
+  }
   function limparCategoria(catIdx) {
     const cat = data[activeCulture]?.categories?.[catIdx];
     const n = (cat?.products||[]).length;
@@ -4446,6 +4482,9 @@ function App() {
               <button onClick={()=>{setShowImportProg(true);setImportProgPreview(null);setImportProgErro("");}}
                 title="Importa produtos de uma planilha — por exemplo a programação exportada de outro app"
                 style={{padding:"6px 12px",background:"#ede7f6",border:"none",borderRadius:6,color:"#5e35b1",fontSize:11,cursor:"pointer"}}>📄 Importar planilha</button>
+              <button onClick={exportarProgramacaoPlanilha}
+                title="Baixa a programação desta safra (todas as culturas) em planilha, no mesmo formato que a importação entende"
+                style={{padding:"6px 12px",background:"#e8eaf6",border:"none",borderRadius:6,color:"#3949ab",fontSize:11,cursor:"pointer"}}>📤 Exportar planilha</button>
               <button onClick={()=>toggleCultura(activeCulture)} style={{padding:"6px 12px",background:culture.ativo?"#ffebee":"#e8f5e9",border:"none",borderRadius:6,color:culture.ativo?"#c62828":"#2e7d32",fontSize:11,cursor:"pointer"}}>
                 {culture.ativo?"⏸ Desativar":"▶ Ativar"}
               </button>
