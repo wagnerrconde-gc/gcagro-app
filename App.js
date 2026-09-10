@@ -2822,6 +2822,19 @@ function App() {
     setPreencherIAMsg({ importados:add });
     setTimeout(()=>setPreencherIAMsg(null), 8000);
   }
+  // Esvazia uma categoria inteira da cultura aberta — o caminho direto pra recomeçar uma
+  // categoria do zero (ex: antes de trazer a programação pronta de outra fazenda).
+  function limparCategoria(catIdx) {
+    const cat = data[activeCulture]?.categories?.[catIdx];
+    const n = (cat?.products||[]).length;
+    if (!n) return;
+    if (!window.confirm(`Apagar os ${n} produto(s) de "${cat.name}" em ${activeCulture}?\n\nAs outras categorias e culturas não são tocadas.`)) return;
+    setData(d => {
+      const nd = JSON.parse(JSON.stringify(d));
+      nd[activeCulture].categories[catIdx].products = [];
+      return nd;
+    });
+  }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
   }
@@ -4500,6 +4513,11 @@ function App() {
                   <div style={{display:"flex",alignItems:"center",gap:10,marginLeft:"auto"}}>
                     <span style={{fontSize:13,fontWeight:700}}>{fmt(catTotal)}</span>
                     <span style={{fontSize:11,opacity:0.7}}>{culture.area>0?fmt(catTotal/culture.area):"-"}/ha</span>
+                    {(cat.products||[]).length>0 && (
+                      <button onClick={e=>{e.stopPropagation();limparCategoria(catIdx);}}
+                        title={`Apagar todos os produtos de ${cat.name} em ${activeCulture}`}
+                        style={{background:"rgba(255,255,255,0.15)",border:"none",borderRadius:5,color:"#fff",fontSize:11,padding:"3px 8px",cursor:"pointer",opacity:0.85}}>🗑</button>
+                    )}
                     <span>{isOpen?"▲":"▼"}</span>
                   </div>
                 </div>
