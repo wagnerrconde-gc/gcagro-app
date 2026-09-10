@@ -2167,6 +2167,15 @@ function App() {
   const [showImportProg, setShowImportProg] = useState(false);
   const [importProgPreview, setImportProgPreview] = useState(null);
   const [importProgErro, setImportProgErro] = useState("");
+  // "Substituir": antes de importar, esvazia as categorias que a planilha traz (só nas culturas
+  // que ela traz), pra a programação daquela categoria ficar exatamente igual à da planilha em
+  // vez de misturar com o que já estava lançado.
+  const [importProgSubstituir, setImportProgSubstituir] = useState(false);
+  const MOTIVO_JA_EXISTE = "já existe nesta categoria";
+  function linhaImportBloqueada(l) {
+    if (!l.motivo) return false;
+    return !(importProgSubstituir && l.motivo === MOTIVO_JA_EXISTE);
+  }
   const [showImportInsumoEstoque, setShowImportInsumoEstoque] = useState(false);
   const [importInsumoSubstituir, setImportInsumoSubstituir] = useState(false);
   const [importInsumoPreview, setImportInsumoPreview] = useState(null);
@@ -2755,7 +2764,7 @@ function App() {
           .some(p => chaveProduto(p.produto) === chaveProduto(produto));
         const motivo = !cultura ? `cultura "${culturaTxt}" não existe aqui`
           : !categoria ? `categoria "${String(m.categoria||"").trim()||"(vazia)"}" não reconhecida`
-          : jaTem ? "já existe nesta categoria" : "";
+          : jaTem ? MOTIVO_JA_EXISTE : "";
         return {
           cultura: cultura||culturaTxt, categoria: categoria||String(m.categoria||"").trim(), produto,
           ingrediente_ativo: String(m.ingredienteAtivo||"").trim(),
@@ -2771,10 +2780,30 @@ function App() {
       setImportProgErro("");
     } catch (err) { setImportProgErro("❌ Erro ao ler o arquivo: "+err.message); }
   }
+  // Quantos produtos serão apagados se eu importar com "substituir" — as categorias que a
+  // planilha traz, só nas culturas que ela traz.
+  function contarSubstituidos() {
+    const alvos = new Set((importProgPreview||[]).filter(l => l.marcado && !l.motivo || (l.marcado && l.motivo===MOTIVO_JA_EXISTE))
+      .map(l => l.cultura+"||"+l.categoria));
+    let n = 0;
+    alvos.forEach(chave => {
+      const [cult, cat] = chave.split("||");
+      n += ((data[cult]?.categories||[]).find(c=>c.name===cat)?.products||[]).length;
+    });
+    return n;
+  }
   function aplicarImportProgramacao() {
-    const escolhidas = (importProgPreview||[]).filter(l => l.marcado && !l.motivo);
+    const escolhidas = (importProgPreview||[]).filter(l => l.marcado && !linhaImportBloqueada(l));
     if (!escolhidas.length) return;
     const nd = JSON.parse(JSON.stringify(data));
+    if (importProgSubstituir) {
+      const alvos = new Set(escolhidas.map(l => l.cultura+"||"+l.categoria));
+      alvos.forEach(chave => {
+        const [cult, cat] = chave.split("||");
+        const catObj = (nd[cult]?.categories||[]).find(c=>c.name===cat);
+        if (catObj) catObj.products = [];
+      });
+    }
     let add = 0;
     escolhidas.forEach(l => {
       const cat = (nd[l.cultura]?.categories||[]).find(c => c.name === l.categoria);
@@ -8038,13 +8067,22 @@ function App() {
             {!importProgPreview ? (
               <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>{ const f=e.target.files[0]; if(f) lerPlanilhaProgramacao(f); e.target.value=""; }} style={{marginBottom:10}}/>
             ) : (()=> {
-              const ok = importProgPreview.filter(l=>!l.motivo);
-              const nok = importProgPreview.filter(l=>l.motivo);
+              const ok = importProgPreview.filter(l=>!linhaImportBloqueada(l));
+              const nok = importProgPreview.filter(l=>linhaImportBloqueada(l));
+              const aApagar = importProgSubstituir ? contarSubstituidos() : 0;
               return (<>
                 <div style={{fontSize:12,color:"#334155",marginBottom:8}}>
                   <b>{importProgPreview.length}</b> linha(s) lida(s) · <b style={{color:"#2e7d32"}}>{ok.length}</b> prontas pra importar
                   {nok.length>0 && <> · <b style={{color:"#c62828"}}>{nok.length}</b> com pendência</>}
                 </div>
+                <label style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 10px",background:importProgSubstituir?"#fff3e0":"#f7f7f7",borderRadius:6,marginBottom:10,cursor:"pointer"}}>
+                  <input type="checkbox" checked={importProgSubstituir} onChange={e=>setImportProgSubstituir(e.target.checked)} style={{marginTop:2}}/>
+                  <span style={{fontSize:12,color:importProgSubstituir?"#e65100":"#555"}}>
+                    <b>Substituir</b> — apagar os produtos que já estão nas categorias desta planilha antes de importar,
+                    deixando cada categoria igualzinha à planilha. Só mexe nas categorias e culturas que o arquivo traz.
+                    {importProgSubstituir && aApagar>0 && <b> Serão apagados {aApagar} produto(s).</b>}
+                  </span>
+                </label>
                 <div style={{overflowY:"auto",flex:1,marginBottom:12}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                     <thead><tr style={{background:"#ede7f6",position:"sticky",top:0}}>
@@ -8054,9 +8092,9 @@ function App() {
                     </tr></thead>
                     <tbody>
                       {importProgPreview.map((l,i)=>(
-                        <tr key={i} style={{background:i%2===0?"#fff":"#fafafa",opacity:l.motivo?0.55:(l.marcado?1:0.5)}}>
+                        <tr key={i} style={{background:i%2===0?"#fff":"#fafafa",opacity:linhaImportBloqueada(l)?0.55:(l.marcado?1:0.5)}}>
                           <td style={{padding:"4px 7px"}}>
-                            <input type="checkbox" checked={l.marcado&&!l.motivo} disabled={!!l.motivo}
+                            <input type="checkbox" checked={l.marcado&&!linhaImportBloqueada(l)} disabled={linhaImportBloqueada(l)}
                               onChange={()=>setImportProgPreview(pv=>pv.map((y,j)=>j===i?{...y,marcado:!y.marcado}:y))}/>
                           </td>
                           <td style={{padding:"4px 7px"}}>{l.cultura||"—"}</td>
@@ -8066,7 +8104,9 @@ function App() {
                           <td style={{padding:"4px 7px",textAlign:"right"}}>{l.dose?fmtN(l.dose,3):"—"}</td>
                           <td style={{padding:"4px 7px",textAlign:"right"}}>{l.area?fmtN(l.area,1):"—"}</td>
                           <td style={{padding:"4px 7px",textAlign:"right"}}>{l.preco?fmt(l.preco):"—"}</td>
-                          <td style={{padding:"4px 7px",color:l.motivo?"#c62828":"#2e7d32"}}>{l.motivo||"ok"}</td>
+                          <td style={{padding:"4px 7px",color:linhaImportBloqueada(l)?"#c62828":"#2e7d32"}}>
+                            {linhaImportBloqueada(l) ? l.motivo : (l.motivo===MOTIVO_JA_EXISTE ? "substitui a existente" : "ok")}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -8079,9 +8119,13 @@ function App() {
               <button onClick={()=>{setShowImportProg(false);setImportProgPreview(null);setImportProgErro("");}}
                 style={{padding:"8px 16px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
               {importProgPreview && (
-                <button onClick={aplicarImportProgramacao}
+                <button onClick={()=>{
+                    const n = contarSubstituidos();
+                    if (importProgSubstituir && n>0 && !window.confirm(`Isso vai APAGAR ${n} produto(s) das categorias desta planilha antes de importar. Confirma?`)) return;
+                    aplicarImportProgramacao();
+                  }}
                   style={{padding:"8px 16px",background:"#5e35b1",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                  ✓ Importar {importProgPreview.filter(l=>l.marcado&&!l.motivo).length} produto(s)
+                  ✓ Importar {importProgPreview.filter(l=>l.marcado&&!linhaImportBloqueada(l)).length} produto(s)
                 </button>
               )}
             </div>
