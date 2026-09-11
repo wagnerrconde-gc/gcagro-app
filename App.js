@@ -953,6 +953,36 @@ function buscarIngredienteAtivo(nome, fontes) {
   }
   return acharIA(nome, fontes);
 }
+// Similaridade entre dois nomes por bigramas (coeficiente de Dice) — só pra RANQUEAR sugestões
+// pro usuário escolher, nunca pra preencher sozinho. É mais tolerante que mesmoProdutoQuaseIgual
+// de propósito: pega "Aprove" perto de "Aprove Xpro", ou um erro de digitação, mesmo quando não
+// bate a regra estreita de casamento automático.
+function bigramas(str) {
+  const s = normalizarNome(str);
+  const out = [];
+  for (let i=0; i<s.length-1; i++) out.push(s.slice(i,i+2));
+  return out;
+}
+function similaridadeNomes(a, b) {
+  const ga = bigramas(a), gb = bigramas(b);
+  if (!ga.length || !gb.length) return 0;
+  const restante = new Map();
+  gb.forEach(g => restante.set(g, (restante.get(g)||0)+1));
+  let inter = 0;
+  ga.forEach(g => { const c = restante.get(g); if (c>0) { inter++; restante.set(g, c-1); } });
+  return (2*inter) / (ga.length + gb.length);
+}
+// Até 3 produtos do catálogo parecidos com um nome que não teve casamento seguro — pro usuário
+// escolher na prévia, em vez de digitar do zero. Só o catálogo (não estoque/Programação) porque é
+// a fonte com mais volume; exclui os ambíguos, que já são incerteza demais sozinhos.
+const LIMIAR_SUGESTAO = 0.45;
+function sugerirDoCatalogo(nome, catalogoIA) {
+  return catalogoIA.filter(i => !i.amb)
+    .map(i => ({ nome:i.nome, ia:i.ia, score: similaridadeNomes(nome, i.nome) }))
+    .filter(c => c.score >= LIMIAR_SUGESTAO)
+    .sort((a,b) => b.score-a.score)
+    .slice(0,3);
+}
 function buildInsumoEstoqueRecord(m) {
   const nome = String(m.nome||"").trim();
   if (!nome) return null;
@@ -2709,24 +2739,46 @@ function App() {
     // Nada é gravado direto: monta a lista do que pretende preencher, com a fonte de cada um, e
     // mostra pra conferir antes. Ingrediente ativo errado é pior que campo vazio, então quem
     // decide sou eu, olhando produto por produto.
+    // Quem não teve casamento seguro entra agrupado por nome (todas as posições onde aparece),
+    // com até 3 sugestões parecidas do catálogo pra eu escolher em vez de digitar do zero.
     const propostas = [];
-    const naoAchados = [];
+    const semMatch = new Map();
     Object.entries(data).forEach(([cultura, culture]) => (culture.categories||[]).forEach((cat, catIdx) => {
       if (cat.name==="Adubação" || cat.name==="Sementes") return;
       (cat.products||[]).forEach((p, prodIdx) => {
         if (!p.produto || (p.ingrediente_ativo||"").trim()) return;
         const achado = buscarIngredienteAtivo(p.produto, mapas);
-        if (achado) propostas.push({ cultura, catIdx, prodIdx, categoria:cat.name, produto:p.produto.trim(),
-          ia:achado.ia, fonte:achado.fonte, marcado:true });
-        else if (!naoAchados.includes(p.produto.trim())) naoAchados.push(p.produto.trim());
+        if (achado) { propostas.push({ cultura, catIdx, prodIdx, categoria:cat.name, produto:p.produto.trim(),
+          ia:achado.ia, fonte:achado.fonte, marcado:true }); return; }
+        const key = normalizarNome(p.produto);
+        if (!semMatch.has(key)) semMatch.set(key, { key, produto:p.produto.trim(), instancias:[] });
+        semMatch.get(key).instancias.push({ cultura, catIdx, prodIdx, categoria:cat.name });
       });
     }));
-    if (!propostas.length) {
-      setPreencherIAMsg({ preenchidos:0, naoAchados });
-      setTimeout(()=>setPreencherIAMsg(null), 8000);
+    const semCorrespondencia = [...semMatch.values()].map(entry => ({
+      ...entry, sugestoes: sugerirDoCatalogo(entry.produto, catalogoIA),
+    }));
+    if (!propostas.length && !semCorrespondencia.length) {
+      setPreencherIAMsg({ preenchidos:0, naoAchados:[] });
+      setTimeout(()=>setPreencherIAMsg(null), 6000);
       return;
     }
-    setPropostaIA({ propostas, naoAchados });
+    setPropostaIA({ propostas, semCorrespondencia });
+  }
+  // Aceita uma sugestão do catálogo pra um nome sem casamento seguro: leva TODAS as posições onde
+  // esse nome aparece pra lista de propostas, já marcadas — some da lista de "sem
+  // correspondência" e passa a valer pra revisão junto com o resto, antes de eu confirmar.
+  function escolherSugestaoIA(key, sugestao) {
+    setPropostaIA(pv => {
+      if (!pv) return pv;
+      const entry = pv.semCorrespondencia.find(e => e.key===key);
+      if (!entry) return pv;
+      const novas = entry.instancias.map(inst => ({
+        cultura:inst.cultura, catIdx:inst.catIdx, prodIdx:inst.prodIdx, categoria:inst.categoria,
+        produto:entry.produto, ia:sugestao.ia, fonte:`Sugestão (${sugestao.nome})`, marcado:true,
+      }));
+      return { ...pv, propostas:[...pv.propostas, ...novas], semCorrespondencia:pv.semCorrespondencia.filter(e=>e.key!==key) };
+    });
   }
   function aplicarPropostaIA() {
     const escolhidas = (propostaIA?.propostas||[]).filter(x=>x.marcado);
@@ -2743,7 +2795,8 @@ function App() {
       p.ia_auto = true;
     });
     setData(nd);
-    setPreencherIAMsg({ preenchidos: escolhidas.length, naoAchados: propostaIA?.naoAchados||[] });
+    const naoAchados = (propostaIA?.semCorrespondencia||[]).map(e=>e.produto);
+    setPreencherIAMsg({ preenchidos: escolhidas.length, naoAchados });
     setTimeout(()=>setPreencherIAMsg(null), 8000);
     setPropostaIA(null);
   }
@@ -8371,11 +8424,39 @@ function App() {
                   ))}
                 </tbody>
               </table>
-              {propostaIA.naoAchados.length>0 && (
-                <div style={{fontSize:11,color:"#888",marginTop:10}}>
-                  Sem correspondência segura ({propostaIA.naoAchados.length}), ficam em branco: {propostaIA.naoAchados.slice(0,20).join(", ")}{propostaIA.naoAchados.length>20?"…":""}
-                </div>
-              )}
+              {propostaIA.semCorrespondencia.length>0 && (()=>{
+                const comSugestao = propostaIA.semCorrespondencia.filter(e=>e.sugestoes.length>0);
+                const semSugestao = propostaIA.semCorrespondencia.filter(e=>e.sugestoes.length===0);
+                return (
+                  <div style={{marginTop:14,borderTop:"1px solid #eee",paddingTop:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>
+                      Sem correspondência segura ({propostaIA.semCorrespondencia.length})
+                    </div>
+                    {comSugestao.length>0 && (
+                      <div style={{marginBottom:8}}>
+                        <div style={{fontSize:11,color:"#666",marginBottom:6}}>Parecidos no catálogo — clique pra usar (some as {comSugestao.reduce((s,e)=>s+e.instancias.length,0)} ocorrência(s) pra revisão acima):</div>
+                        {comSugestao.map(entry=>(
+                          <div key={entry.key} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"5px 0",borderBottom:"1px solid #f5f5f5"}}>
+                            <span style={{fontSize:12,fontWeight:600,minWidth:150}}>{entry.produto}{entry.instancias.length>1?` (${entry.instancias.length}x)`:""}</span>
+                            {entry.sugestoes.map((s,si)=>(
+                              <button key={si} onClick={()=>escolherSugestaoIA(entry.key, s)}
+                                title={s.ia}
+                                style={{padding:"3px 9px",background:"#ede7f6",border:"1px solid #d1c4e9",borderRadius:12,color:"#4527a0",fontSize:11,cursor:"pointer"}}>
+                                {s.nome} <span style={{opacity:0.65}}>({Math.round(s.score*100)}%)</span>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {semSugestao.length>0 && (
+                      <div style={{fontSize:11,color:"#888"}}>
+                        Nenhuma sugestão pra estes ({semSugestao.length}), ficam em branco: {semSugestao.slice(0,20).map(e=>e.produto).join(", ")}{semSugestao.length>20?"…":""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
               <button onClick={()=>setPropostaIA(null)}
