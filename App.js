@@ -1008,7 +1008,7 @@ function casarCategoriaProg(nomeCategoria, categoriasExistentes) {
 }
 const ALIASES_ESTOQUE_INSUMOS = {
   categoria:       ["categoria","grupo","tipo"],
-  nome:            ["nome","produto","item","insumo"],
+  nome:            ["nome","produto","item","insumo","marca_comercial"],
   ingredienteAtivo:["ingrediente_ativo","ia","i_a","principio_ativo","formula"],
   unidade:         ["unidade","unid","un"],
   quantidade:      ["quantidade","qtd","estoque","saldo","quantidade_atual"],
