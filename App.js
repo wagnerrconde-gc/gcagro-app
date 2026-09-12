@@ -813,6 +813,106 @@ function readSpreadsheetRows(file) {
   });
 }
 
+// Lê um CSV grande em pedaços, sem nunca carregar o arquivo inteiro nem todas as colunas de
+// cada linha na memória de uma vez. Um Agrofit de verdade tem uma linha por REGISTRO e dezenas
+// de colunas por linha (classificação, bula, alvos biológicos etc.) que não usamos pra nada
+// aqui — o parser antigo (FileReader.readAsText + parseCsvText) guardava o texto inteiro do
+// arquivo E um objeto com TODAS essas colunas pra CADA linha antes de descartar as que não
+// interessam, o que sozinho conseguia estourar a memória da aba e derrubar o navegador em
+// arquivos de centenas de MB — mesmo sem nunca travar visivelmente antes disso (por isso um
+// arquivo de teste de poucos MB processava rápido sem problema, mas um catálogo real, muito
+// mais pesado, podia crashar a aba inteira). Aqui só guardamos nome + ingrediente ativo, linha
+// a linha, direto no mapa já deduplicado — o resto nunca chega a existir como objeto.
+async function lerCatalogoIAStreaming(file, aoProgredir) {
+  const aliasesNome = ALIASES_ESTOQUE_INSUMOS.nome.map(normHeader);
+  const aliasesIA = ALIASES_ESTOQUE_INSUMOS.ingredienteAtivo.map(normHeader);
+  const leitor = file.stream().getReader();
+  const decoder = new TextDecoder("utf-8");
+
+  let headers = null, idxNome = -1, idxIA = -1;
+  let delim = ",", delimDefinido = false, bufferInicial = "";
+  let field = "", row = [], inQuotes = false, pendingQuote = false;
+  let totalLinhas = 0;
+  const porNome = new Map();
+
+  function registrarLinha(cols) {
+    if (idxNome < 0) return;
+    const nome = String(cols[idxNome] ?? "").trim();
+    const ia = idxIA >= 0 ? String(cols[idxIA] ?? "").trim() : "";
+    if (!nome || !ia) return;
+    const k = normalizarNome(nome);
+    if (!porNome.has(k)) porNome.set(k, { nome, ias: [ia] });
+    else {
+      const g = porNome.get(k);
+      if (nome.length > g.nome.length) g.nome = nome;
+      const kIA = normalizarNome(ia);
+      const iIgual = g.ias.findIndex(x => normalizarNome(x) === kIA || similaridadeNomes(x, ia) >= LIMIAR_MESMA_IA);
+      if (iIgual < 0) g.ias.push(ia);
+      else if (ia.length > g.ias[iIgual].length) g.ias[iIgual] = ia;
+    }
+  }
+  function finalizarLinha() {
+    row.push(field); field = "";
+    if (headers === null) {
+      headers = row.map(h => normHeader(h));
+      idxNome = headers.findIndex(h => aliasesNome.includes(h));
+      idxIA = headers.findIndex(h => aliasesIA.includes(h));
+    } else { totalLinhas++; registrarLinha(row); }
+    row = [];
+  }
+  function processarChar(c) {
+    if (pendingQuote) {
+      pendingQuote = false;
+      if (c === '"') { field += '"'; return; }
+      inQuotes = false;
+    } else if (inQuotes) {
+      if (c === '"') pendingQuote = true; else field += c;
+      return;
+    }
+    if (c === '"') { inQuotes = true; return; }
+    if (c === delim) { row.push(field); field = ""; }
+    else if (c === "\n") finalizarLinha();
+    else if (c === "\r") { /* ignorado, tratado junto do \n */ }
+    else field += c;
+  }
+  function processarTexto(texto) { for (let i = 0; i < texto.length; i++) processarChar(texto[i]); }
+
+  let bytesLidos = 0;
+  let ultimoYield = Date.now();
+  while (true) {
+    const { value, done } = await leitor.read();
+    if (done) {
+      const cauda = decoder.decode();
+      if (cauda) { if (!delimDefinido) { bufferInicial += cauda; } else processarTexto(cauda); }
+      break;
+    }
+    bytesLidos += value.byteLength;
+    let texto = decoder.decode(value, { stream: true }).replace(/^﻿/, "");
+    if (!delimDefinido) {
+      bufferInicial += texto;
+      const nl = bufferInicial.indexOf("\n");
+      if (nl >= 0 || bufferInicial.length > 200000) {
+        delim = sniffCsvDelimiter(bufferInicial);
+        delimDefinido = true;
+        processarTexto(bufferInicial);
+        bufferInicial = "";
+      }
+    } else processarTexto(texto);
+    if (Date.now() - ultimoYield > 100) {
+      if (aoProgredir) aoProgredir({ etapa: "lendo", feitas: bytesLidos, total: file.size });
+      await new Promise(r => setTimeout(r, 0));
+      ultimoYield = Date.now();
+    }
+  }
+  if (!delimDefinido && bufferInicial) { delim = sniffCsvDelimiter(bufferInicial); processarTexto(bufferInicial); }
+  if (field.length || row.length) finalizarLinha();
+
+  const linhas = [...porNome.values()].map(g => g.ias.length === 1
+    ? { nome: g.nome, ia: g.ias[0] }
+    : { nome: g.nome, ia: g.ias.join("  |  "), amb: true });
+  return { linhas, totalLinhas };
+}
+
 function mapRowByAliases(row, aliasMap) {
   const normRow = {};
   Object.keys(row).forEach(k => { normRow[normHeader(k)] = row[k]; });
@@ -6151,62 +6251,77 @@ function App() {
                       const file = e.target.files[0]; if (!file) return;
                       e.target.value = "";
                       setImportCatalogoErro("");
-                      setImportCatalogoProcessando({ etapa:"lendo", feitas:0, total:0 });
+                      const isCsv = /\.csv$/i.test(file.name);
+                      // Um .xlsx grande precisa ser carregado inteiro na memória pelo SheetJS (não dá
+                      // pra ler em pedaços como o CSV) — arriscado demais acima de certo tamanho, então
+                      // avisa antes de tentar em vez de arriscar travar/fechar a aba.
+                      const LIMITE_XLSX = 50*1024*1024;
+                      if (!isCsv && file.size > LIMITE_XLSX) {
+                        setImportCatalogoErro(`⚠ Esse arquivo Excel tem ${(file.size/1024/1024).toFixed(0)} MB — grande demais pra abrir com segurança (pode travar ou fechar a aba). Abra no Excel ou LibreOffice e use "Salvar como" → CSV, depois importe o CSV — o mesmo conteúdo fica bem mais leve nesse formato.`);
+                        return;
+                      }
+                      setImportCatalogoProcessando({ etapa:"lendo", feitas:0, total: file.size });
                       // Solta a thread antes de começar, pra o aviso "Lendo o arquivo…" aparecer na
                       // tela antes do trabalho pesado — sem isso a aba ficava travada, sem nenhum
                       // sinal de que estava funcionando, enquanto processava um Agrofit de verdade.
                       await new Promise(r=>setTimeout(r,0));
                       try {
-                        const rows = await readSpreadsheetRows(file);
-                        const mapeadas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
-                          .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
-                          .filter(l => l.nome && l.ia);
-                        // O Agrofit lista uma linha por REGISTRO, não por produto: o mesmo nome
-                        // comercial aparece várias vezes, de titulares diferentes — e cada registro
-                        // escreve o MESMO ingrediente ativo com pontuação, ordem ou concentração um
-                        // pouco diferentes ("Glifosato, sal de isopropilamina - 480 g/L" numa linha,
-                        // "Glifosato (sal de isopropilamina) 480 g/L" noutra). Comparar essas strings
-                        // por igualdade exata tratava isso como composições DIFERENTES e marcava o
-                        // nome inteiro como conflitante — excluído de todo preenchimento — quando na
-                        // real é o mesmo produto, só escrito de outro jeito. Isso sozinho já explicava
-                        // boa parte dos "sem I.A." em categorias com muita variedade de registro
-                        // (Herbicidas, Inseticidas). Agora só marca conflitante quando os textos são
-                        // realmente diferentes (semelhança abaixo do limiar); textos quase iguais são
-                        // tratados como o mesmo ingrediente, guardando a descrição mais completa.
-                        //
-                        // Processado em lotes, soltando a thread entre um e outro: comparar cada linha
-                        // nova com as já vistas do mesmo nome é rápido por si, mas multiplicado por um
-                        // catálogo de milhares de linhas trava a aba se rodar tudo de uma vez, sem o
-                        // navegador conseguir repintar a tela nem responder a nada nesse meio tempo.
-                        const porNome = new Map();
-                        const LOTE = 1500;
-                        for (let i=0; i<mapeadas.length; i+=LOTE) {
-                          mapeadas.slice(i, i+LOTE).forEach(l => {
-                            const k = normalizarNome(l.nome);
-                            if (!porNome.has(k)) porNome.set(k, { nome:l.nome, ias:[l.ia] });
-                            else {
-                              const g = porNome.get(k);
-                              if (l.nome.length > g.nome.length) g.nome = l.nome;
-                              const kIA = normalizarNome(l.ia);
-                              const iIgual = g.ias.findIndex(x => normalizarNome(x)===kIA || similaridadeNomes(x, l.ia) >= LIMIAR_MESMA_IA);
-                              if (iIgual < 0) g.ias.push(l.ia);
-                              else if (l.ia.length > g.ias[iIgual].length) g.ias[iIgual] = l.ia;
-                            }
-                          });
-                          setImportCatalogoProcessando({ etapa:"comparando", feitas:Math.min(i+LOTE, mapeadas.length), total:mapeadas.length });
-                          await new Promise(r=>setTimeout(r,0));
+                        let linhas, totalLinhas;
+                        if (isCsv) {
+                          // CSV grande: lido em pedaços direto do disco, nunca carregando o arquivo
+                          // inteiro nem as colunas que não usamos na memória (ver lerCatalogoIAStreaming).
+                          const resultado = await lerCatalogoIAStreaming(file, p => setImportCatalogoProcessando(p));
+                          linhas = resultado.linhas; totalLinhas = resultado.totalLinhas;
+                        } else {
+                          const rows = await readSpreadsheetRows(file);
+                          const mapeadas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
+                            .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
+                            .filter(l => l.nome && l.ia);
+                          // O Agrofit lista uma linha por REGISTRO, não por produto: o mesmo nome
+                          // comercial aparece várias vezes, de titulares diferentes — e cada registro
+                          // escreve o MESMO ingrediente ativo com pontuação, ordem ou concentração um
+                          // pouco diferentes ("Glifosato, sal de isopropilamina - 480 g/L" numa linha,
+                          // "Glifosato (sal de isopropilamina) 480 g/L" noutra). Comparar essas strings
+                          // por igualdade exata tratava isso como composições DIFERENTES e marcava o
+                          // nome inteiro como conflitante — excluído de todo preenchimento — quando na
+                          // real é o mesmo produto, só escrito de outro jeito.
+                          //
+                          // Processado em lotes, soltando a thread entre um e outro, pra não travar a
+                          // aba num catálogo de milhares de linhas.
+                          const porNome = new Map();
+                          const LOTE = 1500;
+                          for (let i=0; i<mapeadas.length; i+=LOTE) {
+                            mapeadas.slice(i, i+LOTE).forEach(l => {
+                              const k = normalizarNome(l.nome);
+                              if (!porNome.has(k)) porNome.set(k, { nome:l.nome, ias:[l.ia] });
+                              else {
+                                const g = porNome.get(k);
+                                if (l.nome.length > g.nome.length) g.nome = l.nome;
+                                const kIA = normalizarNome(l.ia);
+                                const iIgual = g.ias.findIndex(x => normalizarNome(x)===kIA || similaridadeNomes(x, l.ia) >= LIMIAR_MESMA_IA);
+                                if (iIgual < 0) g.ias.push(l.ia);
+                                else if (l.ia.length > g.ias[iIgual].length) g.ias[iIgual] = l.ia;
+                              }
+                            });
+                            setImportCatalogoProcessando({ etapa:"comparando", feitas:Math.min(i+LOTE, mapeadas.length), total:mapeadas.length });
+                            await new Promise(r=>setTimeout(r,0));
+                          }
+                          linhas = [...porNome.values()].map(g => g.ias.length===1
+                            ? { nome:g.nome, ia:g.ias[0] }
+                            : { nome:g.nome, ia:g.ias.join("  |  "), amb:true });
+                          totalLinhas = mapeadas.length;
                         }
-                        const linhas = [...porNome.values()].map(g => g.ias.length===1
-                          ? { nome:g.nome, ia:g.ias[0] }
-                          : { nome:g.nome, ia:g.ias.join("  |  "), amb:true });
                         if (!linhas.length) setImportCatalogoErro("⚠ Nenhuma linha reconhecida. O arquivo precisa ter as colunas Nome e Ingrediente Ativo preenchidas.");
-                        else { setImportCatalogoPreview(linhas); setImportCatalogoLidas(mapeadas.length); }
+                        else { setImportCatalogoPreview(linhas); setImportCatalogoLidas(totalLinhas); }
                       } catch (err) { setImportCatalogoErro("❌ Erro ao ler o arquivo: "+err.message); }
                       setImportCatalogoProcessando(null);
                     }} style={{marginBottom:10}}/>
                     {importCatalogoProcessando && (
                       <div style={{fontSize:12,color:"#5e35b1",marginBottom:10}}>
-                        ⏳ {importCatalogoProcessando.etapa==="lendo" ? "Lendo o arquivo…"
+                        ⏳ {importCatalogoProcessando.etapa==="lendo"
+                          ? (importCatalogoProcessando.total
+                              ? `Lendo o arquivo… ${(importCatalogoProcessando.feitas/1024/1024).toFixed(1)} de ${(importCatalogoProcessando.total/1024/1024).toFixed(1)} MB`
+                              : "Lendo o arquivo…")
                           : `Comparando produtos… ${importCatalogoProcessando.feitas.toLocaleString("pt-BR")} de ${importCatalogoProcessando.total.toLocaleString("pt-BR")}`}
                       </div>
                     )}
