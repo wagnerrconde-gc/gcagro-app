@@ -2280,6 +2280,11 @@ function App() {
   const [importCatalogoPreview, setImportCatalogoPreview] = useState(null);
   const [importCatalogoErro, setImportCatalogoErro] = useState("");
   const [importCatalogoLidas, setImportCatalogoLidas] = useState(0);
+  // {etapa, feitas, total} enquanto processa um arquivo grande, ou null quando não está
+  // processando. Um Agrofit de verdade tem muita linha; ler e comparar tudo de uma vez, sem
+  // soltar a thread, travava a aba por vários segundos sem nenhum indício de que estava
+  // funcionando.
+  const [importCatalogoProcessando, setImportCatalogoProcessando] = useState(null);
   const [buscaCatalogo, setBuscaCatalogo] = useState("");
   const [preencherIAMsg, setPreencherIAMsg] = useState(null);
   const [propostaIA, setPropostaIA] = useState(null);
@@ -6141,11 +6146,21 @@ function App() {
                       );
                     })()}
                   </div>
-                  {!importCatalogoPreview ? (
-                    <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
+                  {!importCatalogoPreview ? (<>
+                    <input type="file" accept=".xlsx,.xls,.csv" disabled={!!importCatalogoProcessando} onChange={async e=>{
                       const file = e.target.files[0]; if (!file) return;
+                      e.target.value = "";
+                      setImportCatalogoErro("");
+                      setImportCatalogoProcessando({ etapa:"lendo", feitas:0, total:0 });
+                      // Solta a thread antes de começar, pra o aviso "Lendo o arquivo…" aparecer na
+                      // tela antes do trabalho pesado — sem isso a aba ficava travada, sem nenhum
+                      // sinal de que estava funcionando, enquanto processava um Agrofit de verdade.
+                      await new Promise(r=>setTimeout(r,0));
                       try {
                         const rows = await readSpreadsheetRows(file);
+                        const mapeadas = rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
+                          .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
+                          .filter(l => l.nome && l.ia);
                         // O Agrofit lista uma linha por REGISTRO, não por produto: o mesmo nome
                         // comercial aparece várias vezes, de titulares diferentes — e cada registro
                         // escreve o MESMO ingrediente ativo com pontuação, ordem ou concentração um
@@ -6158,34 +6173,44 @@ function App() {
                         // (Herbicidas, Inseticidas). Agora só marca conflitante quando os textos são
                         // realmente diferentes (semelhança abaixo do limiar); textos quase iguais são
                         // tratados como o mesmo ingrediente, guardando a descrição mais completa.
+                        //
+                        // Processado em lotes, soltando a thread entre um e outro: comparar cada linha
+                        // nova com as já vistas do mesmo nome é rápido por si, mas multiplicado por um
+                        // catálogo de milhares de linhas trava a aba se rodar tudo de uma vez, sem o
+                        // navegador conseguir repintar a tela nem responder a nada nesse meio tempo.
                         const porNome = new Map();
-                        let lidas = 0;
-                        rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
-                          .map(m => ({ nome:String(m.nome||"").trim(), ia:String(m.ingredienteAtivo||"").trim() }))
-                          .forEach(l => {
-                            if (!l.nome || !l.ia) return;
-                            lidas++;
+                        const LOTE = 1500;
+                        for (let i=0; i<mapeadas.length; i+=LOTE) {
+                          mapeadas.slice(i, i+LOTE).forEach(l => {
                             const k = normalizarNome(l.nome);
                             if (!porNome.has(k)) porNome.set(k, { nome:l.nome, ias:[l.ia] });
                             else {
                               const g = porNome.get(k);
                               if (l.nome.length > g.nome.length) g.nome = l.nome;
-                              const iIgual = g.ias.findIndex(x => normalizarNome(x)===normalizarNome(l.ia) || similaridadeNomes(x, l.ia) >= LIMIAR_MESMA_IA);
+                              const kIA = normalizarNome(l.ia);
+                              const iIgual = g.ias.findIndex(x => normalizarNome(x)===kIA || similaridadeNomes(x, l.ia) >= LIMIAR_MESMA_IA);
                               if (iIgual < 0) g.ias.push(l.ia);
                               else if (l.ia.length > g.ias[iIgual].length) g.ias[iIgual] = l.ia;
                             }
                           });
+                          setImportCatalogoProcessando({ etapa:"comparando", feitas:Math.min(i+LOTE, mapeadas.length), total:mapeadas.length });
+                          await new Promise(r=>setTimeout(r,0));
+                        }
                         const linhas = [...porNome.values()].map(g => g.ias.length===1
                           ? { nome:g.nome, ia:g.ias[0] }
                           : { nome:g.nome, ia:g.ias.join("  |  "), amb:true });
-                        if (!linhas.length) { setImportCatalogoErro("⚠ Nenhuma linha reconhecida. O arquivo precisa ter as colunas Nome e Ingrediente Ativo preenchidas."); return; }
-                        setImportCatalogoPreview(linhas);
-                        setImportCatalogoLidas(lidas);
-                        setImportCatalogoErro("");
+                        if (!linhas.length) setImportCatalogoErro("⚠ Nenhuma linha reconhecida. O arquivo precisa ter as colunas Nome e Ingrediente Ativo preenchidas.");
+                        else { setImportCatalogoPreview(linhas); setImportCatalogoLidas(mapeadas.length); }
                       } catch (err) { setImportCatalogoErro("❌ Erro ao ler o arquivo: "+err.message); }
-                      e.target.value = "";
+                      setImportCatalogoProcessando(null);
                     }} style={{marginBottom:10}}/>
-                  ) : (
+                    {importCatalogoProcessando && (
+                      <div style={{fontSize:12,color:"#5e35b1",marginBottom:10}}>
+                        ⏳ {importCatalogoProcessando.etapa==="lendo" ? "Lendo o arquivo…"
+                          : `Comparando produtos… ${importCatalogoProcessando.feitas.toLocaleString("pt-BR")} de ${importCatalogoProcessando.total.toLocaleString("pt-BR")}`}
+                      </div>
+                    )}
+                  </>) : (
                     <>
                       {(()=>{
                         const amb = importCatalogoPreview.filter(l=>l.amb).length;
