@@ -4135,7 +4135,7 @@ function App() {
     );
   };
 
-  const EditCell = ({catIdx,prodIdx,field,type="number",value}) => {
+  const EditCell = ({catIdx,prodIdx,field,type="number",value,truncate}) => {
     const isEd = editingCell?.catIdx===catIdx&&editingCell?.prodIdx===prodIdx&&editingCell?.field===field;
     if (isEd) return (
       // type="text" (não "number") porque o valor exibido vem formatado em pt-BR (vírgula
@@ -4145,7 +4145,14 @@ function App() {
         onBlur={e=>{updateField(catIdx,prodIdx,field,e.target.value);setEditingCell(null);}}
         onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingCell(null);}}/>
     );
-    return <span onClick={()=>setEditingCell({catIdx,prodIdx,field})} style={{cursor:"pointer",display:"block",minWidth:30}} title="Clique para editar">{value||<span style={{color:"#ccc"}}>—</span>}<span style={{fontSize:8,color:"#bbb",marginLeft:2}}>✏</span></span>;
+    // truncate: mostra numa linha só, cortando com "…" (com o texto inteiro no title, ao passar
+    // o mouse) — usado no I.A. da tabela, que com mais de um ingrediente ("A + B") quebrava em
+    // várias linhas e deixava a linha do produto mais alta que as outras, espaçando a tabela toda.
+    return <span onClick={()=>setEditingCell({catIdx,prodIdx,field})}
+      style={{cursor:"pointer",display:"block",minWidth:30,...(truncate?{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:null)}}
+      title={truncate ? (value||"Clique para editar") : "Clique para editar"}>
+      {value||<span style={{color:"#ccc"}}>—</span>}<span style={{fontSize:8,color:"#bbb",marginLeft:2}}>✏</span>
+    </span>;
   };
 
   // Observação da Programação: textarea sempre visível (não precisa clicar pra ler/editar) que
@@ -4969,7 +4976,7 @@ function App() {
                           return (
                             <tr key={prodIdx} style={{background:bg}}>
                               <td style={{padding:padCel,width:colW("Produto"),textAlign:"center",fontWeight:600,overflowWrap:"break-word",...stickyCol(bg)}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
-                              {showIA && <td style={{padding:padCel,width:colW("I.A."),textAlign:"center",color:"#666",fontSize:10,overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo}/></td>}
+                              {showIA && <td style={{padding:padCel,width:colW("I.A."),textAlign:"center",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo} truncate/></td>}
                               {!isSementes && <td style={{padding:padCel,width:colW("Dose"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>}
                               {isTS && <td style={{padding:padCel,width:colW("Kg semente/ha"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:padCel,width:colW("Área(ha)"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
