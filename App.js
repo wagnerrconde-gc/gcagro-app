@@ -975,13 +975,44 @@ function similaridadeNomes(a, b) {
 // Até 3 produtos do catálogo parecidos com um nome que não teve casamento seguro — pro usuário
 // escolher na prévia, em vez de digitar do zero. Só o catálogo (não estoque/Programação) porque é
 // a fonte com mais volume; exclui os ambíguos, que já são incerteza demais sozinhos.
-const LIMIAR_SUGESTAO = 0.45;
-function sugerirDoCatalogo(nome, catalogoIA) {
-  return catalogoIA.filter(i => !i.amb)
+const LIMIAR_SUGESTAO = 0.35;
+function candidatosCatalogo(nome, disponiveis) {
+  return disponiveis
     .map(i => ({ nome:i.nome, ia:i.ia, score: similaridadeNomes(nome, i.nome) }))
     .filter(c => c.score >= LIMIAR_SUGESTAO)
-    .sort((a,b) => b.score-a.score)
-    .slice(0,3);
+    .sort((a,b) => b.score-a.score);
+}
+function sugerirDoCatalogo(nome, catalogoIA) {
+  const disponiveis = catalogoIA.filter(i => !i.amb);
+  const diretas = candidatosCatalogo(nome, disponiveis);
+  // Nome no padrão "A / B" (ex: "Prêmio / Shenzi"): comparar a string toda com o catálogo dá
+  // score baixo, porque o catálogo tem os produtos separados. Sugere cada parte por si e combina
+  // — a confiança da combinação é a da parte mais fraca, pra não empurrar um par ruim só porque a
+  // outra metade bateu muito bem.
+  const partes = String(nome||"").split("/").map(s=>s.trim()).filter(Boolean);
+  let combinadas = [];
+  if (partes.length > 1) {
+    const porParte = partes.map(p => candidatosCatalogo(p, disponiveis).slice(0,2));
+    if (porParte.every(lista => lista.length>0)) {
+      const combos = [];
+      const montar = (idx, acc, scoreMin) => {
+        if (idx === porParte.length) { combos.push({ acc, scoreMin }); return; }
+        porParte[idx].forEach(c => montar(idx+1, [...acc, c], Math.min(scoreMin, c.score)));
+      };
+      montar(0, [], 1);
+      combinadas = combos.map(({acc,scoreMin}) => ({
+        nome: acc.map(c=>c.nome).join(" / "),
+        ia: [...new Set(acc.map(c=>c.ia))].join(" / "),
+        score: scoreMin,
+      }));
+    }
+  }
+  const porRotulo = new Map();
+  [...combinadas, ...diretas].forEach(c => {
+    const atual = porRotulo.get(c.nome);
+    if (!atual || c.score > atual.score) porRotulo.set(c.nome, c);
+  });
+  return [...porRotulo.values()].sort((a,b)=>b.score-a.score).slice(0,3);
 }
 function buildInsumoEstoqueRecord(m) {
   const nome = String(m.nome||"").trim();
