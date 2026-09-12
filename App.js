@@ -3432,10 +3432,13 @@ function App() {
         if (!key) return;
         label = r.produto.trim();
       }
-      if (!grupos[key]) grupos[key] = { produto:label, totalPago:0, totalQtd:0, fornecedores:new Set() };
+      if (!grupos[key]) grupos[key] = { produto:label, totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set() };
       grupos[key].totalPago += r.valorTotal||0;
       grupos[key].totalQtd += r.quantidade||0;
       if (r.fornecedor) grupos[key].fornecedores.add(r.fornecedor);
+      // "obs" do lançamento de Compras é onde o vencimento fica guardado (a própria tela de
+      // Compras rotula essa coluna como "Vencimento") — não é uma observação livre separada.
+      if ((r.obs||"").trim()) grupos[key].vencimentos.add(r.obs.trim());
     });
     const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
     if (!medias.length) return [];
@@ -3473,6 +3476,9 @@ function App() {
               p.fornecedor_compra = "Compra manual";
               if (isSementes) p.qtd = match.totalQtd;
               if (match.fornecedores && match.fornecedores.size) p.revenda = [...match.fornecedores].join(" + ");
+              // Só sobrescreve o vencimento quando a planilha trouxe algum — sem isso, um lote
+              // de compra sem vencimento informado apagaria um vencimento já preenchido à mão.
+              if (match.vencimentos && match.vencimentos.size) p.vencimento = [...match.vencimentos].join(" + ");
             }
           });
         });
