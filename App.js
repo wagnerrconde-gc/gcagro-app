@@ -976,6 +976,12 @@ function similaridadeNomes(a, b) {
 // escolher na prévia, em vez de digitar do zero. Só o catálogo (não estoque/Programação) porque é
 // a fonte com mais volume; exclui os ambíguos, que já são incerteza demais sozinhos.
 const LIMIAR_SUGESTAO = 0.35;
+// Acima disso, duas descrições de ingrediente ativo contam como "o mesmo produto escrito
+// diferente" (pontuação, ordem das palavras, concentração) em vez de composição realmente
+// diferente. Mais alto que LIMIAR_SUGESTAO de propósito: aqui a decisão de mesclar é automática
+// (não passa por um clique meu), então tem que ser bem mais rigorosa pra não juntar dois produtos
+// que só por acaso têm texto parecido.
+const LIMIAR_MESMA_IA = 0.72;
 function candidatosCatalogo(nome, disponiveis) {
   return disponiveis
     .map(i => ({ nome:i.nome, ia:i.ia, score: similaridadeNomes(nome, i.nome) }))
@@ -2738,7 +2744,12 @@ function App() {
       if (ambiguos.has(k)) return;
       const atual = mapa.get(k);
       if (atual == null) { mapa.set(k, v); return; }
-      if (normalizarNome(atual) !== normalizarNome(v)) { mapa.delete(k); ambiguos.add(k); }
+      if (normalizarNome(atual) === normalizarNome(v)) return;
+      // Mesmo aqui — nome repetido no estoque ou na Programação — duas descrições parecidas do
+      // mesmo ingrediente (pontuação, ordem, concentração) não contam como conflito de verdade;
+      // só diverge quando o texto é realmente diferente. Fica a descrição mais completa.
+      if (similaridadeNomes(atual, v) >= LIMIAR_MESMA_IA) { if (v.length > atual.length) mapa.set(k, v); return; }
+      mapa.delete(k); ambiguos.add(k);
     });
     return { mapa, ambiguos };
   }
@@ -6136,11 +6147,17 @@ function App() {
                       try {
                         const rows = await readSpreadsheetRows(file);
                         // O Agrofit lista uma linha por REGISTRO, não por produto: o mesmo nome
-                        // comercial aparece várias vezes, de titulares diferentes e às vezes com
-                        // composição diferente. Então agrupa por nome: quando todas as linhas
-                        // concordam no ingrediente, vira um produto; quando divergem, o nome fica
-                        // marcado como conflitante e NUNCA é usado pra preencher — guardado só
-                        // pra eu poder olhar e resolver na mão.
+                        // comercial aparece várias vezes, de titulares diferentes — e cada registro
+                        // escreve o MESMO ingrediente ativo com pontuação, ordem ou concentração um
+                        // pouco diferentes ("Glifosato, sal de isopropilamina - 480 g/L" numa linha,
+                        // "Glifosato (sal de isopropilamina) 480 g/L" noutra). Comparar essas strings
+                        // por igualdade exata tratava isso como composições DIFERENTES e marcava o
+                        // nome inteiro como conflitante — excluído de todo preenchimento — quando na
+                        // real é o mesmo produto, só escrito de outro jeito. Isso sozinho já explicava
+                        // boa parte dos "sem I.A." em categorias com muita variedade de registro
+                        // (Herbicidas, Inseticidas). Agora só marca conflitante quando os textos são
+                        // realmente diferentes (semelhança abaixo do limiar); textos quase iguais são
+                        // tratados como o mesmo ingrediente, guardando a descrição mais completa.
                         const porNome = new Map();
                         let lidas = 0;
                         rows.map(row => mapRowByAliases(row, ALIASES_ESTOQUE_INSUMOS))
@@ -6153,7 +6170,9 @@ function App() {
                             else {
                               const g = porNome.get(k);
                               if (l.nome.length > g.nome.length) g.nome = l.nome;
-                              if (!g.ias.some(x => normalizarNome(x)===normalizarNome(l.ia))) g.ias.push(l.ia);
+                              const iIgual = g.ias.findIndex(x => normalizarNome(x)===normalizarNome(l.ia) || similaridadeNomes(x, l.ia) >= LIMIAR_MESMA_IA);
+                              if (iIgual < 0) g.ias.push(l.ia);
+                              else if (l.ia.length > g.ias[iIgual].length) g.ias[iIgual] = l.ia;
                             }
                           });
                         const linhas = [...porNome.values()].map(g => g.ias.length===1
