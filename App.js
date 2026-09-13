@@ -425,6 +425,11 @@ const fmt    = (n) => isNaN(n)||n==null?"R$ 0,00":Number(n).toLocaleString("pt-B
 const fmtN   = (n,d=1) => Number(n).toLocaleString("pt-BR",{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtC   = (v) => v==null||v===""?"—":`R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const fmtQtd = (v) => Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1});
+// Quantidade calculada (dose × área, ou a fórmula do TS): mostra o valor exato, com até 3 casas
+// e sem zeros à toa (119,625 / 210,54 / 957). Com uma casa só, "0,125 × 957 ha" aparecia como
+// 119,6 enquanto o Total usava 119,625 — quem conferia a conta pela tela achava uma diferença de
+// R$ 113,25 num único produto e parecia erro de fórmula, quando era só o arredondamento da tela.
+const fmtQtdExata = (n) => Number(n).toLocaleString("pt-BR",{minimumFractionDigits:0,maximumFractionDigits:3});
 // Converte texto no padrão pt-BR (ex: "0,5", "R$ 4.530,00", "1.234,5") de volta pra número.
 // Sem isso, parseFloat("0,5") retorna 0 — a vírgula corta o número, e o campo "volta a ser 0".
 function parseNumBR(v) {
@@ -4155,13 +4160,49 @@ function App() {
       <input autoFocus type={type==="number"?"text":type} inputMode={type==="number"?"decimal":undefined} defaultValue={value}
         style={{width:"100%",padding:"3px 6px",fontSize:12,border:"2px solid "+colors.badge,borderRadius:4,background:colors.light}}
         onBlur={e=>{updateField(catIdx,prodIdx,field,e.target.value);setEditingCell(null);}}
-        onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape")setEditingCell(null);}}/>
+        onKeyDown={e=>{
+          if (e.key==="Enter") { e.target.blur(); return; }
+          if (e.key==="Escape") { setEditingCell(null); return; }
+          if (e.key!=="Tab") return;
+          // Salvar re-renderiza a tabela e desmonta este campo no meio da troca de foco do
+          // navegador — aí o Tab nativo se perde e o foco cai no corpo da página. Então movemos
+          // o foco na mão, pra célula seguinte da mesma linha, depois que o React redesenhou.
+          const td = e.target.closest("td"), tr = e.target.closest("tr");
+          if (!td || !tr) return; // fora da tabela (cartões do celular): deixa o Tab normal
+          e.preventDefault();
+          const chave = tr.getAttribute("data-prod");
+          const col = [...tr.children].indexOf(td);
+          const passo = e.shiftKey ? -1 : 1;
+          updateField(catIdx,prodIdx,field,e.target.value);
+          setEditingCell(null);
+          setTimeout(()=>{
+            const linhas = [...document.querySelectorAll("tr[data-prod]")];
+            const iLinha = linhas.findIndex(l => l.getAttribute("data-prod")===chave);
+            if (iLinha < 0) return;
+            const focavel = td => td.querySelector('[tabindex="0"], select, textarea');
+            // Procura na linha atual a partir da célula seguinte; chegando ao fim, continua na
+            // próxima linha (no começo dela), como numa planilha.
+            for (let l=iLinha; l>=0 && l<linhas.length; l+=passo) {
+              const cels = [...linhas[l].children];
+              const inicio = l===iLinha ? col+passo : (passo>0 ? 0 : cels.length-1);
+              for (let i=inicio; i>=0 && i<cels.length; i+=passo) {
+                const alvo = focavel(cels[i]);
+                if (alvo) { alvo.focus(); return; }
+              }
+            }
+          }, 0);
+        }}/>
     );
+    // tabIndex + onFocus: fora do modo de edição a célula é só texto, que o Tab ignora — antes o
+    // Tab saltava do produto direto pros poucos campos "de verdade" da linha (unidade, observação
+    // e o ✕ de remover). Assim cada célula entra na ordem do Tab e já abre pra edição ao receber
+    // o foco, andando de campo em campo como numa planilha.
     // truncate: mostra numa linha só, cortando com "…" (com o texto inteiro no title, ao passar
     // o mouse) — usado no I.A. da tabela, que com mais de um ingrediente ("A + B") quebrava em
     // várias linhas e deixava a linha do produto mais alta que as outras, espaçando a tabela toda.
-    return <span onClick={()=>setEditingCell({catIdx,prodIdx,field})}
-      style={{cursor:"pointer",display:"block",minWidth:30,...(truncate?{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:null)}}
+    return <span tabIndex={0} onClick={()=>setEditingCell({catIdx,prodIdx,field})}
+      onFocus={()=>setEditingCell({catIdx,prodIdx,field})}
+      style={{cursor:"pointer",display:"block",minWidth:30,outline:"none",...(truncate?{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:null)}}
       title={truncate ? (value||"Clique para editar") : "Clique para editar"}>
       {value||<span style={{color:"#ccc"}}>—</span>}<span style={{fontSize:8,color:"#bbb",marginLeft:2}}>✏</span>
     </span>;
@@ -4888,7 +4929,7 @@ function App() {
                       const resumo = [
                         !isSementes && p.dose>0 ? fmtN(p.dose,3)+" "+unidTxt+"/ha" : null,
                         p.area>0 ? fmtN(p.area,1)+" ha" : null,
-                        qtd>0 ? fmtN(qtd,1)+" "+unidTxt : null,
+                        qtd>0 ? fmtQtdExata(qtd)+" "+unidTxt : null,
                         (p.fase||"").trim() || null,
                       ].filter(Boolean).join(" · ");
                       return (
@@ -4918,7 +4959,7 @@ function App() {
                             {!isSementes && <CampoCard label="Dose"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></CampoCard>}
                             {isTS && <CampoCard label="Kg sem./ha"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></CampoCard>}
                             <CampoCard label="Área (ha)"><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></CampoCard>
-                            <CampoCard label="Qtd">{isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}</CampoCard>
+                            <CampoCard label="Qtd">{isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtQtdExata(qtd)}</CampoCard>
                             <CampoCard label="Unid.">
                               <select value={p.unidade||(isSementes?"bag":"kg")} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
                                 style={{padding:"3px 5px",border:"1px solid #ddd",borderRadius:4,fontSize:13,width:"100%",maxWidth:"100%"}}>
@@ -4986,14 +5027,14 @@ function App() {
                           const bg = prodIdx%2===0?"#fff":"#fafafa";
                           const comprado = p.preco_compra!=null;
                           return (
-                            <tr key={prodIdx} style={{background:bg}}>
+                            <tr key={prodIdx} data-prod={catIdx+"|"+prodIdx} style={{background:bg}}>
                               <td style={{padding:padCel,width:colW("Produto"),textAlign:"center",fontWeight:600,overflowWrap:"break-word",...stickyCol(bg)}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
                               {showIA && <td style={{padding:padCel,width:colW("I.A."),textAlign:"center",color:"#666",fontSize:10}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="ingrediente_ativo" type="text" value={p.ingrediente_ativo} truncate/></td>}
                               {!isSementes && <td style={{padding:padCel,width:colW("Dose"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="dose" value={fmtN(p.dose,3)}/></td>}
                               {isTS && <td style={{padding:padCel,width:colW("Kg semente/ha"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="kgHa" value={fmtN(p.kgHa||culture.kgSemente||0,1)}/></td>}
                               <td style={{padding:padCel,width:colW("Área(ha)"),textAlign:"center",whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="area" value={fmtN(p.area,1)}/></td>
                               <td style={{padding:padCel,width:colW("Qtd"),textAlign:"center",color:"#555",whiteSpace:semQuebra}}>
-                                {isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtN(qtd,1)}
+                                {isSementes ? <EditCell catIdx={catIdx} prodIdx={prodIdx} field="qtd" value={fmtN(p.qtd||0,1)}/> : fmtQtdExata(qtd)}
                               </td>
                               <td style={{padding:padCel,width:colW("Unid."),textAlign:"center",whiteSpace:semQuebra}}>
                                 <select value={p.unidade||(isSementes?"bag":"kg")} onChange={e=>updateField(catIdx,prodIdx,"unidade",e.target.value)}
@@ -5014,7 +5055,8 @@ function App() {
                               <td style={{padding:padCel,width:colW("Revenda"),textAlign:"center",overflowWrap:"break-word"}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="revenda" type="text" value={p.revenda}/></td>
                               <td style={{padding:padCel,width:colW("Venc."),textAlign:"center",color:"#888",fontSize:10,whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
                               <td style={{padding:"6px 4px",width:colW(""),textAlign:"center"}}>
-                                <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                {/* tabIndex -1: o Tab anda pelos campos da linha, nunca parando num botão que apaga o produto. */}
+                                <button tabIndex={-1} onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
                               </td>
                             </tr>
                           );
