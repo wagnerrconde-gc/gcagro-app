@@ -1645,7 +1645,7 @@ function computarGruposTS(dProg) {
         cultura,
         variedadeDefault: display,
         dose100kg: prodsTS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
-        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join(" + "),
+        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
       });
     });
   });
@@ -1663,7 +1663,7 @@ function produtosComunsTS(dProg, cultura) {
   const comum = p => !extrairVariedadeObs(p.obs, cultura);
   return {
     dose100kg: prodsTS.filter(comum).map(formatarLinhaProdutoTS).join("\n"),
-    kitSulco: prodsKS.filter(comum).map(formatarLinhaProdutoTS).join(" + "),
+    kitSulco: prodsKS.filter(comum).map(formatarLinhaProdutoTS).join("\n"),
   };
 }
 // Mescla os grupos calculados da Programação na lista de TS/Kit Sulco: atualiza dose100kg/kitSulco
@@ -1690,10 +1690,10 @@ function mesclarGruposTS(atual, grupos) {
 }
 
 const TS_VERAO_INICIAL = [
-  {id:"ts1",cultura:"Soja",variedade:"B 5830 CE",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:"SEM AVEO"},
-  {id:"ts2",cultura:"Soja",variedade:"Demais variedades",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses + Nodugran 10 doses + Torpeno 0,12 L/ha",obs:""},
-  {id:"ts3",cultura:"Milho",variedade:"Todas",dose100kg:"Endofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses + Torpeno 0,12 L/ha",obs:""},
-  {id:"ts4",cultura:"Feijão",variedade:"Todas",dose100kg:"Dermacor\nCerteza/Torino\nImpar/Adage\nEndofuse\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses + Tropic 5 doses + Torpeno 0,12 L/ha",obs:""},
+  {id:"ts1",cultura:"Soja",variedade:"B 5830 CE",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses\nNodugran 10 doses\nTorpeno 0,12 L/ha",obs:"SEM AVEO"},
+  {id:"ts2",cultura:"Soja",variedade:"Demais variedades",dose100kg:"Dermacor\nLumitreo\nEndofuse\nAuras\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses\nNodugran 10 doses\nTorpeno 0,12 L/ha",obs:""},
+  {id:"ts3",cultura:"Milho",variedade:"Todas",dose100kg:"Endofuse\nAuras\nRaiz F Plus",kitSulco:"Azos 2 doses\nTorpeno 0,12 L/ha",obs:""},
+  {id:"ts4",cultura:"Feijão",variedade:"Todas",dose100kg:"Dermacor\nCerteza/Torino\nImpar/Adage\nEndofuse\nRaiz F Plus\nAveo",kitSulco:"Azos 2 doses\nTropic 5 doses\nTorpeno 0,12 L/ha",obs:""},
 ];
 const TS_SAFRINHA_INICIAL = [
   {id:"tsi1",cultura:"Milho",variedade:"P40537 PWURR",dose100kg:"Nema Protection 75ml\nTrich Protection 300ml\nBioma Azum 200ml\nBioma Phos 150ml",kitSulco:"",obs:"TSI Completo"},
@@ -2110,13 +2110,13 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg}) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
                   <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente{row.origemKey && " (vem da Programação)"}</div>
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente</div>
                     <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5} readOnly={!!row.origemKey}
                       title={row.origemKey?"Editado direto na categoria TS da Programação, não aqui":undefined}
                       style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
                   </div>
                   <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha){row.origemKey && " (vem da Programação)"}</div>
+                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha)</div>
                     <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5} readOnly={!!row.origemKey}
                       title={row.origemKey?"Editado direto na categoria Kit Sulco da Programação, não aqui":undefined}
                       style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
