@@ -488,10 +488,16 @@ function calcQtdTS(p, culture) {
   const kgHaVal = parseFloat(p.kgHa || (culture&&culture.kgSemente) || 0);
   return p.dose > 0 ? p.dose * kgHaVal * p.area / 100 : kgHaVal * p.area / 100;
 }
+// Preço que vale pro custo: o de compra quando existe, senão o de referência. Uma única função
+// pros dois lados (o Total de cada linha e os somatórios de categoria/Insumos-ha/Resumos) — antes
+// a linha usava o preço de compra e o somatório só o de referência, então a soma das linhas não
+// fechava com o total da categoria em todo produto comprado por um valor diferente do previsto.
+function precoEfetivo(p) { return p.preco_compra || p.preco_unit; }
 function calcProdTotal(p, cat, culture) {
-  if (cat && cat.name === "TS") return calcQtdTS(p, culture) * p.preco_unit;
-  if (cat && cat.name === "Sementes") return (p.qtd||0) * p.preco_unit;
-  return p.dose > 0 ? p.dose * p.area * p.preco_unit : p.area * p.preco_unit;
+  const preco = precoEfetivo(p);
+  if (cat && cat.name === "TS") return calcQtdTS(p, culture) * preco;
+  if (cat && cat.name === "Sementes") return (p.qtd||0) * preco;
+  return p.dose > 0 ? p.dose * p.area * preco : p.area * preco;
 }
 // Extrai nome + dose (kg/ha) de um texto livre do Planejamento de Campo, tipo "Yara Basa 128 kg",
 // "5-37-00 150 kg" (fórmula NPK com números e hífen no nome, tipo adubo formulado) ou só "241 kg"
@@ -4871,7 +4877,7 @@ function App() {
                 {isOpen&&isMobile&&progMobileView==="cartoes"&&(
                   <div style={{padding:"10px",display:"flex",flexDirection:"column",gap:10}}>
                     {(cat.products||[]).map((p,prodIdx)=>{
-                      const preco = p.preco_compra||p.preco_unit;
+                      const preco = precoEfetivo(p);
                       const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                       const total = qtd*preco;
                       const comprado = p.preco_compra!=null;
@@ -4974,7 +4980,7 @@ function App() {
                       </thead>
                       <tbody>
                         {(cat.products||[]).map((p,prodIdx)=>{
-                          const preco = p.preco_compra||p.preco_unit;
+                          const preco = precoEfetivo(p);
                           const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                           const total = qtd*preco;
                           const bg = prodIdx%2===0?"#fff":"#fafafa";
@@ -8352,7 +8358,7 @@ function App() {
                                         <tbody>
                                           {(cat.products||[]).map((p,pi)=>{
                                             const qtd = isTSarq ? calcQtdTS(p,c) : isSementesArq ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
-                                            const preco = p.preco_compra||p.preco_unit;
+                                            const preco = precoEfetivo(p);
                                             return (
                                               <tr key={pi} style={{background:pi%2===0?"#fff":"#fafafa"}}>
                                                 <td style={{padding:"4px 7px",fontWeight:600}}>{p.produto}</td>
