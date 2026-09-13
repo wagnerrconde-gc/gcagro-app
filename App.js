@@ -493,11 +493,13 @@ function calcQtdTS(p, culture) {
   const kgHaVal = parseFloat(p.kgHa || (culture&&culture.kgSemente) || 0);
   return p.dose > 0 ? p.dose * kgHaVal * p.area / 100 : kgHaVal * p.area / 100;
 }
-// Preço que vale pro custo: o de compra quando existe, senão o de referência. Uma única função
-// pros dois lados (o Total de cada linha e os somatórios de categoria/Insumos-ha/Resumos) — antes
-// a linha usava o preço de compra e o somatório só o de referência, então a soma das linhas não
-// fechava com o total da categoria em todo produto comprado por um valor diferente do previsto.
-function precoEfetivo(p) { return p.preco_compra || p.preco_unit; }
+// Preço que vale pro custo: SÓ o de compra. Produto ainda não comprado não entra no custo — a
+// Programação mostra o que foi efetivamente gasto, não o previsto. O preço de referência nunca
+// entra nessa conta: ele existe pra comparar com o que foi pago (ao abrir uma safra nova o preço
+// de compra é zerado e o de referência é mantido, então ele vira o preço do ano anterior).
+// Uma única função pros dois lados — o Total de cada linha e os somatórios de
+// categoria/Insumos-ha/Resumos — pra os dois cálculos não voltarem a divergir.
+function precoEfetivo(p) { return p.preco_compra || 0; }
 function calcProdTotal(p, cat, culture) {
   const preco = precoEfetivo(p);
   if (cat && cat.name === "TS") return calcQtdTS(p, culture) * preco;
