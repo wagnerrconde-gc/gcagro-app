@@ -1717,14 +1717,24 @@ function extrairVariedadeObs(raw, cultura) {
 // dispensam — o enraizador, por exemplo, que não vai nas variedades compradas já tratadas.
 // As variedades citadas aqui também passam a existir na tela de TS, mesmo sem nenhum produto
 // específico delas: sem isso não haveria como mostrar uma variedade que só recebe o que é comum.
-// Separar por vírgula é o mais seguro ("exceto Tormenta, Neo 700 tratada"); " e " também é
-// aceito, mas parte um nome que tenha " e " no meio.
+// A separação é SÓ por vírgula ("exceto Tormenta, Neo 700 e 2X tratada"): nome de variedade tem
+// " e " no meio com frequência ("Neo 700 e 2X"), e aceitar " e " como separador partia o nome ao
+// meio — "Tormenta e Neo 700 e 2X tratada" virava três nomes inexistentes e a exceção não pegava
+// variedade nenhuma.
 function extrairExcecoesObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "exceto" && primeira !== "menos") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*,\s*|\s+e\s+/i).map(s=>s.trim()).filter(Boolean);
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;]\s*/).map(s=>s.trim()).filter(Boolean);
   return nomes.length ? nomes : null;
+}
+// "todas as variedades", "todos os híbridos" e afins: o produto vale pra todas, igual à observação
+// em branco. Precisa ser reconhecido explicitamente porque, numa cultura que usa variedade, toda
+// observação solta passa a ser lida como nome de variedade (ver computarGruposTS) — sem isso
+// "todas as variedades" viraria uma variedade chamada "todas as variedades".
+function obsDizTodas(raw) {
+  const primeira = normalizarNome((raw||"").trim().split(/\s+/)[0]||"");
+  return primeira === "todas" || primeira === "todos";
 }
 // Agrupa os produtos de TS e Kit Sulco de cada cultura por variedade, a partir da Observação de
 // cada produto na Programação, no formato "Cultura Variedade" (ex.: "Soja TMG 7062"): produto sem
@@ -1740,10 +1750,24 @@ function computarGruposTS(dProg) {
     const prodsTS = ((c.categories||[]).find(cat=>cat.name==="TS")||{}).products || [];
     const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
     if (!prodsTS.length && !prodsKS.length) return;
+    const todos = [...prodsTS, ...prodsKS];
+    // A cultura "usa variedade" quando alguma observação declara uma explicitamente — com o nome
+    // da cultura na frente ("Soja Neo 700 e 2X branca") ou dentro de um "exceto". A partir daí,
+    // observação solta nos produtos dessa cultura também é lida como nome de variedade: é assim
+    // que a maioria escreve ("Neo 700 e 2X branca", sem repetir "Soja" em cada linha). Numa
+    // cultura sem nenhuma variedade declarada, observação solta continua sendo anotação livre e
+    // não vira variedade nenhuma — é o que preserva anotações antigas tipo "850 hectares".
+    const usaVariedade = todos.some(p => extrairVariedadeObs(p.obs, cultura) || extrairExcecoesObs(p.obs));
+    const variedadeDoProduto = p => {
+      if (extrairExcecoesObs(p.obs) || obsDizTodas(p.obs)) return null;
+      const comPrefixo = extrairVariedadeObs(p.obs, cultura);
+      if (comPrefixo) return comPrefixo;
+      return usaVariedade ? ((p.obs||"").trim() || null) : null;
+    };
     const obsMap = new Map();
     const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
-    [...prodsTS, ...prodsKS].forEach(p => {
-      const v = extrairVariedadeObs(p.obs, cultura);
+    todos.forEach(p => {
+      const v = variedadeDoProduto(p);
       if (v) registrar(v);
       const excecoes = extrairExcecoesObs(p.obs);
       if (excecoes) excecoes.forEach(registrar);
@@ -1756,7 +1780,7 @@ function computarGruposTS(dProg) {
       const pertence = p => {
         const excecoes = extrairExcecoesObs(p.obs);
         if (excecoes) return !excecoes.some(n => normalizarNome(n) === key);
-        const v = extrairVariedadeObs(p.obs, cultura);
+        const v = variedadeDoProduto(p);
         return !v || normalizarNome(v)===key;
       };
       return { key, display,
