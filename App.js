@@ -590,34 +590,52 @@ function compraForaDeCotacao(p) {
     && !!(p.revenda||"").trim() && !!(p.vencimento||"").trim();
 }
 // Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada químico
-// comprado fora de cotação. A chave origemProg identifica de qual linha da Programação o
-// lançamento veio, pra poder atualizar em vez de duplicar quando o preço/revenda mudar depois.
+// comprado fora de cotação. O mesmo produto costuma estar em várias culturas (Offroad na soja, no
+// milho e no feijão), mas a compra foi UMA só — então os volumes das culturas são somados num
+// único lançamento por produto, em vez de três linhas repetidas do mesmo nome na mesma pasta.
+// Unidades diferentes ficam separadas, porque somar litro com quilo não faria sentido.
+// A chave origemProg identifica o lançamento, pra poder atualizar em vez de duplicar quando o
+// preço/revenda mudar depois. O prefixo "v2" marca o formato somado: lançamento com chave em
+// formato antigo (uma linha por cultura) é descartado pelo efeito que mantém Compras em dia.
+const PREFIXO_ORIGEM_PROG = "v2";
 function comprasDaProgramacao(dProg, temporadaLabel, safra) {
-  const saida = [];
-  Object.entries(dProg||{}).forEach(([cultura, c]) => {
+  const arred = (n, casas) => { const f = Math.pow(10, casas); return Math.round(n*f)/f; };
+  const porProduto = new Map();
+  Object.values(dProg||{}).forEach(c => {
     (c.categories||[]).forEach(cat => {
       if (!categoriaDeQuimicos(cat.name)) return;
       (cat.products||[]).forEach(p => {
         if (!compraForaDeCotacao(p)) return;
         const qtd = calcProdQtd(p, cat, c);
         if (!(qtd > 0)) return;
-        saida.push({
-          origemProg: [safra, temporadaLabel, cultura, cat.name, normalizarNome(p.produto)].join("|"),
-          safra,
-          categoria: "Químicos "+temporadaLabel,
-          produto: p.produto.trim(),
-          unidade: p.unidade || "L",
-          quantidade: qtd,
-          precoUnitario: p.preco_compra,
-          valorTotal: qtd * p.preco_compra,
-          fornecedor: (p.revenda||"").trim(),
-          obs: (p.vencimento||"").trim(), // em Compras essa coluna é rotulada "Vencimento"
-          tratamento: "",
-        });
+        const unidade = p.unidade || "L";
+        const chave = [PREFIXO_ORIGEM_PROG, safra, temporadaLabel, normalizarNome(p.produto), unidade].join("|");
+        const atual = porProduto.get(chave);
+        if (!atual) {
+          porProduto.set(chave, { origemProg:chave, safra, categoria:"Químicos "+temporadaLabel,
+            produto:p.produto.trim(), unidade, quantidade:qtd, valorTotal:qtd*p.preco_compra,
+            revendas:new Set([(p.revenda||"").trim()]), vencimentos:new Set([(p.vencimento||"").trim()]), tratamento:"" });
+        } else {
+          atual.quantidade += qtd;
+          atual.valorTotal += qtd * p.preco_compra;
+          atual.revendas.add((p.revenda||"").trim());
+          atual.vencimentos.add((p.vencimento||"").trim());
+        }
       });
     });
   });
-  return saida;
+  // Preço unitário do lançamento somado: média ponderada pela quantidade — normalmente é o mesmo
+  // preço em todas as culturas, e aí a média dá exatamente ele.
+  return [...porProduto.values()].map(g => {
+    const quantidade = arred(g.quantidade, 6);
+    const valorTotal = arred(g.valorTotal, 2);
+    return { origemProg:g.origemProg, safra:g.safra, categoria:g.categoria, produto:g.produto,
+      unidade:g.unidade, quantidade, valorTotal,
+      precoUnitario: quantidade > 0 ? arred(valorTotal/quantidade, 6) : 0,
+      fornecedor: [...g.revendas].filter(Boolean).join(" + "),
+      obs: [...g.vencimentos].filter(Boolean).join(" + "), // em Compras essa coluna é rotulada "Vencimento"
+      tratamento: "" };
+  });
 }
 // Mesmo produto escrito com e sem a marca da empresa na frente: "NutriNicomomag" e "Nicomomag"
 // (o "Nutri" é só o nome da empresa), "Fox Xpro" e "Xpro". Recebe duas chaves já normalizadas.
@@ -2657,6 +2675,15 @@ function App() {
       ...comprasDaProgramacao(dataVerao, "Verão", safraAtiva),
       ...comprasDaProgramacao(dataInverno, "Inverno", safraAtiva),
     ];
+    // Lançamento criado pela versão antiga (uma linha por cultura) sai de cena: os somados por
+    // produto tomam o lugar dele. Só descarta o que foi criado automaticamente — lançamento
+    // digitado ou importado à mão não tem origemProg e nunca é tocado.
+    const antigos = comprasRecords.filter(r => r.origemProg && !r.origemProg.startsWith(PREFIXO_ORIGEM_PROG+"|"));
+    if (antigos.length) {
+      salvarSnapshot(`Juntar ${antigos.length} lançamento(s) da Programação por produto`, { compras: comprasRecords });
+      setComprasRecords(rs => rs.filter(r => !r.origemProg || r.origemProg.startsWith(PREFIXO_ORIGEM_PROG+"|")));
+      return;
+    }
     if (!desejados.length) return;
     const porOrigem = new Map(comprasRecords.filter(r=>r.origemProg).map(r=>[r.origemProg, r]));
     const novos = desejados.filter(d => !porOrigem.has(d.origemProg));
@@ -3568,7 +3595,11 @@ function App() {
       // Compras rotula essa coluna como "Vencimento") — não é uma observação livre separada.
       if ((r.obs||"").trim()) grupos[key].vencimentos.add(r.obs.trim());
     });
-    const medias = Object.values(grupos).filter(g=>g.totalQtd>0).map(g=>({...g, precoMedio:g.totalPago/g.totalQtd}));
+    // Arredonda o preço médio: dividir valor por quantidade em ponto flutuante devolve coisas como
+    // 244,99999999999997 pra uma compra de R$ 245 redondos, e esse número é o que alimenta todo o
+    // custo da Programação daí pra frente.
+    const medias = Object.values(grupos).filter(g=>g.totalQtd>0)
+      .map(g=>({...g, precoMedio: Math.round((g.totalPago/g.totalQtd)*1e6)/1e6}));
     if (!medias.length) return [];
     function procuraMatch(p, culturaNome) {
       if (isSementes) return medias.find(m => normalizarNome(m.produto)===normalizarNome(culturaNome));
