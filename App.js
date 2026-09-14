@@ -502,9 +502,13 @@ function calcQtdTS(p, culture) {
 function precoEfetivo(p) { return p.preco_compra || 0; }
 function calcProdTotal(p, cat, culture) {
   const preco = precoEfetivo(p);
-  if (cat && cat.name === "TS") return calcQtdTS(p, culture) * preco;
-  if (cat && cat.name === "Sementes") return (p.qtd||0) * preco;
-  return p.dose > 0 ? p.dose * p.area * preco : p.area * preco;
+  return calcProdQtd(p, cat, culture) * preco;
+}
+// Quantidade do produto, pela fórmula da categoria — a mesma que a tela mostra na coluna QTD.
+function calcProdQtd(p, cat, culture) {
+  if (cat && cat.name === "TS") return calcQtdTS(p, culture);
+  if (cat && cat.name === "Sementes") return p.qtd||0;
+  return p.dose > 0 ? p.dose * p.area : p.area;
 }
 // Extrai nome + dose (kg/ha) de um texto livre do Planejamento de Campo, tipo "Yara Basa 128 kg",
 // "5-37-00 150 kg" (fórmula NPK com números e hífen no nome, tipo adubo formulado) ou só "241 kg"
@@ -555,10 +559,61 @@ function calcCultureTotals(culture) {
 // Programação (ex: preço fechado com o grupo de compras) — o preço sozinho não conta, porque o
 // preço de referência já vem preenchido em praticamente todo produto desde o planejamento; só
 // quando os três estão preenchidos juntos é sinal de compra fechada.
+function fechadoNaPlanilha(p) {
+  return p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
+}
 function produtoJaResolvido(p) {
   const obs = (p.obs||"").trim().toLowerCase();
-  const fechadoNaPlanilha = p.preco_unit>0 && (p.revenda||"").trim() && (p.vencimento||"").trim();
-  return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra!=null || fechadoNaPlanilha;
+  return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra!=null || fechadoNaPlanilha(p);
+}
+// Compra feita FORA de cotação, lançada direto na Programação: produto com preço, revenda e
+// vencimento preenchidos à mão (oportunidade de mercado, ou compra fechada antes de cotar).
+// Fechar uma cotação já cria o lançamento em Compras sozinho, mas esse caminho não criava nada —
+// o produto ficava comprado na Programação e invisível em Compras, porque a mesma regra que tira
+// ele da cotação também o deixava fora de todo o resto.
+//  - preco_compra != null significa que veio de cotação (ou de "Atualizar Custo"), e nesse caso o
+//    lançamento em Compras já existe: não duplica.
+//  - "estoque" na observação é sobra de estoque, não compra nova; "avaliar" ainda nem foi decidido.
+function compraForaDeCotacao(p) {
+  const obs = (p.obs||"").trim().toLowerCase();
+  if (obs.includes("estoque") || obs.includes("avaliar")) return false;
+  return !!(p.produto||"").trim() && p.preco_compra==null && fechadoNaPlanilha(p);
+}
+// Pasta de Compras correspondente à categoria da Programação — o mesmo mapeamento que o
+// fechamento de cotação já usa.
+function pastaCompraDaCategoria(nomeCategoria, temporadaLabel) {
+  if (nomeCategoria === "Adubação") return "Adubação "+temporadaLabel;
+  if (nomeCategoria === "Sementes") return "Sementes "+temporadaLabel;
+  return "Químicos "+temporadaLabel;
+}
+// Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada produto
+// comprado fora de cotação. A chave origemProg identifica de qual linha da Programação o
+// lançamento veio, pra poder atualizar em vez de duplicar quando o preço/revenda mudar depois.
+function comprasDaProgramacao(dProg, temporadaLabel, safra) {
+  const saida = [];
+  Object.entries(dProg||{}).forEach(([cultura, c]) => {
+    (c.categories||[]).forEach(cat => {
+      (cat.products||[]).forEach(p => {
+        if (!compraForaDeCotacao(p)) return;
+        const qtd = calcProdQtd(p, cat, c);
+        if (!(qtd > 0)) return;
+        saida.push({
+          origemProg: [safra, temporadaLabel, cultura, cat.name, normalizarNome(p.produto)].join("|"),
+          safra,
+          categoria: pastaCompraDaCategoria(cat.name, temporadaLabel),
+          produto: p.produto.trim(),
+          unidade: p.unidade || (cat.name==="Adubação" ? "TN" : cat.name==="Sementes" ? "bag" : "L"),
+          quantidade: qtd,
+          precoUnitario: p.preco_unit,
+          valorTotal: qtd * p.preco_unit,
+          fornecedor: (p.revenda||"").trim(),
+          obs: (p.vencimento||"").trim(), // em Compras essa coluna é rotulada "Vencimento"
+          tratamento: "",
+        });
+      });
+    });
+  });
+  return saida;
 }
 // Mesmo produto escrito com e sem a marca da empresa na frente: "NutriNicomomag" e "Nicomomag"
 // (o "Nutri" é só o nome da empresa), "Fox Xpro" e "Xpro". Recebe duas chaves já normalizadas.
@@ -2565,6 +2620,40 @@ function App() {
       setComprasRecords(rs => rs.map(r => r.categoria === "Sementes" ? { ...r, categoria: "Sementes Verão" } : r));
     }
   }, [comprasRecords]);
+  // Produto comprado fora de cotação (preço + revenda + vencimento preenchidos direto na
+  // Programação) vira lançamento em Compras sozinho, na pasta da categoria dele. Fechar cotação
+  // já fazia isso; esse caminho não fazia, e o produto ficava comprado na Programação e invisível
+  // em Compras. Cria o que falta e atualiza o que mudou de valor — nunca apaga: se o produto sair
+  // da Programação, o lançamento fica em Compras pra ser removido à mão, porque apagar registro
+  // financeiro sozinho é perigoso demais.
+  useEffect(() => {
+    const desejados = [
+      ...comprasDaProgramacao(dataVerao, "Verão", safraAtiva),
+      ...comprasDaProgramacao(dataInverno, "Inverno", safraAtiva),
+    ];
+    if (!desejados.length) return;
+    const porOrigem = new Map(comprasRecords.filter(r=>r.origemProg).map(r=>[r.origemProg, r]));
+    const novos = desejados.filter(d => !porOrigem.has(d.origemProg));
+    const mudados = desejados.filter(d => {
+      const atual = porOrigem.get(d.origemProg);
+      if (!atual) return false;
+      return atual.produto!==d.produto || atual.categoria!==d.categoria || atual.unidade!==d.unidade
+        || atual.quantidade!==d.quantidade || atual.precoUnitario!==d.precoUnitario
+        || atual.fornecedor!==d.fornecedor || atual.obs!==d.obs;
+    });
+    if (!novos.length && !mudados.length) return;
+    // Lote grande (tipicamente a primeira vez, quando a Programação inteira já está preenchida)
+    // ganha um ponto de retorno antes — um lançamento avulso não precisa, é fácil remover à mão.
+    if (novos.length >= 5) salvarSnapshot(`Lançar ${novos.length} compra(s) da Programação`, { compras: comprasRecords });
+    const porOrigemMudado = new Map(mudados.map(d=>[d.origemProg, d]));
+    setComprasRecords(rs => [
+      ...rs.map(r => {
+        const d = r.origemProg && porOrigemMudado.get(r.origemProg);
+        return d ? { ...r, ...d } : r;
+      }),
+      ...novos.map(d => ({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), ...d })),
+    ]);
+  }, [dataVerao, dataInverno, safraAtiva, comprasRecords]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao", planObsVerao); }, [planObsVerao]);
@@ -8029,7 +8118,10 @@ function App() {
                   {comprasRecordsFiltrados.map((r,i)=>(
                     <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="data" value={r.data} onCommit={v=>updateRecordField(setComprasRecords,r.id,"data",v)}/></td>
-                      <td style={{padding:"6px 9px",fontWeight:600}}><RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/></td>
+                      <td style={{padding:"6px 9px",fontWeight:600}}>
+                        <RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/>
+                        {r.origemProg && <span title="Veio automático da Programação (produto com preço, revenda e vencimento preenchidos). Editar aqui é temporário: muda na Programação que atualiza aqui." style={{background:"#e8f5e9",color:"#2e7d32",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>🔗 Programação</span>}
+                      </td>
                       {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
                       )}
