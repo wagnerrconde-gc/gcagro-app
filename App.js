@@ -566,33 +566,37 @@ function produtoJaResolvido(p) {
   const obs = (p.obs||"").trim().toLowerCase();
   return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra!=null || fechadoNaPlanilha(p);
 }
-// Compra feita FORA de cotação, lançada direto na Programação: produto com preço, revenda e
-// vencimento preenchidos à mão (oportunidade de mercado, ou compra fechada antes de cotar).
-// Fechar uma cotação já cria o lançamento em Compras sozinho, mas esse caminho não criava nada —
-// o produto ficava comprado na Programação e invisível em Compras, porque a mesma regra que tira
-// ele da cotação também o deixava fora de todo o resto.
-//  - preco_compra != null significa que veio de cotação (ou de "Atualizar Custo"), e nesse caso o
-//    lançamento em Compras já existe: não duplica.
-//  - "estoque" na observação é sobra de estoque, não compra nova; "avaliar" ainda nem foi decidido.
+// Só Químicos vão da Programação pra Compras: TS, Kit Sulco, Herbicidas, Foliares, Fungicidas,
+// Inseticidas e Óleos/Adjuvantes. Adubação e Sementes são poucos itens e continuam sendo lançados
+// à mão em Compras (ou pela importação da planilha do grupo de compras).
+function categoriaDeQuimicos(nomeCategoria) {
+  return nomeCategoria !== "Adubação" && nomeCategoria !== "Sementes";
+}
+// Compra feita FORA de cotação, lançada direto na Programação: químico com dose, PREÇO DE COMPRA,
+// revenda e vencimento preenchidos à mão (oportunidade de mercado, ou compra fechada antes de
+// cotar). Fechar uma cotação já cria o lançamento em Compras sozinho, mas esse caminho não criava
+// nada — o produto ficava comprado na Programação e invisível em Compras, porque a mesma regra que
+// tira ele da cotação também o deixava fora de todo o resto.
+//  - o preço é o de COMPRA, nunca o de referência: o de referência é o do ano anterior, só serve
+//    pra comparar se comprou mais barato ou mais caro.
+//  - fornecedor_compra preenchido significa que o preço de compra veio de uma cotação fechada ou
+//    do "Atualizar Custo", e nesses casos o lançamento em Compras já existe: não duplica.
+//  - "estoque" na observação é sobra de estoque (produto antigo, provavelmente já pago), não
+//    compra nova; "avaliar" ainda nem foi decidido.
 function compraForaDeCotacao(p) {
   const obs = (p.obs||"").trim().toLowerCase();
   if (obs.includes("estoque") || obs.includes("avaliar")) return false;
-  return !!(p.produto||"").trim() && p.preco_compra==null && fechadoNaPlanilha(p);
+  return !!(p.produto||"").trim() && p.dose > 0 && p.preco_compra > 0 && p.fornecedor_compra == null
+    && !!(p.revenda||"").trim() && !!(p.vencimento||"").trim();
 }
-// Pasta de Compras correspondente à categoria da Programação — o mesmo mapeamento que o
-// fechamento de cotação já usa.
-function pastaCompraDaCategoria(nomeCategoria, temporadaLabel) {
-  if (nomeCategoria === "Adubação") return "Adubação "+temporadaLabel;
-  if (nomeCategoria === "Sementes") return "Sementes "+temporadaLabel;
-  return "Químicos "+temporadaLabel;
-}
-// Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada produto
+// Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada químico
 // comprado fora de cotação. A chave origemProg identifica de qual linha da Programação o
 // lançamento veio, pra poder atualizar em vez de duplicar quando o preço/revenda mudar depois.
 function comprasDaProgramacao(dProg, temporadaLabel, safra) {
   const saida = [];
   Object.entries(dProg||{}).forEach(([cultura, c]) => {
     (c.categories||[]).forEach(cat => {
+      if (!categoriaDeQuimicos(cat.name)) return;
       (cat.products||[]).forEach(p => {
         if (!compraForaDeCotacao(p)) return;
         const qtd = calcProdQtd(p, cat, c);
@@ -600,12 +604,12 @@ function comprasDaProgramacao(dProg, temporadaLabel, safra) {
         saida.push({
           origemProg: [safra, temporadaLabel, cultura, cat.name, normalizarNome(p.produto)].join("|"),
           safra,
-          categoria: pastaCompraDaCategoria(cat.name, temporadaLabel),
+          categoria: "Químicos "+temporadaLabel,
           produto: p.produto.trim(),
-          unidade: p.unidade || (cat.name==="Adubação" ? "TN" : cat.name==="Sementes" ? "bag" : "L"),
+          unidade: p.unidade || "L",
           quantidade: qtd,
-          precoUnitario: p.preco_unit,
-          valorTotal: qtd * p.preco_unit,
+          precoUnitario: p.preco_compra,
+          valorTotal: qtd * p.preco_compra,
           fornecedor: (p.revenda||"").trim(),
           obs: (p.vencimento||"").trim(), // em Compras essa coluna é rotulada "Vencimento"
           tratamento: "",
