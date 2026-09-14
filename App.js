@@ -8134,6 +8134,17 @@ function App() {
                       }}
                       style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
                   )}
+                  {comprasRecords.some(r=>r.origemProg) && (
+                    <button onClick={()=>{
+                        const auto = comprasRecords.filter(r=>r.origemProg);
+                        if (!window.confirm(`Apagar ${auto.length} lançamento(s) que vieram da Programação e lançar tudo de novo, somado por produto?\n\nLançamento digitado à mão ou importado de planilha não é tocado. Fica um ponto de retorno salvo antes.`)) return;
+                        salvarSnapshot(`Relançar ${auto.length} compra(s) da Programação`, { compras: comprasRecords });
+                        setComprasRecords(rs => rs.filter(r => !r.origemProg));
+                        setComprasProgLancadas([]);
+                      }}
+                      title="Apaga os lançamentos marcados com 🔗 Programação e refaz todos, juntando num só o mesmo produto de várias culturas. Lançamento manual ou importado não é afetado."
+                      style={{padding:"6px 14px",background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:6,color:"#e65100",fontSize:11,fontWeight:700,cursor:"pointer"}}>🔄 Relançar da Programação</button>
+                  )}
                 </div>
                 <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
                 {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
