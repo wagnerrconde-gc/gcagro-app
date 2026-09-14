@@ -2098,6 +2098,16 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
             style={{width:"100%",padding:"8px 10px",border:"1px solid #ddd",borderRadius:6,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.5}}/>
         </div>
       </div>
+      {/* Versão só pra impressão: o campo de digitar não imprime bem (corta o texto que passa da
+          altura da caixa), então no PDF sai o texto corrido. Some quando não há nada escrito. */}
+      {((obs||"").trim() || (obs2||"").trim()) && (
+        <div className="print-only" style={{marginTop:12,pageBreakInside:"avoid"}}>
+          <div style={{fontSize:12,fontWeight:700,color:cor,marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>📝 Observações da safra</div>
+          <div style={{fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap"}}>
+            {[obs,obs2].map(t=>(t||"").trim()).filter(Boolean).join("\n")}
+          </div>
+        </div>
+      )}
 
       {showImportCsv && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
@@ -7729,19 +7739,19 @@ function App() {
           function exportarCotacaoPlanilha() {
             const linhasOrdenadas = [...filtProds].sort((a,b)=>
               a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
+            // Só o que o grupo de compras precisa ver e preencher. Preço de referência fora de
+            // propósito: é o preço do ano anterior, e mandar junto entrega a nossa base de
+            // negociação. Ingrediente ativo e categoria só serviam pra conferência interna.
             const linhas = linhasOrdenadas.map(p => ({
-              "Categoria": p.categoria, "Produto": p.nome, "Ingrediente Ativo": p.ingrediente_ativo||"",
-              "Unidade": p.unidade, "Quantidade": p.qtd_total, "Preço Referência": p.preco_ref,
+              "Produto": p.nome, "Unidade": p.unidade, "Quantidade": p.qtd_total,
               "Preço Fechado": "", "Fornecedor": "", "Vencimento": "", "Obs": "",
             }));
             const ws = XLSX.utils.json_to_sheet(linhas);
-            ws['!cols'] = [{wch:18},{wch:32},{wch:26},{wch:10},{wch:12},{wch:16},{wch:14},{wch:20},{wch:12},{wch:25}];
-            const COL_QTD = 4, COL_REF = 5;
+            ws['!cols'] = [{wch:32},{wch:10},{wch:12},{wch:14},{wch:20},{wch:12},{wch:25}];
+            const COL_QTD = 2;
             linhas.forEach((_,ri)=>{
               const qtdCell = ws[XLSX.utils.encode_cell({r:ri+1,c:COL_QTD})];
               if (qtdCell) qtdCell.z = "#,##0.0";
-              const refCell = ws[XLSX.utils.encode_cell({r:ri+1,c:COL_REF})];
-              if (refCell) refCell.z = 'R$ #,##0.00';
             });
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Cotação");
