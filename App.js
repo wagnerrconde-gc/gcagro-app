@@ -1751,13 +1751,15 @@ function computarGruposTS(dProg) {
     const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
     if (!prodsTS.length && !prodsKS.length) return;
     const todos = [...prodsTS, ...prodsKS];
-    // A cultura "usa variedade" quando alguma observação declara uma explicitamente — com o nome
-    // da cultura na frente ("Soja Neo 700 e 2X branca") ou dentro de um "exceto". A partir daí,
-    // observação solta nos produtos dessa cultura também é lida como nome de variedade: é assim
-    // que a maioria escreve ("Neo 700 e 2X branca", sem repetir "Soja" em cada linha). Numa
-    // cultura sem nenhuma variedade declarada, observação solta continua sendo anotação livre e
-    // não vira variedade nenhuma — é o que preserva anotações antigas tipo "850 hectares".
-    const usaVariedade = todos.some(p => extrairVariedadeObs(p.obs, cultura) || extrairExcecoesObs(p.obs));
+    // A cultura "usa variedade" quando alguma observação mostra que o tratamento é pensado por
+    // variedade: nome da cultura na frente ("Soja Neo 700 e 2X branca"), um "exceto", ou um
+    // "todas as variedades" escrito por extenso — quem escreve isso está justamente distinguindo
+    // de um produto que vai só numa. A partir daí, observação solta nos produtos dessa cultura
+    // também é lida como nome de variedade: é assim que se escreve na prática ("Neo 700 e 2X
+    // branca", sem repetir a cultura em cada linha). Numa cultura onde nada disso aparece,
+    // observação solta continua sendo anotação livre — é o que preserva as antigas ("850
+    // hectares", "2 doses") em vez de transformá-las em variedades inexistentes.
+    const usaVariedade = todos.some(p => extrairVariedadeObs(p.obs, cultura) || extrairExcecoesObs(p.obs) || obsDizTodas(p.obs));
     const variedadeDoProduto = p => {
       if (extrairExcecoesObs(p.obs) || obsDizTodas(p.obs)) return null;
       const comPrefixo = extrairVariedadeObs(p.obs, cultura);
