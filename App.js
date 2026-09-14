@@ -1717,15 +1717,15 @@ function extrairVariedadeObs(raw, cultura) {
 // dispensam — o enraizador, por exemplo, que não vai nas variedades compradas já tratadas.
 // As variedades citadas aqui também passam a existir na tela de TS, mesmo sem nenhum produto
 // específico delas: sem isso não haveria como mostrar uma variedade que só recebe o que é comum.
-// A separação é SÓ por vírgula ("exceto Tormenta, Neo 700 e 2X tratada"): nome de variedade tem
-// " e " no meio com frequência ("Neo 700 e 2X"), e aceitar " e " como separador partia o nome ao
-// meio — "Tormenta e Neo 700 e 2X tratada" virava três nomes inexistentes e a exceção não pegava
-// variedade nenhuma.
+// Separadores aceitos: vírgula, barra e ponto e vírgula ("exceto Tormenta / Neo 700 e 2X tratada").
+// " e " NÃO separa, de propósito: nome de variedade tem " e " no meio com frequência ("Neo 700 e
+// 2X"), e aceitá-lo partia o nome ao meio — "Tormenta e Neo 700 e 2X tratada" virava três nomes
+// inexistentes e a exceção não pegava variedade nenhuma.
 function extrairExcecoesObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "exceto" && primeira !== "menos") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;]\s*/).map(s=>s.trim()).filter(Boolean);
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(s=>s.trim()).filter(Boolean);
   return nomes.length ? nomes : null;
 }
 // "todas as variedades", "todos os híbridos" e afins: o produto vale pra todas, igual à observação
