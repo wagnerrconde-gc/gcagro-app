@@ -583,14 +583,17 @@ function categoriaDeQuimicos(nomeCategoria) {
 // tira ele da cotação também o deixava fora de todo o resto.
 //  - o preço é o de COMPRA, nunca o de referência: o de referência é o do ano anterior, só serve
 //    pra comparar se comprou mais barato ou mais caro.
-//  - fornecedor_compra preenchido significa que o preço de compra veio de uma cotação fechada ou
-//    do "Atualizar Custo", e nesses casos o lançamento em Compras já existe: não duplica.
+//  - fornecedor_compra com nome de fornecedor significa que o preço veio de uma cotação fechada,
+//    que já criou o lançamento em Compras: não duplica. O marcador "Compra manual", posto pelo
+//    botão "Atualizar Custo na Programação", NÃO conta — ele só diz que o custo foi recalculado a
+//    partir de Compras, e excluir por causa dele impedia o produto de ser lançado de novo depois.
 //  - "estoque" na observação é sobra de estoque (produto antigo, provavelmente já pago), não
 //    compra nova; "avaliar" ainda nem foi decidido.
 function compraForaDeCotacao(p) {
   const obs = (p.obs||"").trim().toLowerCase();
   if (obs.includes("estoque") || obs.includes("avaliar")) return false;
-  return !!(p.produto||"").trim() && p.dose > 0 && p.preco_compra > 0 && p.fornecedor_compra == null
+  const veioDeCotacao = !!(p.fornecedor_compra||"").trim() && p.fornecedor_compra !== "Compra manual";
+  return !!(p.produto||"").trim() && p.dose > 0 && p.preco_compra > 0 && !veioDeCotacao
     && !!(p.revenda||"").trim() && !!(p.vencimento||"").trim();
 }
 // Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada químico
@@ -2736,7 +2739,12 @@ function App() {
     // Lançado uma vez, nunca mais é recriado: se o registro não está mais em Compras é porque
     // foi removido de propósito, e recriar em seguida deixava impossível apagar.
     const jaLancadas = new Set(comprasProgLancadas);
-    const novos = desejados.filter(d => !porOrigem.has(d.origemProg) && !jaLancadas.has(d.origemProg));
+    // Produto que já tem lançamento próprio na mesma pasta — fechamento de cotação, digitado à
+    // mão ou importado de planilha — não é lançado de novo: a compra já está registrada.
+    const chaveCompra = r => [r.safra, r.categoria, normalizarNome(r.produto)].join("|");
+    const jaRegistrados = new Set(comprasRecords.filter(r=>!r.origemProg).map(chaveCompra));
+    const novos = desejados.filter(d => !porOrigem.has(d.origemProg) && !jaLancadas.has(d.origemProg)
+      && !jaRegistrados.has(chaveCompra(d)));
     const mudados = desejados.filter(d => {
       const atual = porOrigem.get(d.origemProg);
       if (!atual) return false;
