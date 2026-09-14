@@ -55,6 +55,10 @@ const KEY_SAFRAS     = "gcagro_safras_v2";
 const KEY_COLHEITA   = "gcagro_colheita_v2";
 const KEY_PLANEJAMENTO = "gcagro_planejamento_v1";
 const KEY_COMPRAS = "gcagro_compras_v1";
+// Chaves de origem já lançadas em Compras pela Programação. Sem essa memória, apagar um
+// lançamento automático não adiantava: no instante seguinte ele era recriado, porque o produto
+// continua comprado na Programação. Apagado fica apagado.
+const KEY_COMPRAS_PROG = "gcagro_compras_prog_lancadas_v1";
 const KEY_VENDAS = "gcagro_vendas_v1";
 const KEY_FINANCEIRO = "gcagro_financeiro_v1";
 const KEY_COMISSAO_ADIANT = "gcagro_comissao_adiant_v1";
@@ -597,7 +601,15 @@ function compraForaDeCotacao(p) {
 // A chave origemProg identifica o lançamento, pra poder atualizar em vez de duplicar quando o
 // preço/revenda mudar depois. O prefixo "v2" marca o formato somado: lançamento com chave em
 // formato antigo (uma linha por cultura) é descartado pelo efeito que mantém Compras em dia.
-const PREFIXO_ORIGEM_PROG = "v2";
+const PREFIXO_ORIGEM_PROG = "v3";
+// A Programação e Compras usam vocabulários diferentes de unidade: "Lt"/"Tn" lá, "L"/"TN" aqui.
+// Sem traduzir, o <select> de Compras não achava a opção "Lt" e caía na primeira da lista — por
+// isso tudo aparecia como tonelada — e o mesmo produto com "Lt" numa cultura e sem unidade em
+// outra virava dois lançamentos em vez de um.
+function unidadeCompraDaProgramacao(u) {
+  const map = { lt:"L", l:"L", tn:"TN", t:"TN", kg:"kg", bag:"bag", sc:"sc", doses:"doses" };
+  return map[String(u||"").trim().toLowerCase()] || "L";
+}
 function comprasDaProgramacao(dProg, temporadaLabel, safra) {
   const arred = (n, casas) => { const f = Math.pow(10, casas); return Math.round(n*f)/f; };
   const porProduto = new Map();
@@ -608,7 +620,7 @@ function comprasDaProgramacao(dProg, temporadaLabel, safra) {
         if (!compraForaDeCotacao(p)) return;
         const qtd = calcProdQtd(p, cat, c);
         if (!(qtd > 0)) return;
-        const unidade = p.unidade || "L";
+        const unidade = unidadeCompraDaProgramacao(p.unidade);
         const chave = [PREFIXO_ORIGEM_PROG, safra, temporadaLabel, normalizarNome(p.produto), unidade].join("|");
         const atual = porProduto.get(chave);
         if (!atual) {
@@ -2320,6 +2332,7 @@ function App() {
 
   // ── Compras (histórico de compras fechadas na Cotação) ──
   const [comprasRecords, setComprasRecords] = useState(() => loadLS(KEY_COMPRAS, []));
+  const [comprasProgLancadas, setComprasProgLancadas] = useState(() => loadLS(KEY_COMPRAS_PROG, []));
   const [addingCompra, setAddingCompra]     = useState(false);
   const [custoCompraMsg, setCustoCompraMsg] = useState(null);
   const [newCompra, setNewCompra] = useState({safra:"",produto:"",categoria:"Adubação",unidade:"TN",quantidade:"",precoUnitario:"",fornecedor:"",data:"",obs:"",tratamento:""});
@@ -2644,6 +2657,7 @@ function App() {
   useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
   useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
   useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords);
+  useFirebaseSync("gcagro/compras_prog_lancadas", comprasProgLancadas, setComprasProgLancadas);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
   useFirebaseSync("gcagro/comissao_adiant", comissaoAdiant, setComissaoAdiant);
@@ -2687,6 +2701,7 @@ function App() {
   useEffect(() => { saveLS(KEY_SAFRAS+"_ativa", safraAtiva); }, [safraAtiva]);
   useEffect(() => { saveLS(KEY_SAFRAS+"_arquivo", safrasArquivadas); }, [safrasArquivadas]);
   useEffect(() => { saveLS(KEY_COMPRAS, comprasRecords); }, [comprasRecords]);
+  useEffect(() => { saveLS(KEY_COMPRAS_PROG, comprasProgLancadas); }, [comprasProgLancadas]);
   // Migração: a pasta "Sementes" de Compras era única (não separada por temporada); agora
   // vira "Sementes Verão"/"Sementes Inverno", igual Adubação/Químicos já são — pra não misturar
   // uma cultura com o mesmo nome nas duas programações (ex: Milho). Lançamentos antigos (categoria
@@ -2718,7 +2733,10 @@ function App() {
     }
     if (!desejados.length) return;
     const porOrigem = new Map(comprasRecords.filter(r=>r.origemProg).map(r=>[r.origemProg, r]));
-    const novos = desejados.filter(d => !porOrigem.has(d.origemProg));
+    // Lançado uma vez, nunca mais é recriado: se o registro não está mais em Compras é porque
+    // foi removido de propósito, e recriar em seguida deixava impossível apagar.
+    const jaLancadas = new Set(comprasProgLancadas);
+    const novos = desejados.filter(d => !porOrigem.has(d.origemProg) && !jaLancadas.has(d.origemProg));
     const mudados = desejados.filter(d => {
       const atual = porOrigem.get(d.origemProg);
       if (!atual) return false;
@@ -2738,7 +2756,8 @@ function App() {
       }),
       ...novos.map(d => ({ id:newId(), data:new Date().toLocaleDateString("pt-BR"), ...d })),
     ]);
-  }, [dataVerao, dataInverno, safraAtiva, comprasRecords]);
+    if (novos.length) setComprasProgLancadas(ls => [...new Set([...ls, ...novos.map(d=>d.origemProg)])]);
+  }, [dataVerao, dataInverno, safraAtiva, comprasRecords, comprasProgLancadas]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_verao", planVerao); }, [planVerao]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_safrinha", planSafrinha); }, [planSafrinha]);
   useEffect(() => { saveLS(KEY_PLANEJAMENTO+"_obs_verao", planObsVerao); }, [planObsVerao]);
