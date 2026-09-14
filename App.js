@@ -8152,11 +8152,17 @@ function App() {
                       }}
                       style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
                   )}
-                  {comprasRecords.some(r=>r.origemProg) && (
+                  {/* Aparece mesmo sem nenhum lançamento automático na tela: é justamente quando
+                      todos foram removidos que o usuário precisa refazer, e esconder o botão aí
+                      deixava sem saída — o automático não recria o que já passou por ele uma vez. */}
+                  {(comprasCatSel||"").startsWith("Químicos") && (
                     <button onClick={()=>{
                         const auto = comprasRecords.filter(r=>r.origemProg);
-                        if (!window.confirm(`Apagar ${auto.length} lançamento(s) que vieram da Programação e lançar tudo de novo, somado por produto?\n\nLançamento digitado à mão ou importado de planilha não é tocado. Fica um ponto de retorno salvo antes.`)) return;
-                        salvarSnapshot(`Relançar ${auto.length} compra(s) da Programação`, { compras: comprasRecords });
+                        const msg = auto.length
+                          ? `Apagar ${auto.length} lançamento(s) que vieram da Programação e lançar tudo de novo, somado por produto?`
+                          : `Lançar de novo, a partir da Programação, as compras de químicos desta safra?\n\nUse isto quando os lançamentos foram removidos e você quer que voltem.`;
+                        if (!window.confirm(`${msg}\n\nLançamento digitado à mão ou importado de planilha não é tocado. Fica um ponto de retorno salvo antes.`)) return;
+                        salvarSnapshot(`Relançar compras da Programação`, { compras: comprasRecords });
                         setComprasRecords(rs => rs.filter(r => !r.origemProg));
                         setComprasProgLancadas([]);
                       }}
