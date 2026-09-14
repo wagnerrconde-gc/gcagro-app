@@ -1733,24 +1733,54 @@ function computarGruposTS(dProg) {
       const excecoes = extrairExcecoesObs(p.obs);
       if (excecoes) excecoes.forEach(registrar);
     });
-    const entradas = obsMap.size ? [...obsMap.entries()] : [["", ""]];
-    entradas.forEach(([key, display]) => {
+    // Havendo variedade nomeada, entra também o grupo das que não foram citadas — "Demais
+    // variedades" — com o que vale pra todo mundo. Sem ele o tratamento padrão da lavoura não
+    // apareceria em lugar nenhum assim que uma variedade ganhasse tratamento próprio.
+    const entradas = obsMap.size ? [...obsMap.entries(), ["", "Demais variedades"]] : [["", ""]];
+    const daCultura = entradas.map(([key, display]) => {
       const pertence = p => {
         const excecoes = extrairExcecoesObs(p.obs);
         if (excecoes) return !excecoes.some(n => normalizarNome(n) === key);
         const v = extrairVariedadeObs(p.obs, cultura);
         return !v || normalizarNome(v)===key;
       };
-      grupos.push({
-        origemKey: cultura+"||"+key,
-        cultura,
-        variedadeDefault: display,
+      return { key, display,
         dose100kg: prodsTS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
-        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
+        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join("\n") };
+    });
+    // Variedades que recebem exatamente o mesmo tratamento viram uma linha só ("Tormenta e Neo
+    // 700 tratada"), em vez de linhas repetidas com o conteúdo idêntico. O grupo das demais fica
+    // sempre por último e sozinho, porque representa o padrão e não uma variedade específica.
+    const porTratamento = new Map();
+    daCultura.filter(g => g.key).forEach(g => {
+      const k = g.dose100kg+"␟"+g.kitSulco;
+      if (porTratamento.has(k)) porTratamento.get(k).push(g);
+      else porTratamento.set(k, [g]);
+    });
+    porTratamento.forEach(iguais => {
+      const base = iguais[0];
+      grupos.push({
+        origemKey: cultura+"||"+iguais.map(g=>g.key).sort().join("+"),
+        cultura,
+        variedadeDefault: juntarNomesPt(iguais.map(g=>g.display)),
+        dose100kg: base.dose100kg,
+        kitSulco: base.kitSulco,
       });
     });
+    // Só entra se tiver algum produto: quando todo produto é específico de alguma variedade, não
+    // sobra tratamento padrão nenhum e uma linha "Demais variedades" vazia só polui a tela.
+    const demais = daCultura.find(g => !g.key);
+    if (demais && (demais.dose100kg || demais.kitSulco)) {
+      grupos.push({ origemKey: cultura+"||", cultura, variedadeDefault: demais.display,
+        dose100kg: demais.dose100kg, kitSulco: demais.kitSulco });
+    }
   });
   return grupos;
+}
+// ["Tormenta","Neo 700 tratada"] -> "Tormenta e Neo 700 tratada"; com três ou mais, "A, B e C".
+function juntarNomesPt(nomes) {
+  if (nomes.length <= 1) return nomes[0] || "";
+  return nomes.slice(0,-1).join(", ") + " e " + nomes[nomes.length-1];
 }
 // Produtos de TS/Kit Sulco comuns a qualquer variedade daquela cultura (sem Observação
 // reconhecida como variedade) — usado como ponto de partida ao adicionar manualmente uma nova
