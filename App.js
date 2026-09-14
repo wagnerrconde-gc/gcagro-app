@@ -1677,6 +1677,20 @@ function extrairVariedadeObs(raw, cultura) {
   }
   return palavras.slice(cultPalavras.length).join(" ").trim();
 }
+// Observação no formato "exceto A, B" (ou "menos A, B"): o produto vale pra todas as variedades
+// MENOS as listadas. É assim que se marca um produto que quase todas recebem mas algumas
+// dispensam — o enraizador, por exemplo, que não vai nas variedades compradas já tratadas.
+// As variedades citadas aqui também passam a existir na tela de TS, mesmo sem nenhum produto
+// específico delas: sem isso não haveria como mostrar uma variedade que só recebe o que é comum.
+// Separar por vírgula é o mais seguro ("exceto Tormenta, Neo 700 tratada"); " e " também é
+// aceito, mas parte um nome que tenha " e " no meio.
+function extrairExcecoesObs(raw) {
+  const t = (raw||"").trim();
+  const primeira = normalizarNome(t.split(/\s+/)[0]||"");
+  if (primeira !== "exceto" && primeira !== "menos") return null;
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*,\s*|\s+e\s+/i).map(s=>s.trim()).filter(Boolean);
+  return nomes.length ? nomes : null;
+}
 // Agrupa os produtos de TS e Kit Sulco de cada cultura por variedade, a partir da Observação de
 // cada produto na Programação, no formato "Cultura Variedade" (ex.: "Soja TMG 7062"): produto sem
 // Observação, com Observação que não segue esse formato, ou só com o nome da cultura sem variedade
@@ -1692,13 +1706,21 @@ function computarGruposTS(dProg) {
     const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
     if (!prodsTS.length && !prodsKS.length) return;
     const obsMap = new Map();
+    const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
     [...prodsTS, ...prodsKS].forEach(p => {
       const v = extrairVariedadeObs(p.obs, cultura);
-      if (v && !obsMap.has(normalizarNome(v))) obsMap.set(normalizarNome(v), v);
+      if (v) registrar(v);
+      const excecoes = extrairExcecoesObs(p.obs);
+      if (excecoes) excecoes.forEach(registrar);
     });
     const entradas = obsMap.size ? [...obsMap.entries()] : [["", ""]];
     entradas.forEach(([key, display]) => {
-      const pertence = p => { const v = extrairVariedadeObs(p.obs, cultura); return !v || normalizarNome(v)===key; };
+      const pertence = p => {
+        const excecoes = extrairExcecoesObs(p.obs);
+        if (excecoes) return !excecoes.some(n => normalizarNome(n) === key);
+        const v = extrairVariedadeObs(p.obs, cultura);
+        return !v || normalizarNome(v)===key;
+      };
       grupos.push({
         origemKey: cultura+"||"+key,
         cultura,
