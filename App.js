@@ -624,14 +624,16 @@ function comprasDaProgramacao(dProg, temporadaLabel, safra) {
       });
     });
   });
-  // Preço unitário do lançamento somado: média ponderada pela quantidade — normalmente é o mesmo
-  // preço em todas as culturas, e aí a média dá exatamente ele.
   return [...porProduto.values()].map(g => {
-    const quantidade = arred(g.quantidade, 6);
-    const valorTotal = arred(g.valorTotal, 2);
+    // Preço unitário: média ponderada pela quantidade exata — normalmente é o mesmo preço em
+    // todas as culturas, e aí a média dá exatamente ele.
+    const precoUnitario = g.quantidade > 0 ? arred(g.valorTotal/g.quantidade, 6) : 0;
+    // Quantidade sempre pra cima, em unidade inteira: produto não é vendido quebrado. A conta da
+    // Programação dá 69,9 L de Dote (0,3 x 233 ha), mas a compra é de 70 L.
+    const quantidade = Math.ceil(arred(g.quantidade, 6));
     return { origemProg:g.origemProg, safra:g.safra, categoria:g.categoria, produto:g.produto,
-      unidade:g.unidade, quantidade, valorTotal,
-      precoUnitario: quantidade > 0 ? arred(valorTotal/quantidade, 6) : 0,
+      unidade:g.unidade, quantidade, precoUnitario,
+      valorTotal: arred(quantidade * precoUnitario, 2),
       fornecedor: [...g.revendas].filter(Boolean).join(" + "),
       obs: [...g.vencimentos].filter(Boolean).join(" + "), // em Compras essa coluna é rotulada "Vencimento"
       tratamento: "" };
