@@ -1745,8 +1745,18 @@ function extrairExcecoesObs(raw) {
 // em branco. Precisa ser reconhecido explicitamente porque, numa cultura que usa variedade, toda
 // observação solta passa a ser lida como nome de variedade (ver computarGruposTS) — sem isso
 // "todas as variedades" viraria uma variedade chamada "todas as variedades".
+// A frase vale em QUALQUER ponto do texto, não só no começo: na prática ela vem acompanhada de um
+// lembrete de dose ("todas as variedades, 2 doses de Azos", "10 doses de inoculante em todas as
+// variedades"). A frase manda; o resto da observação é anotação e não separa variedade nenhuma.
+// Precisa do substantivo junto (variedades/híbridos/cultivares/materiais) pra "todas as bags" ou
+// "todos os pivôs" não serem confundidos com isso — esses dois continuam valendo pelo começo, que
+// é como sempre se escreveu.
+const RE_OBS_TODAS = /\btod[oa]s\b(?:\s+\b(?:as|os)\b)?\s+\b(?:variedades?|hibridos?|cultivares?|materiais|material)\b/;
 function obsDizTodas(raw) {
-  const primeira = normalizarNome((raw||"").trim().split(/\s+/)[0]||"");
+  const t = (raw||"").trim();
+  if (!t) return false;
+  if (RE_OBS_TODAS.test(normalizarNome(t))) return true;
+  const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   return primeira === "todas" || primeira === "todos";
 }
 // "só Neo 700 I2X branca", "somente ...", "apenas ...": jeito explícito de dizer que o produto vai
