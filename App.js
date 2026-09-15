@@ -1749,30 +1749,78 @@ function obsDizTodas(raw) {
   const primeira = normalizarNome((raw||"").trim().split(/\s+/)[0]||"");
   return primeira === "todas" || primeira === "todos";
 }
+// "só Neo 700 I2X branca", "somente ...", "apenas ...": jeito explícito de dizer que o produto vai
+// numa variedade só. Existe porque a Observação é campo de anotação livre — ali também se escreve
+// o que o produto faz ("Solubilizador de P", "Nematicida") e quanto pega ("225 hectares") — e ler
+// toda anotação como nome de variedade enchia a tela de variedades que não existem, tirando o
+// produto das variedades de verdade. Com "só" na frente não há dúvida.
+function extrairSomenteObs(raw) {
+  const t = (raw||"").trim();
+  const primeira = normalizarNome(t.split(/\s+/)[0]||"");
+  if (primeira !== "so" && primeira !== "somente" && primeira !== "apenas") return null;
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(x=>x.trim()).filter(Boolean);
+  return nomes.length ? nomes : null;
+}
+// Variedades que realmente existem naquela cultura, tiradas do Planejamento de Campo (a coluna
+// Variedade de cada lote). É a lista que decide se uma anotação solta na Observação é nome de
+// variedade ou só um lembrete: "Neo 700 I2X branca" está plantada, "Solubilizador de P" não.
+// Bate um texto solto contra as variedades conhecidas: vale como variedade quando a PRIMEIRA
+// PALAVRA é a mesma. É o que reconhece "Neo 700 I2X branca" ao lado de "Neo 700 I2X tratada", e
+// "P40537 PWURR branco" ao lado de "P40537 tratado" — o sufixo distingue o lote tratado do não
+// tratado e muda de linha pra linha, mas o nome do material é o mesmo e vem na frente.
+// Comparação por palavra inteira, nunca por letra, pra "P4" não bater com "P40537". Anotação de
+// finalidade ("Solubilizador de P", "Nematicida") e de área ("225 hectares") não têm primeira
+// palavra em comum com variedade nenhuma, e é assim que param de virar variedade.
+function pareceVariedade(texto, conhecidas) {
+  const primeira = normalizarNome(texto).split(" ").filter(Boolean)[0];
+  if (!primeira) return false;
+  for (const k of conhecidas) {
+    if (String(k).split(" ").filter(Boolean)[0] === primeira) return true;
+  }
+  return false;
+}
+function variedadesDoPlano(plano, cultura) {
+  const alvo = normalizarNome(cultura);
+  const set = new Map();
+  (plano||[]).forEach(r => {
+    if (normalizarNome(r.cultura||"") !== alvo) return;
+    const v = (r.variedade||"").trim();
+    if (v) set.set(normalizarNome(v), v);
+  });
+  return set;
+}
 // Agrupa os produtos de TS e Kit Sulco de cada cultura por variedade, a partir da Observação de
-// cada produto na Programação, no formato "Cultura Variedade" (ex.: "Soja TMG 7062"): produto sem
-// Observação, com Observação que não segue esse formato, ou só com o nome da cultura sem variedade
-// depois, é comum a todas as variedades da cultura; produto com "Cultura Variedade" reconhecido é
-// específico daquela variedade. Uma variedade = um grupo de texto (comuns + específicos), casando
-// por nome normalizado pra não duplicar por acento/maiúscula digitados diferente em dois produtos.
-// Sem nenhuma variedade reconhecida na cultura inteira, gera um grupo só, sem variedade (tratamento
-// único pra todo mundo).
-function computarGruposTS(dProg) {
+// cada produto na Programação. A Observação é campo livre, então só vira variedade o que dá pra
+// afirmar que é variedade:
+//   - "todas as variedades"            -> todas (igual a deixar em branco)
+//   - "exceto A / B"                   -> todas menos A e B
+//   - "só A" / "somente A" / "apenas A"-> só A
+//   - "Soja Neo 700 I2X branca"        -> só ela (nome da cultura na frente)
+//   - nome que está plantado no Planejamento de Campo daquela cultura -> só ele
+//   - QUALQUER OUTRA COISA             -> anotação livre, o produto vale pra todas
+// A última linha é o que faz "Solubilizador de P", "Nematicida" e "225 hectares" pararem de virar
+// variedade — e, com elas, o produto parar de sumir das variedades de verdade.
+// Uma variedade = um grupo de texto (comuns + específicos), casando por nome normalizado pra não
+// duplicar por acento/maiúscula digitados diferente em dois produtos. Sem nenhuma variedade
+// reconhecida na cultura inteira, gera um grupo só, sem variedade.
+function computarGruposTS(dProg, plano) {
   const grupos = [];
   Object.entries(dProg||{}).forEach(([cultura, c]) => {
     const prodsTS = ((c.categories||[]).find(cat=>cat.name==="TS")||{}).products || [];
     const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
     if (!prodsTS.length && !prodsKS.length) return;
     const todos = [...prodsTS, ...prodsKS];
-    // A cultura "usa variedade" quando alguma observação mostra que o tratamento é pensado por
-    // variedade: nome da cultura na frente ("Soja Neo 700 I2X branca"), um "exceto", ou um
-    // "todas as variedades" escrito por extenso — quem escreve isso está justamente distinguindo
-    // de um produto que vai só numa. A partir daí, observação solta nos produtos dessa cultura
-    // também é lida como nome de variedade: é assim que se escreve na prática ("Neo 700 I2X
-    // branca", sem repetir a cultura em cada linha). Numa cultura onde nada disso aparece,
-    // observação solta continua sendo anotação livre — é o que preserva as antigas ("850
-    // hectares", "2 doses") em vez de transformá-las em variedades inexistentes.
-    const usaVariedade = todos.some(p => extrairVariedadeObs(p.obs, cultura) || extrairExcecoesObs(p.obs) || obsDizTodas(p.obs));
+    // Variedades conhecidas dessa cultura: as plantadas, pelo Planejamento de Campo, mais as que a
+    // própria Programação declara de forma explícita ("exceto X", "só X", "Soja X"). É contra esta
+    // lista que uma anotação solta é conferida antes de virar variedade — é o que separa
+    // "Neo 700 I2X branca" de "Solubilizador de P".
+    const plantadas = variedadesDoPlano(plano, cultura);
+    const conhecidas = new Set(plantadas.keys());
+    todos.forEach(p => {
+      const ex = extrairExcecoesObs(p.obs);  if (ex) ex.forEach(n => conhecidas.add(normalizarNome(n)));
+      const so = extrairSomenteObs(p.obs);   if (so) so.forEach(n => conhecidas.add(normalizarNome(n)));
+      const pre = extrairVariedadeObs(p.obs, cultura); if (pre) conhecidas.add(normalizarNome(pre));
+    });
     // No KIT SULCO a observação é anotação livre ("10 doses", "aplicar no sulco"), não nome de
     // variedade: sem observação — e com observação solta também — o produto vale pra TODAS as
     // variedades. Ler a anotação como variedade criava uma variedade falsa ("10 doses") e, pior,
@@ -1782,16 +1830,20 @@ function computarGruposTS(dProg) {
     // nome da variedade, que é como se escreve lá.
     const variedadeDoProduto = (p, ehKitSulco) => {
       if (extrairExcecoesObs(p.obs) || obsDizTodas(p.obs)) return null;
+      const somente = extrairSomenteObs(p.obs);
+      if (somente) return somente;                       // "só A" (ou "só A / B")
       const comPrefixo = extrairVariedadeObs(p.obs, cultura);
-      if (comPrefixo) return comPrefixo;
+      if (comPrefixo) return [comPrefixo];               // "Soja Neo 700 I2X branca"
       if (ehKitSulco) return null;
-      return usaVariedade ? ((p.obs||"").trim() || null) : null;
+      const solta = (p.obs||"").trim();
+      // Anotação solta no TS só é variedade se casar com uma variedade conhecida.
+      return solta && pareceVariedade(solta, conhecidas) ? [solta] : null;
     };
     const obsMap = new Map();
     const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
     [[prodsTS,false],[prodsKS,true]].forEach(([lista, ehKitSulco]) => lista.forEach(p => {
       const v = variedadeDoProduto(p, ehKitSulco);
-      if (v) registrar(v);
+      if (v) v.forEach(registrar);
       const excecoes = extrairExcecoesObs(p.obs);
       if (excecoes) excecoes.forEach(registrar);
     }));
@@ -1804,7 +1856,7 @@ function computarGruposTS(dProg) {
         const excecoes = extrairExcecoesObs(p.obs);
         if (excecoes) return !excecoes.some(n => normalizarNome(n) === key);
         const v = variedadeDoProduto(p, ehKitSulco);
-        return !v || normalizarNome(v)===key;
+        return !v || v.some(n => normalizarNome(n)===key);
       };
       return { key, display,
         dose100kg: prodsTS.filter(pertence(false)).map(formatarLinhaProdutoTS).join("\n"),
@@ -1853,7 +1905,7 @@ function produtosComunsTS(dProg, cultura) {
   if (!c) return { dose100kg:"", kitSulco:"" };
   const prodsTS = ((c.categories||[]).find(cat=>cat.name==="TS")||{}).products || [];
   const prodsKS = ((c.categories||[]).find(cat=>cat.name==="Kit Sulco")||{}).products || [];
-  const comum = p => !extrairVariedadeObs(p.obs, cultura);
+  const comum = p => !extrairVariedadeObs(p.obs, cultura) && !extrairSomenteObs(p.obs);
   return {
     dose100kg: prodsTS.filter(comum).map(formatarLinhaProdutoTS).join("\n"),
     kitSulco: prodsKS.filter(comum).map(formatarLinhaProdutoTS).join("\n"),
@@ -2320,6 +2372,10 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       <div className="print-hide" style={{fontSize:11,color:"#888",marginBottom:12,lineHeight:1.5}}>
         Linha com <b style={{color:"#00695c"}}>🔗 auto</b> vem da Programação — os produtos se editam lá, na categoria TS ou Kit Sulco.
         O nome da variedade pode ser trocado aqui; trocado uma vez, ele para de acompanhar a Programação.
+        <br/>
+        Na Observação de cada produto, lá na Programação: <b>em branco</b> ou <b>"todas as variedades"</b> = vai em todas ·
+        <b> "só Tormenta"</b> = vai só nela · <b>"exceto Tormenta / Neo 700 I2X tratada"</b> = vai em todas menos nessas.
+        Qualquer outra anotação ("Nematicida", "225 hectares") é só lembrete e não separa variedade.
       </div>
       {Object.entries(grouped).map(([cult,rows])=>{
         const cc = cultureColors[cult] || {bg:"#37474f",light:"#f5f5f5",accent:"#546e7a"};
@@ -2788,8 +2844,8 @@ function App() {
   // TS/Kit Sulco alimentado sozinho a partir dos produtos das categorias "TS" e "Kit Sulco" na
   // Programação (agrupados por variedade via a Observação de cada produto) — roda de novo toda
   // vez que a Programação muda, mas só mexe nos registros que ele mesmo já criou (origemKey).
-  useEffect(() => { setTsVerao(rs => mesclarGruposTS(rs, computarGruposTS(dataVerao))); }, [dataVerao]);
-  useEffect(() => { setTsSafrinha(rs => mesclarGruposTS(rs, computarGruposTS(dataInverno))); }, [dataInverno]);
+  useEffect(() => { setTsVerao(rs => mesclarGruposTS(rs, computarGruposTS(dataVerao, planVerao))); }, [dataVerao, planVerao]);
+  useEffect(() => { setTsSafrinha(rs => mesclarGruposTS(rs, computarGruposTS(dataInverno, planSafrinha))); }, [dataInverno, planSafrinha]);
   useFirebaseSync("gcagro/safras/ativa", safraAtiva, setSafraAtiva);
   useFirebaseSync("gcagro/safras/arquivo", safrasArquivadas, setSafrasArquivadas);
   useEffect(() => { saveLS(KEY_SAFRAS+"_ativa", safraAtiva); }, [safraAtiva]);
@@ -5488,10 +5544,10 @@ function App() {
       {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO} dProg={dataVerao}
         onRefazer={()=>{ salvarSnapshot("Refazer TS / Kit Sulco Verão da Programação", { ts_verao: tsVerao });
-                         setTsVerao(rs => refazerGruposTS(rs, computarGruposTS(dataVerao))); }}/>}
+                         setTsVerao(rs => refazerGruposTS(rs, computarGruposTS(dataVerao, planVerao))); }}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO} dProg={dataInverno}
         onRefazer={()=>{ salvarSnapshot("Refazer TS / Kit Sulco Inverno da Programação", { ts_safrinha: tsSafrinha });
-                         setTsSafrinha(rs => refazerGruposTS(rs, computarGruposTS(dataInverno))); }}/>}
+                         setTsSafrinha(rs => refazerGruposTS(rs, computarGruposTS(dataInverno, planSafrinha))); }}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
