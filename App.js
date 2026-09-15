@@ -589,12 +589,22 @@ function categoriaDeQuimicos(nomeCategoria) {
 //    partir de Compras, e excluir por causa dele impedia o produto de ser lançado de novo depois.
 //  - "estoque" na observação é sobra de estoque (produto antigo, provavelmente já pago), não
 //    compra nova; "avaliar" ainda nem foi decidido.
+//  - compra à vista não tem data de vencimento: "pago" escrito na revenda ou no vencimento vale
+//    como pagamento definido. Ela foi paga mas ainda NÃO foi entregue, então precisa aparecer em
+//    Compras do mesmo jeito — é justamente o produto que ainda falta chegar.
+function compraPagaAVista(p) {
+  return /\bpag[oa]s?\b/i.test(((p.revenda||"") + " " + (p.vencimento||"")));
+}
+// Pagamento definido: ou tem data de vencimento, ou está marcado como pago (à vista).
+function pagamentoDefinido(p) {
+  return !!(p.vencimento||"").trim() || compraPagaAVista(p);
+}
 function compraForaDeCotacao(p) {
   const obs = (p.obs||"").trim().toLowerCase();
   if (obs.includes("estoque") || obs.includes("avaliar")) return false;
   const veioDeCotacao = !!(p.fornecedor_compra||"").trim() && p.fornecedor_compra !== "Compra manual";
   return !!(p.produto||"").trim() && p.dose > 0 && p.preco_compra > 0 && !veioDeCotacao
-    && !!(p.revenda||"").trim() && !!(p.vencimento||"").trim();
+    && !!(p.revenda||"").trim() && pagamentoDefinido(p);
 }
 // Percorre uma Programação (Verão ou Inverno) e devolve um lançamento de Compras pra cada químico
 // comprado fora de cotação. O mesmo produto costuma estar em várias culturas (Offroad na soja, no
@@ -625,16 +635,19 @@ function comprasDaProgramacao(dProg, temporadaLabel, safra) {
         if (!(qtd > 0)) return;
         const unidade = unidadeCompraDaProgramacao(p.unidade);
         const chave = [PREFIXO_ORIGEM_PROG, safra, temporadaLabel, normalizarNome(p.produto), unidade].join("|");
+        // Compra à vista não tem data: a coluna Vencimento mostra "Pago (à vista)", pra separar
+        // do que ainda tem boleto a vencer sem deixar a linha em branco.
+        const venc = (p.vencimento||"").trim() || (compraPagaAVista(p) ? "Pago (à vista)" : "");
         const atual = porProduto.get(chave);
         if (!atual) {
           porProduto.set(chave, { origemProg:chave, safra, categoria:"Químicos "+temporadaLabel,
             produto:p.produto.trim(), unidade, quantidade:qtd, valorTotal:qtd*p.preco_compra,
-            revendas:new Set([(p.revenda||"").trim()]), vencimentos:new Set([(p.vencimento||"").trim()]), tratamento:"" });
+            revendas:new Set([(p.revenda||"").trim()]), vencimentos:new Set([venc]), tratamento:"" });
         } else {
           atual.quantidade += qtd;
           atual.valorTotal += qtd * p.preco_compra;
           atual.revendas.add((p.revenda||"").trim());
-          atual.vencimentos.add((p.vencimento||"").trim());
+          atual.vencimentos.add(venc);
         }
       });
     });
@@ -1717,10 +1730,10 @@ function extrairVariedadeObs(raw, cultura) {
 // dispensam — o enraizador, por exemplo, que não vai nas variedades compradas já tratadas.
 // As variedades citadas aqui também passam a existir na tela de TS, mesmo sem nenhum produto
 // específico delas: sem isso não haveria como mostrar uma variedade que só recebe o que é comum.
-// Separadores aceitos: vírgula, barra e ponto e vírgula ("exceto Tormenta / Neo 700 e 2X tratada").
-// " e " NÃO separa, de propósito: nome de variedade tem " e " no meio com frequência ("Neo 700 e
-// 2X"), e aceitá-lo partia o nome ao meio — "Tormenta e Neo 700 e 2X tratada" virava três nomes
-// inexistentes e a exceção não pegava variedade nenhuma.
+// Separadores aceitos: vírgula, barra e ponto e vírgula ("exceto Tormenta / Neo 700 I2X tratada").
+// " e " NÃO separa, de propósito: nome de variedade é escrito livre e pode ter " e " no meio.
+// Partir por " e " transformaria um nome só em dois nomes inexistentes, e aí a exceção não pegaria
+// variedade nenhuma — errar pra menos (deixar junto) é recuperável, errar pra mais não é.
 function extrairExcecoesObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
@@ -1752,10 +1765,10 @@ function computarGruposTS(dProg) {
     if (!prodsTS.length && !prodsKS.length) return;
     const todos = [...prodsTS, ...prodsKS];
     // A cultura "usa variedade" quando alguma observação mostra que o tratamento é pensado por
-    // variedade: nome da cultura na frente ("Soja Neo 700 e 2X branca"), um "exceto", ou um
+    // variedade: nome da cultura na frente ("Soja Neo 700 I2X branca"), um "exceto", ou um
     // "todas as variedades" escrito por extenso — quem escreve isso está justamente distinguindo
     // de um produto que vai só numa. A partir daí, observação solta nos produtos dessa cultura
-    // também é lida como nome de variedade: é assim que se escreve na prática ("Neo 700 e 2X
+    // também é lida como nome de variedade: é assim que se escreve na prática ("Neo 700 I2X
     // branca", sem repetir a cultura em cada linha). Numa cultura onde nada disso aparece,
     // observação solta continua sendo anotação livre — é o que preserva as antigas ("850
     // hectares", "2 doses") em vez de transformá-las em variedades inexistentes.
