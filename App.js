@@ -1943,26 +1943,38 @@ function produtosComunsTS(dProg, cultura) {
 function mesclarGruposTS(atual, grupos) {
   let changed = false;
   const existentes = new Set(atual.filter(r=>r.origemKey).map(r=>r.origemKey));
+  // Mesma regra pros três campos que vêm prontos: o app manda enquanto o usuário não tiver mexido.
+  // O espelho (<campo>Auto) guarda o que o app escreveu da última vez; se o valor atual ainda é
+  // igual a ele, ninguém mexeu e o campo segue acompanhando a Programação. Campo sem espelho é
+  // linha antiga — até agora esses dois eram somente-leitura, então não tem edição a preservar.
+  const campoDoApp = (r, campo, vazioContaComoLivre) =>
+    r[campo+"Auto"] !== undefined ? r[campo] === r[campo+"Auto"]
+                                  : (vazioContaComoLivre ? !(r[campo]||"").trim() : true);
   const atualizado = atual.map(r => {
     if (!r.origemKey) return r;
     const g = grupos.find(x=>x.origemKey===r.origemKey);
     if (!g) return r;
-    const nomeDoApp = r.variedadeAuto !== undefined
-      ? r.variedade === r.variedadeAuto     // nunca renomeada: o app segue mandando no nome
-      : !(r.variedade||"").trim();          // linha antiga: só preenche se estiver sem nome
-    const variedade = nomeDoApp ? g.variedadeDefault : r.variedade;
-    if (r.cultura===g.cultura && r.dose100kg===g.dose100kg && r.kitSulco===g.kitSulco
-        && r.variedade===variedade && r.variedadeAuto===g.variedadeDefault) return r;
+    const variedade  = campoDoApp(r,"variedade",true) ? g.variedadeDefault : r.variedade;
+    const dose100kg  = campoDoApp(r,"dose100kg")      ? g.dose100kg        : r.dose100kg;
+    const kitSulco   = campoDoApp(r,"kitSulco")       ? g.kitSulco         : r.kitSulco;
+    if (r.cultura===g.cultura && r.variedade===variedade && r.dose100kg===dose100kg
+        && r.kitSulco===kitSulco && r.variedadeAuto===g.variedadeDefault
+        && r.dose100kgAuto===g.dose100kg && r.kitSulcoAuto===g.kitSulco) return r;
     changed = true;
-    return { ...r, cultura:g.cultura, dose100kg:g.dose100kg, kitSulco:g.kitSulco,
-             variedade, variedadeAuto:g.variedadeDefault };
+    return { ...r, cultura:g.cultura, variedade, dose100kg, kitSulco,
+             variedadeAuto:g.variedadeDefault, dose100kgAuto:g.dose100kg, kitSulcoAuto:g.kitSulco };
   });
   const novos = grupos.filter(g=>!existentes.has(g.origemKey)).map(g => {
     changed = true;
     return { id:newId(), origemKey:g.origemKey, cultura:g.cultura, variedade:g.variedadeDefault,
-             variedadeAuto:g.variedadeDefault, dose100kg:g.dose100kg, kitSulco:g.kitSulco, obs:"" };
+             variedadeAuto:g.variedadeDefault, dose100kg:g.dose100kg, dose100kgAuto:g.dose100kg,
+             kitSulco:g.kitSulco, kitSulcoAuto:g.kitSulco, obs:"" };
   });
   return changed ? [...atualizado, ...novos] : atual;
+}
+// Campo de uma linha automática que o usuário editou à mão: parou de acompanhar a Programação.
+function campoEditadoAMao(row, campo) {
+  return !!row.origemKey && row[campo+"Auto"] !== undefined && row[campo] !== row[campo+"Auto"];
 }
 // Apaga as linhas que vieram da Programação e refaz todas a partir dela. É o que limpa as
 // automáticas órfãs — as que nasceram de uma regra de leitura da observação que não vale mais
@@ -2395,6 +2407,9 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
         Na Observação de cada produto, lá na Programação: <b>em branco</b> ou <b>"todas as variedades"</b> = vai em todas ·
         <b> "só Tormenta"</b> = vai só nela · <b>"exceto Tormenta / Neo 700 I2X tratada"</b> = vai em todas menos nessas.
         Qualquer outra anotação ("Nematicida", "225 hectares") é só lembrete e não separa variedade.
+        <br/>
+        Os textos aqui podem ser editados à mão. O campo que você mexer ganha <b style={{color:"#e65100"}}>✏️ editado à mão</b> e
+        para de acompanhar a Programação — <b>🔄 Refazer da Programação</b> volta ele pro automático.
       </div>
       {Object.entries(grouped).map(([cult,rows])=>{
         const cc = cultureColors[cult] || {bg:"#37474f",light:"#f5f5f5",accent:"#546e7a"};
@@ -2419,18 +2434,21 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
                     style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
-                  <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Dose por 100 kg de Semente</div>
-                    <textarea value={row.dose100kg||""} onChange={e=>upd(row.id,"dose100kg",e.target.value)} rows={5} readOnly={!!row.origemKey}
-                      title={row.origemKey?"Editado direto na categoria TS da Programação, não aqui":undefined}
-                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase"}}>Kit Sulco (dose/ha)</div>
-                    <textarea value={row.kitSulco||""} onChange={e=>upd(row.id,"kitSulco",e.target.value)} rows={5} readOnly={!!row.origemKey}
-                      title={row.origemKey?"Editado direto na categoria Kit Sulco da Programação, não aqui":undefined}
-                      style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:row.origemKey?"#fafafa":"#fff",color:row.origemKey?"#666":"#000"}}/>
-                  </div>
+                  {[["dose100kg","Dose por 100 kg de Semente","TS"],["kitSulco","Kit Sulco (dose/ha)","Kit Sulco"]].map(([campo,rotulo,catProg])=>{
+                    const editado = campoEditadoAMao(row, campo);
+                    return (
+                      <div key={campo}>
+                        <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                          {rotulo}
+                          {editado && <span title={"Você editou este texto aqui, então ele parou de acompanhar a categoria "+catProg+" da Programação. Use 🔄 Refazer da Programação pra voltar ao automático."}
+                            style={{background:"#fff3e0",color:"#e65100",borderRadius:8,padding:"1px 7px",fontSize:9,textTransform:"none",fontWeight:700}}>✏️ editado à mão</span>}
+                        </div>
+                        <textarea value={row[campo]||""} onChange={e=>upd(row.id,campo,e.target.value)} rows={5}
+                          title={row.origemKey && !editado ? "Vem da categoria "+catProg+" da Programação. Pode editar aqui — a partir daí este texto para de acompanhar a Programação." : undefined}
+                          style={{width:"100%",padding:"6px 8px",border:"1px solid "+(editado?"#ffb74d":"#ddd"),borderRadius:5,fontSize:12,resize:"vertical",boxSizing:"border-box",fontFamily:"system-ui",lineHeight:1.6,background:"#fff",color:"#000"}}/>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div style={{flex:1,marginRight:10}}>
