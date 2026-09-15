@@ -1773,34 +1773,42 @@ function computarGruposTS(dProg) {
     // observação solta continua sendo anotação livre — é o que preserva as antigas ("850
     // hectares", "2 doses") em vez de transformá-las em variedades inexistentes.
     const usaVariedade = todos.some(p => extrairVariedadeObs(p.obs, cultura) || extrairExcecoesObs(p.obs) || obsDizTodas(p.obs));
-    const variedadeDoProduto = p => {
+    // No KIT SULCO a observação é anotação livre ("10 doses", "aplicar no sulco"), não nome de
+    // variedade: sem observação — e com observação solta também — o produto vale pra TODAS as
+    // variedades. Ler a anotação como variedade criava uma variedade falsa ("10 doses") e, pior,
+    // tirava o produto de todas as variedades de verdade, que é como o Nodugran sumia da lavoura
+    // inteira. No Kit Sulco só as formas explícitas valem: "exceto ...", "todas ..." e o nome com
+    // a cultura na frente ("Soja Neo 700 I2X branca"). No TS a observação solta continua sendo o
+    // nome da variedade, que é como se escreve lá.
+    const variedadeDoProduto = (p, ehKitSulco) => {
       if (extrairExcecoesObs(p.obs) || obsDizTodas(p.obs)) return null;
       const comPrefixo = extrairVariedadeObs(p.obs, cultura);
       if (comPrefixo) return comPrefixo;
+      if (ehKitSulco) return null;
       return usaVariedade ? ((p.obs||"").trim() || null) : null;
     };
     const obsMap = new Map();
     const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
-    todos.forEach(p => {
-      const v = variedadeDoProduto(p);
+    [[prodsTS,false],[prodsKS,true]].forEach(([lista, ehKitSulco]) => lista.forEach(p => {
+      const v = variedadeDoProduto(p, ehKitSulco);
       if (v) registrar(v);
       const excecoes = extrairExcecoesObs(p.obs);
       if (excecoes) excecoes.forEach(registrar);
-    });
+    }));
     // Havendo variedade nomeada, entra também o grupo das que não foram citadas — "Demais
     // variedades" — com o que vale pra todo mundo. Sem ele o tratamento padrão da lavoura não
     // apareceria em lugar nenhum assim que uma variedade ganhasse tratamento próprio.
     const entradas = obsMap.size ? [...obsMap.entries(), ["", "Demais variedades"]] : [["", ""]];
     const daCultura = entradas.map(([key, display]) => {
-      const pertence = p => {
+      const pertence = ehKitSulco => p => {
         const excecoes = extrairExcecoesObs(p.obs);
         if (excecoes) return !excecoes.some(n => normalizarNome(n) === key);
-        const v = variedadeDoProduto(p);
+        const v = variedadeDoProduto(p, ehKitSulco);
         return !v || normalizarNome(v)===key;
       };
       return { key, display,
-        dose100kg: prodsTS.filter(pertence).map(formatarLinhaProdutoTS).join("\n"),
-        kitSulco: prodsKS.filter(pertence).map(formatarLinhaProdutoTS).join("\n") };
+        dose100kg: prodsTS.filter(pertence(false)).map(formatarLinhaProdutoTS).join("\n"),
+        kitSulco: prodsKS.filter(pertence(true)).map(formatarLinhaProdutoTS).join("\n") };
     });
     // Variedades que recebem exatamente o mesmo tratamento viram uma linha só ("Tormenta e Neo
     // 700 tratada"), em vez de linhas repetidas com o conteúdo idêntico. O grupo das demais fica
