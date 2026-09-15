@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "15/09 · 3";
+const VERSAO_APP = "15/09 · 4";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -702,14 +702,19 @@ function conferirVolumesProgramacao(dProg, temporadaLabel) {
     // "fora" só vale como aviso quando é preenchimento faltando. Categoria não-química, estoque,
     // avaliar e cotação fechada são decisões, não esquecimento.
     const faltando = reg.fora.filter(f => /sem |quantidade dá zero/.test(f.motivo));
-    if (!faltando.length && !alertas.length) return null;
+    const outros = reg.fora.filter(f => !faltando.includes(f));
+    // Entra no painel sempre que ALGUMA cultura ficou de fora, seja qual for o motivo. Filtrar
+    // por "campo faltando" escondia justamente o caso de quem vem perguntar por que o volume não
+    // fechou: a cultura que saiu por "estoque", "avaliar" ou cotação já fechada some da conta
+    // igual, e o produto não aparecia em lugar nenhum pra explicar o número menor.
+    const temAlgoAContar = faltando.length || outros.length || alertas.length;
     // Total por unidade, nunca um total só: litro e quilo do mesmo produto viram lançamentos
     // separados e somá-los daria um número sem significado.
     const porUnidade = new Map();
     reg.dentro.forEach(d => porUnidade.set(d.unidade, (porUnidade.get(d.unidade)||0) + d.qtd));
-    return { produto: reg.display, temporada: temporadaLabel,
+    return { produto: reg.display, temporada: temporadaLabel, temAlgoAContar,
       totalPorUnidade: [...porUnidade.entries()].map(([unidade,qtd])=>({unidade,qtd})),
-      dentro: reg.dentro, faltando, outros: reg.fora.filter(f => !faltando.includes(f)), alertas };
+      dentro: reg.dentro, faltando, outros, alertas };
   }).filter(Boolean).sort((a,b) => a.produto.localeCompare(b.produto));
 }
 function comprasDaProgramacao(dProg, temporadaLabel, safra) {
@@ -2744,6 +2749,7 @@ function App() {
       ? { prog_inv: dataInverno } : { prog_verao: dataVerao };
   }
   const [conferirVolumes, setConferirVolumes]   = useState(false);
+  const [conferirTodosProdutos, setConferirTodosProdutos] = useState(false);
   const [addingColheita, setAddingColheita]     = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
   const [colheitaTipoTab, setColheitaTipoTab] = useState("verao");
@@ -8447,14 +8453,19 @@ function App() {
                 </div>
                 {conferirVolumes && (comprasCatSel||"").startsWith("Químicos") && (()=>{
                   const temporada = comprasCatSel.includes("Inverno") ? "Inverno" : "Verão";
-                  const achados = conferirVolumesProgramacao(temporada==="Inverno"?dataInverno:dataVerao, temporada);
+                  const todos = conferirVolumesProgramacao(temporada==="Inverno"?dataInverno:dataVerao, temporada);
+                  const achados = conferirTodosProdutos ? todos : todos.filter(a=>a.temAlgoAContar);
                   return (
                     <div data-conferencia="1" style={{background:"#fff",border:"1px solid #90caf9",borderRadius:8,padding:14,marginTop:10}}>
                       <div style={{fontSize:12,fontWeight:700,color:"#1565C0",marginBottom:4}}>🔎 Conferência dos volumes — Programação {temporada}</div>
-                      <div style={{fontSize:11,color:"#888",marginBottom:10,lineHeight:1.5}}>
-                        Produto que entrou em Compras mas deixou volume pra trás, ou que corre risco de virar dois lançamentos.
-                        Produto que está somando tudo certo não aparece aqui.
+                      <div style={{fontSize:11,color:"#888",marginBottom:8,lineHeight:1.5}}>
+                        Produto que entrou em Compras mas deixou alguma cultura de fora, ou que corre risco de virar dois lançamentos.
+                        Produto que está somando tudo certo não aparece — marque abaixo pra ver todos.
                       </div>
+                      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#1565C0",marginBottom:10,cursor:"pointer"}}>
+                        <input type="checkbox" checked={conferirTodosProdutos} onChange={e=>setConferirTodosProdutos(e.target.checked)}/>
+                        Mostrar todos os produtos ({todos.length}), inclusive os que estão certos
+                      </label>
                       {!achados.length && (
                         <div style={{fontSize:12,color:"#2e7d32",fontWeight:600}}>✓ Nenhum problema: todo produto lançado está com o volume completo de todas as culturas.</div>
                       )}
@@ -8475,11 +8486,11 @@ function App() {
                           {a.alertas.map((t,j)=>(
                             <div key={j} style={{fontSize:11,color:"#e65100",marginTop:3}}>⚠ {t}</div>
                           ))}
-                          {a.outros.length>0 && (
-                            <div style={{fontSize:10,color:"#aaa",marginTop:3}}>
-                              Fora de propósito: {a.outros.map(o=>`${o.cultura} (${o.motivo})`).join(" · ")}
+                          {a.outros.map((o,j)=>(
+                            <div key={j} style={{fontSize:11,color:"#999",marginTop:3}}>
+                              ○ Fora de propósito: <b>{o.cultura}</b> {o.qtd>0?`${fmtN(o.qtd,2)} ${o.unidade} `:""}— {o.motivo}
                             </div>
-                          )}
+                          ))}
                         </div>
                       ))}
                       <div style={{fontSize:11,color:"#888",marginTop:8,lineHeight:1.5}}>
