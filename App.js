@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "15/09 · 2";
+const VERSAO_APP = "15/09 · 3";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -626,6 +626,91 @@ const PREFIXO_ORIGEM_PROG = "v3";
 function unidadeCompraDaProgramacao(u) {
   const map = { lt:"L", l:"L", tn:"TN", t:"TN", kg:"kg", bag:"bag", sc:"sc", doses:"doses" };
   return map[String(u||"").trim().toLowerCase()] || "L";
+}
+// Por que um produto da Programação NÃO virou compra. Espelha, motivo a motivo, o que
+// compraForaDeCotacao decide — quando mexer numa, mexa na outra. Devolve null quando o produto
+// entrou normalmente.
+function motivoForaDaCompra(p, cat) {
+  const obs = (p.obs||"").trim().toLowerCase();
+  if (!(p.produto||"").trim()) return "linha sem nome de produto";
+  if (!categoriaDeQuimicos(cat.name)) return cat.name + " não vai pra Compras automaticamente";
+  if (obs.includes("estoque")) return 'observação diz "estoque" — é sobra, não compra nova';
+  if (obs.includes("avaliar")) return 'observação diz "avaliar" — ainda não foi decidido';
+  const veioDeCotacao = !!(p.fornecedor_compra||"").trim() && p.fornecedor_compra !== "Compra manual";
+  if (veioDeCotacao) return "veio de cotação fechada (" + p.fornecedor_compra + ") — já foi lançado por lá";
+  if (!(p.dose > 0)) return "sem dose preenchida";
+  if (!(p.preco_compra > 0)) return "sem PREÇO DE COMPRA — só o de referência não conta como compra";
+  if (!(p.revenda||"").trim()) return "sem revenda";
+  if (!pagamentoDefinido(p)) return 'sem vencimento e sem "pago"';
+  return null;
+}
+// Varre a Programação de uma temporada e devolve, produto por produto, de onde saiu cada volume e
+// o que ficou de fora — com o motivo. É o que responde "por que o Roundup não somou tudo?" sem
+// precisar abrir cultura por cultura conferindo campo a campo.
+// Também aponta dois casos que não são erro de preenchimento e sim de escrita, e que por isso
+// nunca apareceriam como "faltando": o mesmo produto com UNIDADES diferentes entre culturas (vira
+// lançamento separado de propósito, somar litro com quilo não faz sentido) e NOMES parecidos que
+// provavelmente são o mesmo produto escrito de dois jeitos ("Roundup Original" x "Roundup").
+function conferirVolumesProgramacao(dProg, temporadaLabel) {
+  const porNome = new Map();  // nome normalizado -> { display, dentro:[], fora:[], unidades:Set }
+  Object.entries(dProg||{}).forEach(([cultura, c]) => {
+    (c.categories||[]).forEach(cat => {
+      (cat.products||[]).forEach(p => {
+        const nome = (p.produto||"").trim();
+        if (!nome) return;
+        const k = normalizarNome(nome);
+        if (!porNome.has(k)) porNome.set(k, { display:nome, dentro:[], fora:[], unidades:new Set() });
+        const reg = porNome.get(k);
+        const motivo = motivoForaDaCompra(p, cat);
+        const qtd = calcProdQtd(p, cat, c);
+        const unidade = unidadeCompraDaProgramacao(p.unidade);
+        const item = { cultura, categoria:cat.name, qtd, unidade, motivo };
+        if (motivo || !(qtd > 0)) {
+          reg.fora.push({ ...item, motivo: motivo || "quantidade dá zero (dose ou área em branco)" });
+        } else {
+          reg.dentro.push(item);
+          reg.unidades.add(unidade);
+        }
+      });
+    });
+  });
+  const nomes = [...porNome.keys()];
+  return [...porNome.entries()].map(([k, reg]) => {
+    // Só interessa o que de fato entrou em Compras: produto que nem chegou lá não "deixou de somar".
+    if (!reg.dentro.length) return null;
+    const alertas = [];
+    if (reg.unidades.size > 1) {
+      alertas.push("unidades diferentes entre as culturas (" + [...reg.unidades].join(", ")
+        + ") — viram lançamentos separados, porque somar unidades diferentes não faria sentido");
+    }
+    // Um nome ser o começo do outro, palavra por palavra, é o caso mais comum de verdade:
+    // "Heavy" x "Heavy Oil", "Roundup" x "Roundup Original". A similaridade por letra não pega
+    // esses (bigramas dão 0,67 pra Heavy x Heavy Oil), e é justamente onde o volume se parte.
+    const comecaIgual = (a, b) => {
+      const pa = a.split(" ").filter(Boolean), pb = b.split(" ").filter(Boolean);
+      const n = Math.min(pa.length, pb.length);
+      if (!n || pa.length === pb.length) return false;
+      for (let i=0;i<n;i++) if (pa[i] !== pb[i]) return false;
+      return true;
+    };
+    const parecidos = nomes.filter(o => o !== k && (mesmoProdutoQuaseIgual(k, o) || comecaIgual(k, o)
+      || similaridadeNomes(k, o) >= LIMIAR_MESMA_IA)).map(o => porNome.get(o).display);
+    if (parecidos.length) {
+      alertas.push("tem produto de nome parecido na Programação (" + parecidos.join(", ")
+        + ") — se for o mesmo, escreva igual nas duas culturas pra somar junto");
+    }
+    // "fora" só vale como aviso quando é preenchimento faltando. Categoria não-química, estoque,
+    // avaliar e cotação fechada são decisões, não esquecimento.
+    const faltando = reg.fora.filter(f => /sem |quantidade dá zero/.test(f.motivo));
+    if (!faltando.length && !alertas.length) return null;
+    // Total por unidade, nunca um total só: litro e quilo do mesmo produto viram lançamentos
+    // separados e somá-los daria um número sem significado.
+    const porUnidade = new Map();
+    reg.dentro.forEach(d => porUnidade.set(d.unidade, (porUnidade.get(d.unidade)||0) + d.qtd));
+    return { produto: reg.display, temporada: temporadaLabel,
+      totalPorUnidade: [...porUnidade.entries()].map(([unidade,qtd])=>({unidade,qtd})),
+      dentro: reg.dentro, faltando, outros: reg.fora.filter(f => !faltando.includes(f)), alertas };
+  }).filter(Boolean).sort((a,b) => a.produto.localeCompare(b.produto));
 }
 function comprasDaProgramacao(dProg, temporadaLabel, safra) {
   const arred = (n, casas) => { const f = Math.pow(10, casas); return Math.round(n*f)/f; };
@@ -2658,6 +2743,7 @@ function App() {
     return appView==="prog_inv" || appView==="resumo_inv"
       ? { prog_inv: dataInverno } : { prog_verao: dataVerao };
   }
+  const [conferirVolumes, setConferirVolumes]   = useState(false);
   const [addingColheita, setAddingColheita]     = useState(false);
   const [newColheita, setNewColheita] = useState({tipo:"verao",loteId:"",data:"",areaHa:"",sacas:"",umidade:"",pmg:"",obs:""});
   const [colheitaTipoTab, setColheitaTipoTab] = useState("verao");
@@ -8353,7 +8439,55 @@ function App() {
                       title="Apaga os lançamentos marcados com 🔗 Programação e refaz todos, juntando num só o mesmo produto de várias culturas. Lançamento manual ou importado não é afetado."
                       style={{padding:"6px 14px",background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:6,color:"#e65100",fontSize:11,fontWeight:700,cursor:"pointer"}}>🔄 Relançar da Programação</button>
                   )}
+                  {(comprasCatSel||"").startsWith("Químicos") && (
+                    <button onClick={()=>setConferirVolumes(v=>!v)}
+                      title="Mostra, produto por produto, de qual cultura saiu cada volume e o que ficou de fora do lançamento — com o motivo."
+                      style={{padding:"6px 14px",background:conferirVolumes?"#1565C0":"#e3f2fd",border:"1px solid #90caf9",borderRadius:6,color:conferirVolumes?"#fff":"#1565C0",fontSize:11,fontWeight:700,cursor:"pointer"}}>🔎 Conferir volumes</button>
+                  )}
                 </div>
+                {conferirVolumes && (comprasCatSel||"").startsWith("Químicos") && (()=>{
+                  const temporada = comprasCatSel.includes("Inverno") ? "Inverno" : "Verão";
+                  const achados = conferirVolumesProgramacao(temporada==="Inverno"?dataInverno:dataVerao, temporada);
+                  return (
+                    <div data-conferencia="1" style={{background:"#fff",border:"1px solid #90caf9",borderRadius:8,padding:14,marginTop:10}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#1565C0",marginBottom:4}}>🔎 Conferência dos volumes — Programação {temporada}</div>
+                      <div style={{fontSize:11,color:"#888",marginBottom:10,lineHeight:1.5}}>
+                        Produto que entrou em Compras mas deixou volume pra trás, ou que corre risco de virar dois lançamentos.
+                        Produto que está somando tudo certo não aparece aqui.
+                      </div>
+                      {!achados.length && (
+                        <div style={{fontSize:12,color:"#2e7d32",fontWeight:600}}>✓ Nenhum problema: todo produto lançado está com o volume completo de todas as culturas.</div>
+                      )}
+                      {achados.map((a,i)=>(
+                        <div key={i} style={{borderTop:i?"1px solid #f0f0f0":"none",padding:"10px 0"}}>
+                          <div style={{fontSize:12,fontWeight:700,color:"#333"}}>{a.produto}</div>
+                          <div style={{fontSize:11,color:"#2e7d32",marginTop:3}}>
+                            Entrou: {a.dentro.map(d=>`${d.cultura} ${fmtN(d.qtd,2)} ${d.unidade}`).join(" · ")}
+                            {/* Só mostra o total quando a unidade é a mesma: somar litro com quilo
+                                daria um número que não quer dizer nada. */}
+                            {a.totalPorUnidade.length===1 && <> = <b>{fmtN(a.totalPorUnidade[0].qtd,2)} {a.totalPorUnidade[0].unidade}</b></>}
+                          </div>
+                          {a.faltando.map((f,j)=>(
+                            <div key={j} style={{fontSize:11,color:"#c62828",marginTop:3}}>
+                              ⚠ Ficou de fora: <b>{f.cultura}</b> ({f.categoria}) {f.qtd>0?`${fmtN(f.qtd,2)} ${f.unidade} `:""}— {f.motivo}
+                            </div>
+                          ))}
+                          {a.alertas.map((t,j)=>(
+                            <div key={j} style={{fontSize:11,color:"#e65100",marginTop:3}}>⚠ {t}</div>
+                          ))}
+                          {a.outros.length>0 && (
+                            <div style={{fontSize:10,color:"#aaa",marginTop:3}}>
+                              Fora de propósito: {a.outros.map(o=>`${o.cultura} (${o.motivo})`).join(" · ")}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{fontSize:11,color:"#888",marginTop:8,lineHeight:1.5}}>
+                        Depois de completar o que faltou na Programação, volte aqui e use <b>🔄 Relançar da Programação</b> pra refazer os lançamentos com o volume certo.
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
                 {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
                   <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
