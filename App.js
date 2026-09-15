@@ -197,6 +197,10 @@ function revendasDoFornecedor(str) {
 // Normaliza nome de produto pra comparar Compras (digitado à mão) com Programação de forma
 // tolerante: ignora acento, maiúscula/minúscula e espaços extras — mas não mexe em pontuação
 // como "/" ou "-", que às vezes distingue produtos diferentes de propósito.
+// Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
+// a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
+// adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
+const VERSAO_APP = "15/09 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4923,6 +4927,8 @@ function App() {
               style={{background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,color:"#fff",width:34,height:34,fontSize:17,cursor:"pointer"}}>☰</button>
             <span style={{fontSize:isMobile?15:17,fontWeight:800,letterSpacing:1,whiteSpace:"nowrap"}}>🌿 GC Agro</span>
             <span style={{fontSize:10,opacity:0.6,background:"rgba(255,255,255,0.1)",padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>{safraAtiva}</span>
+            <span title="Versão publicada que este navegador carregou. Se não bater com a última publicada, recarregue com Ctrl+Shift+R."
+              style={{fontSize:9,opacity:0.45,whiteSpace:"nowrap"}}>v{VERSAO_APP}</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <SyncBadge/>
