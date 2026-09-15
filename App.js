@@ -1742,9 +1742,8 @@ function extrairExcecoesObs(raw) {
   return nomes.length ? nomes : null;
 }
 // "todas as variedades", "todos os híbridos" e afins: o produto vale pra todas, igual à observação
-// em branco. Precisa ser reconhecido explicitamente porque, numa cultura que usa variedade, toda
-// observação solta passa a ser lida como nome de variedade (ver computarGruposTS) — sem isso
-// "todas as variedades" viraria uma variedade chamada "todas as variedades".
+// em branco. Precisa ser reconhecido explicitamente, senão viraria uma variedade chamada "todas as
+// variedades".
 // A frase vale em QUALQUER ponto do texto, não só no começo: na prática ela vem acompanhada de um
 // lembrete de dose ("todas as variedades, 2 doses de Azos", "10 doses de inoculante em todas as
 // variedades"). A frase manda; o resto da observação é anotação e não separa variedade nenhuma.
@@ -1771,9 +1770,6 @@ function extrairSomenteObs(raw) {
   const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(x=>x.trim()).filter(Boolean);
   return nomes.length ? nomes : null;
 }
-// Variedades que realmente existem naquela cultura, tiradas do Planejamento de Campo (a coluna
-// Variedade de cada lote). É a lista que decide se uma anotação solta na Observação é nome de
-// variedade ou só um lembrete: "Neo 700 I2X branca" está plantada, "Solubilizador de P" não.
 // Bate um texto solto contra as variedades conhecidas: vale como variedade quando a PRIMEIRA
 // PALAVRA é a mesma. É o que reconhece "Neo 700 I2X branca" ao lado de "Neo 700 I2X tratada", e
 // "P40537 PWURR branco" ao lado de "P40537 tratado" — o sufixo distingue o lote tratado do não
@@ -1789,6 +1785,9 @@ function pareceVariedade(texto, conhecidas) {
   }
   return false;
 }
+// Variedades que realmente existem naquela cultura, tiradas do Planejamento de Campo (a coluna
+// Variedade de cada lote). É a lista que decide se uma anotação solta na Observação é nome de
+// variedade ou só um lembrete: "Neo 700 I2X branca" está plantada, "Solubilizador de P" não.
 function variedadesDoPlano(plano, cultura) {
   const alvo = normalizarNome(cultura);
   const set = new Map();
@@ -1835,9 +1834,9 @@ function computarGruposTS(dProg, plano) {
     // variedade: sem observação — e com observação solta também — o produto vale pra TODAS as
     // variedades. Ler a anotação como variedade criava uma variedade falsa ("10 doses") e, pior,
     // tirava o produto de todas as variedades de verdade, que é como o Nodugran sumia da lavoura
-    // inteira. No Kit Sulco só as formas explícitas valem: "exceto ...", "todas ..." e o nome com
-    // a cultura na frente ("Soja Neo 700 I2X branca"). No TS a observação solta continua sendo o
-    // nome da variedade, que é como se escreve lá.
+    // inteira. Lá só as formas explícitas valem: "todas ...", "exceto ...", "só ..." e o nome com
+    // a cultura na frente. No TS, além dessas, a anotação solta também vira variedade — mas só
+    // quando casa com uma variedade conhecida da cultura.
     const variedadeDoProduto = (p, ehKitSulco) => {
       if (extrairExcecoesObs(p.obs) || obsDizTodas(p.obs)) return null;
       const somente = extrairSomenteObs(p.obs);
