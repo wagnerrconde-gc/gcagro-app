@@ -44,8 +44,12 @@
   <!-- Babel standalone -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- SheetJS (leitura de planilhas .xlsx/.xls/.csv para importação) -->
-  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS para ler e escrever planilhas (.xlsx/.xls/.csv).
+       xlsx-js-style é o SheetJS 0.18.5 com escrita de ESTILO (cor de fundo, negrito, borda),
+       que a versão community não faz — é o que permite exportar a planilha de cotação com
+       cabeçalho colorido e as colunas a preencher destacadas. Mesma API, e o bundle ainda é
+       metade do tamanho do xlsx.full.min (425 KB contra 881 KB). -->
+  <script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
   <script>
     // Mostra qualquer erro (de carregamento, de render do React, ou de execução em

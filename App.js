@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "15/09 · 4";
+const VERSAO_APP = "15/09 · 5";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -1009,6 +1009,20 @@ function parseCsvText(text) {
   });
 }
 
+// Acha em que linha está o cabeçalho de verdade. Planilha bonita tem título, subtítulo e linha de
+// instrução antes da tabela — e a nossa própria exportação de cotação tem —, então assumir que o
+// cabeçalho é a primeira linha faz a importação ler "GC AGRO — COTAÇÃO" como nome de coluna e
+// jogar a planilha inteira fora. Cabeçalho é a primeira linha com DUAS OU MAIS células
+// preenchidas: título e instrução ocupam uma célula mesclada só, e por isso contam como uma.
+function acharLinhaCabecalho(aoa) {
+  const preenchidas = r => (r||[]).map(c => String(c==null?"":c).trim()).filter(Boolean);
+  for (let i=0; i<Math.min(aoa.length, 30); i++) {
+    if (preenchidas(aoa[i]).length < 2) continue;
+    if (!aoa.slice(i+1).some(r => preenchidas(r).length)) continue;  // precisa ter dado embaixo
+    return i;
+  }
+  return 0;
+}
 function readSpreadsheetRows(file) {
   const isCsv = /\.csv$/i.test(file.name);
   return new Promise((resolve, reject) => {
@@ -1019,7 +1033,8 @@ function readSpreadsheetRows(file) {
         if (isCsv) { resolve(parseCsvText(e.target.result)); return; }
         const wb = XLSX.read(e.target.result, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        resolve(XLSX.utils.sheet_to_json(sheet, { defval: "" }));
+        const aoa = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"", blankrows:true });
+        resolve(XLSX.utils.sheet_to_json(sheet, { defval: "", range: acharLinhaCabecalho(aoa) }));
       } catch (err) { reject(err); }
     };
     if (isCsv) reader.readAsText(file, "UTF-8");
@@ -8008,30 +8023,76 @@ function App() {
           // colunas em branco pra quem cota preencher (ex: grupo de compras) — fluxo alternativo
           // ao "cada fornecedor cota online aqui dentro", que continua existindo do lado.
           //
-          // A biblioteca de xlsx usada aqui é a versão gratuita (SheetJS Community) — ela não
-          // escreve negrito/cor de célula (isso é só na versão paga), mas largura de coluna e
-          // formato numérico (moeda, casas decimais) ela escreve normalmente, então é isso que dá
-          // pra fazer pra a planilha não sair com coluna apertada e número cru sem "R$".
+          // A planilha vai pro grupo de compras preencher e volta pra ser importada, então ela é
+          // as duas coisas ao mesmo tempo: um documento que alguém de fora abre e entende, e um
+          // arquivo que a importação lê de volta. Daí as duas decisões centrais:
+          //  - o visual é feito com estilo de célula de verdade (a biblioteca xlsx-js-style, que é
+          //    o SheetJS com escrita de cor/negrito/borda): cabeçalho colorido, colunas a preencher
+          //    em amarelo, zebra nas linhas, largura e formato de número. Quem recebe vê onde
+          //    escrever sem precisar de e-mail explicando.
+          //  - o cabeçalho da tabela NÃO fica na primeira linha, porque tem título e instrução em
+          //    cima. Quem lê de volta é acharLinhaCabecalho, que procura a primeira linha com duas
+          //    ou mais células preenchidas — por isso título, subtítulo e instrução são células
+          //    MESCLADAS: contam como uma só e não confundem a busca.
+          const XLS_VERDE = "1A5C2E", XLS_VERDE_ESC = "0F3D1E", XLS_AMARELO = "FFF9DB";
+          const xlsBorda = { style:"thin", color:{rgb:"D9D9D9"} };
+          const xlsBordas = () => ({ top:xlsBorda, bottom:xlsBorda, left:xlsBorda, right:xlsBorda });
           function exportarCotacaoPlanilha() {
             const linhasOrdenadas = [...filtProds].sort((a,b)=>
               a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
             // Só o que o grupo de compras precisa ver e preencher. Preço de referência fora de
             // propósito: é o preço do ano anterior, e mandar junto entrega a nossa base de
             // negociação. Ingrediente ativo e categoria só serviam pra conferência interna.
-            const linhas = linhasOrdenadas.map(p => ({
-              "Produto": p.nome, "Unidade": p.unidade, "Quantidade": p.qtd_total,
-              "Preço Fechado": "", "Fornecedor": "", "Vencimento": "", "Obs": "",
-            }));
-            const ws = XLSX.utils.json_to_sheet(linhas);
-            ws['!cols'] = [{wch:32},{wch:10},{wch:12},{wch:14},{wch:20},{wch:12},{wch:25}];
-            const COL_QTD = 2;
-            linhas.forEach((_,ri)=>{
-              const qtdCell = ws[XLSX.utils.encode_cell({r:ri+1,c:COL_QTD})];
-              if (qtdCell) qtdCell.z = "#,##0.0";
+            const COLS = ["Produto","Unidade","Quantidade","Preço Fechado","Fornecedor","Vencimento","Obs"];
+            const PRIMEIRA_A_PREENCHER = 3;   // de "Preço Fechado" em diante é o grupo que escreve
+            const titulo = `GC AGRO — COTAÇÃO DE ${String(tipoLabel).toUpperCase()}`;
+            const subtitulo = `${safraLabel} · Safra ${safraAtiva} · ${linhasOrdenadas.length} produto(s) · gerada em ${new Date().toLocaleDateString("pt-BR")}`;
+            const instrucao = "Preencha as colunas em AMARELO: Preço Fechado, Fornecedor, Vencimento e Obs. Não altere Produto, Unidade e Quantidade — é por eles que a planilha é reconhecida na volta.";
+
+            const aoa = [[titulo],[subtitulo],[instrucao],[],COLS,
+              ...linhasOrdenadas.map(p => [p.nome, p.unidade, p.qtd_total, "", "", "", ""])];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            const LIN_CAB = 4;                 // 0-based: título, subtítulo, instrução, linha vazia
+            const ultima = LIN_CAB + linhasOrdenadas.length;
+            const cel = (r,c) => XLSX.utils.encode_cell({r,c});
+            const garantir = (r,c) => { const k = cel(r,c); if (!ws[k]) ws[k] = {t:"s",v:""}; return ws[k]; };
+
+            ws["!merges"] = [0,1,2].map(r => ({ s:{r,c:0}, e:{r,c:COLS.length-1} }));
+            ws["!cols"] = [{wch:38},{wch:10},{wch:13},{wch:15},{wch:24},{wch:14},{wch:30}];
+            ws["!rows"] = [{hpt:26},{hpt:17},{hpt:30},{hpt:6},{hpt:22}];
+            ws["!autofilter"] = { ref:`${cel(LIN_CAB,0)}:${cel(ultima,COLS.length-1)}` };
+
+            ws[cel(0,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE_ESC}},
+              font:{bold:true,sz:15,color:{rgb:"FFFFFF"}},
+              alignment:{horizontal:"center",vertical:"center"} };
+            ws[cel(1,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+              font:{sz:10,color:{rgb:"D7EBD9"}},
+              alignment:{horizontal:"center",vertical:"center"} };
+            ws[cel(2,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_AMARELO}},
+              font:{sz:10,italic:true,color:{rgb:"7A5B00"}}, border:xlsBordas(),
+              alignment:{horizontal:"center",vertical:"center",wrapText:true} };
+            COLS.forEach((_,c) => {
+              ws[cel(LIN_CAB,c)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+                font:{bold:true,sz:11,color:{rgb:"FFFFFF"}}, border:xlsBordas(),
+                alignment:{horizontal:"center",vertical:"center",wrapText:true} };
+            });
+            linhasOrdenadas.forEach((_,i) => {
+              const r = LIN_CAB + 1 + i;
+              const zebra = i % 2 ? "F7F9F7" : "FFFFFF";
+              COLS.forEach((_,c) => {
+                const cl = garantir(r,c);
+                const aPreencher = c >= PRIMEIRA_A_PREENCHER;
+                cl.s = { fill:{patternType:"solid",fgColor:{rgb: aPreencher ? XLS_AMARELO : zebra}},
+                  font:{sz:10,color:{rgb:"222222"}}, border:xlsBordas(),
+                  alignment:{ horizontal: c===0 ? "left" : (c===1 ? "center" : (c<=3 ? "right" : "left")),
+                              vertical:"center", wrapText: c===0 || c===6 } };
+                if (c===2) cl.z = "#,##0.0";
+                if (c===3) cl.z = "R$ #,##0.00";
+              });
             });
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Cotação");
-            XLSX.writeFile(wb, `Cotacao_${tipoLabel}_${safraLabel}_${safraAtiva}`.replace(/[\/\\]/g,"-")+".xlsx", {cellStyles:true});
+            XLSX.writeFile(wb, `Cotacao_${tipoLabel}_${safraLabel}_${safraAtiva}`.replace(/[\/\\]/g,"-")+".xlsx");
           }
 
           return (
