@@ -1716,6 +1716,15 @@ function formatarLinhaProdutoTS(p) {
 // cultura "Soja" vira "TMG 7062") — casa palavra por palavra ignorando acento/maiúscula. Observação
 // que não começa com o nome da cultura (anotação livre antiga, tipo "2 doses" ou "850 hectares") é
 // desconsiderada pro agrupamento: retorna null e o produto entra como comum a todas as variedades.
+// Tira o lembrete que vem depois do nome da variedade: "Neo 700 I2X branca - em estoque" é a
+// MESMA variedade que "Neo 700 I2X branca" — o "em estoque" fala dos produtos daquela linha, não
+// de outra variedade. Sem cortar, os dois textos viravam dois grupos com o tratamento repetido.
+// Corta no hífen/travessão cercado de espaço e na vírgula/ponto e vírgula. NÃO corta na barra:
+// tem variedade cujo nome tem barra no meio ("K200 / 1G100").
+function semAnotacaoVariedade(nome) {
+  const t = String(nome||"").split(/\s+[-–—]\s+|[,;]/)[0].trim();
+  return t || String(nome||"").trim();
+}
 function extrairVariedadeObs(raw, cultura) {
   const palavras = (raw||"").trim().split(/\s+/).filter(Boolean);
   if (!palavras.length) return null;
@@ -1723,7 +1732,7 @@ function extrairVariedadeObs(raw, cultura) {
   for (let i=0;i<cultPalavras.length;i++) {
     if (normalizarNome(palavras[i]||"") !== cultPalavras[i]) return null;
   }
-  return palavras.slice(cultPalavras.length).join(" ").trim();
+  return semAnotacaoVariedade(palavras.slice(cultPalavras.length).join(" "));
 }
 // Observação no formato "exceto A, B" (ou "menos A, B"): o produto vale pra todas as variedades
 // MENOS as listadas. É assim que se marca um produto que quase todas recebem mas algumas
@@ -1738,7 +1747,7 @@ function extrairExcecoesObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "exceto" && primeira !== "menos") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(s=>s.trim()).filter(Boolean);
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(semAnotacaoVariedade).filter(Boolean);
   return nomes.length ? nomes : null;
 }
 // "todas as variedades", "todos os híbridos" e afins: o produto vale pra todas, igual à observação
@@ -1767,7 +1776,7 @@ function extrairSomenteObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "so" && primeira !== "somente" && primeira !== "apenas") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(x=>x.trim()).filter(Boolean);
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(semAnotacaoVariedade).filter(Boolean);
   return nomes.length ? nomes : null;
 }
 // Bate um texto solto contra as variedades conhecidas: vale como variedade quando a PRIMEIRA
@@ -1844,8 +1853,9 @@ function computarGruposTS(dProg, plano) {
       const comPrefixo = extrairVariedadeObs(p.obs, cultura);
       if (comPrefixo) return [comPrefixo];               // "Soja Neo 700 I2X branca"
       if (ehKitSulco) return null;
-      const solta = (p.obs||"").trim();
-      // Anotação solta no TS só é variedade se casar com uma variedade conhecida.
+      // Anotação solta no TS só é variedade se casar com uma variedade conhecida — e entra sem o
+      // lembrete que vier depois ("Neo 700 I2X branca - em estoque" -> "Neo 700 I2X branca").
+      const solta = semAnotacaoVariedade(p.obs);
       return solta && pareceVariedade(solta, conhecidas) ? [solta] : null;
     };
     const obsMap = new Map();
