@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "15/09 · 5";
+const VERSAO_APP = "15/09 · 6";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -683,18 +683,7 @@ function conferirVolumesProgramacao(dProg, temporadaLabel) {
       alertas.push("unidades diferentes entre as culturas (" + [...reg.unidades].join(", ")
         + ") — viram lançamentos separados, porque somar unidades diferentes não faria sentido");
     }
-    // Um nome ser o começo do outro, palavra por palavra, é o caso mais comum de verdade:
-    // "Heavy" x "Heavy Oil", "Roundup" x "Roundup Original". A similaridade por letra não pega
-    // esses (bigramas dão 0,67 pra Heavy x Heavy Oil), e é justamente onde o volume se parte.
-    const comecaIgual = (a, b) => {
-      const pa = a.split(" ").filter(Boolean), pb = b.split(" ").filter(Boolean);
-      const n = Math.min(pa.length, pb.length);
-      if (!n || pa.length === pb.length) return false;
-      for (let i=0;i<n;i++) if (pa[i] !== pb[i]) return false;
-      return true;
-    };
-    const parecidos = nomes.filter(o => o !== k && (mesmoProdutoQuaseIgual(k, o) || comecaIgual(k, o)
-      || similaridadeNomes(k, o) >= LIMIAR_MESMA_IA)).map(o => porNome.get(o).display);
+    const parecidos = nomesParecidos(k, nomes).map(o => porNome.get(o).display);
     if (parecidos.length) {
       alertas.push("tem produto de nome parecido na Programação (" + parecidos.join(", ")
         + ") — se for o mesmo, escreva igual nas duas culturas pra somar junto");
@@ -797,6 +786,38 @@ function juntarQuaseIguais(map) {
   }
   return map;
 }
+// Um nome ser o começo do outro, palavra por palavra, é o caso mais comum de nome quase igual
+// escrito diferente: "Heavy" x "Heavy Oil", "Roundup" x "Roundup Original", "Tricho" x
+// "Tricho N". A similaridade por letra não pega esses (bigramas dão 0,67 pra Heavy x Heavy Oil,
+// abaixo do limiar), e é justamente onde o volume se parte em dois em vez de somar.
+function nomeComecaComOOutro(a, b) {
+  const pa = a.split(" ").filter(Boolean), pb = b.split(" ").filter(Boolean);
+  const n = Math.min(pa.length, pb.length);
+  if (!n || pa.length === pb.length) return false;
+  for (let i=0;i<n;i++) if (pa[i] !== pb[i]) return false;
+  return true;
+}
+// Entre os nomes normalizados de uma lista, quais parecem ser o MESMO produto escrito diferente:
+// um terminando no outro (marca na frente), um começando no outro, ou similaridade alta por
+// letra. Usado tanto no Conferir Volumes de Compras quanto nas telas de Cotação, pra avisar ANTES
+// de mandar pro fornecedor — juntar sozinho seria arriscado demais, o app só aponta.
+function nomesParecidos(chaveAlvo, todasAsChaves) {
+  return todasAsChaves.filter(o => o !== chaveAlvo && (mesmoProdutoQuaseIgual(chaveAlvo, o)
+    || nomeComecaComOOutro(chaveAlvo, o) || similaridadeNomes(chaveAlvo, o) >= LIMIAR_MESMA_IA));
+}
+// Traduz a unidade da Programação (kg/Lt/Tn/bag/sc/doses) pro vocabulário de cada tela de
+// Cotação — cada uma só aceita um conjunto próprio de unidades (ver unitOptions):
+// Insumos = L/KG/doses, Adubação = TN/KG. Sem isso a unidade tinha que ser adivinhada — e a
+// adivinhação usava o campo ERRADO (p.fase, que é a fase de aplicação tipo "Pré"/"V4", não
+// unidade nenhuma), por isso quase tudo caía no padrão "L" mesmo sendo kg ou dose.
+function unidadeCotacaoInsumos(u) {
+  const map = { lt:"L", l:"L", kg:"KG", doses:"doses", tn:"KG", t:"KG", bag:"KG", sc:"KG" };
+  return map[String(u||"").trim().toLowerCase()] || "L";
+}
+function unidadeCotacaoAdubacao(u) {
+  const map = { tn:"TN", t:"TN", kg:"KG", lt:"KG", l:"KG", doses:"KG", bag:"KG", sc:"KG" };
+  return map[String(u||"").trim().toLowerCase()] || "TN";
+}
 function derivarProdutos(data, excluirAdubacao=false) {
   const map = {};
   Object.values(data||{}).forEach(culture => {
@@ -814,7 +835,7 @@ function derivarProdutos(data, excluirAdubacao=false) {
         // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
         // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
         if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
-        else { map[key] = { nome:p.produto.trim(), unidade:p.fase&&p.fase.toLowerCase().includes("dose")?"doses":p.fase&&p.fase.toLowerCase().includes("kg")?"kg":"L", qtd_total:qtd, categoria:cat.name, preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
+        else { map[key] = { nome:p.produto.trim(), unidade:unidadeCotacaoInsumos(p.unidade), qtd_total:qtd, categoria:cat.name, preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
   });
@@ -832,7 +853,7 @@ function derivarAdubacao(data) {
         // Somando duplicata: mantém como rótulo a grafia mais completa (a mais longa, ou seja,
         // a com acento/espaço na barra) — é esse nome que vai pro fornecedor na cotação.
         if (map[key]) { map[key].qtd_total += qtd; if (p.produto.trim().length > map[key].nome.length) map[key].nome = p.produto.trim(); }
-        else { map[key] = { nome:p.produto.trim(), unidade:"TN", qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
+        else { map[key] = { nome:p.produto.trim(), unidade:unidadeCotacaoAdubacao(p.unidade), qtd_total:qtd, categoria:"Adubação", preco_ref:p.preco_unit, ingrediente_ativo:p.ingrediente_ativo||"" }; }
       });
     });
   });
@@ -855,6 +876,38 @@ function derivarSementes(data) {
     });
   });
   return Object.values(juntarQuaseIguais(map));
+}
+// Adiciona um produto digitado à mão numa lista de Cotação (Adubação/Sementes/Insumos). Se já
+// existir um com o MESMO nome — por chaveProduto, então "Sulfato de Magnésio" e "Sulfato de
+// Magnesio" contam como um só —, SOMA a quantidade nele em vez de criar uma linha duplicada.
+// Sem isso, digitar de novo um produto que já estava na lista virava duas colunas do mesmo
+// produto. Nomes que só PARECEM iguais ("Tricho" e "Tricho N") não entram aqui — chaveProduto os
+// trata como produtos diferentes de propósito, e é o alerta de "produtos parecidos" na tela quem
+// avisa desses, deixando a decisão de juntar com quem está vendo a lista.
+function adicionarOuSomarProduto(list, novo) {
+  const chaveNovo = chaveProduto(novo.nome);
+  const idx = list.findIndex(p => chaveProduto(p.nome) === chaveNovo);
+  if (idx < 0) return [...list, novo];
+  const atual = list[idx];
+  const atualizado = { ...atual,
+    nome: novo.nome.length > atual.nome.length ? novo.nome : atual.nome,
+    qtd_total: (atual.qtd_total||0) + (novo.qtd_total||0),
+    preco_ref: novo.preco_ref || atual.preco_ref,
+    ingrediente_ativo: atual.ingrediente_ativo || novo.ingrediente_ativo,
+  };
+  return list.map((p,i) => i===idx ? atualizado : p);
+}
+// Junta manualmente dois produtos que o usuário confirmou serem o mesmo (ex.: "Tricho" e
+// "Tricho N") — soma a quantidade e mantém o nome mais completo. Diferente de
+// adicionarOuSomarProduto, aqui os dois nomes já existem como linhas separadas na lista.
+function juntarProdutosCotacao(list, nomeA, nomeB) {
+  const a = list.find(p=>p.nome===nomeA), b = list.find(p=>p.nome===nomeB);
+  if (!a || !b) return list;
+  const vencedor = a.nome.length >= b.nome.length ? a : b;
+  const juntado = { ...vencedor, qtd_total:(a.qtd_total||0)+(b.qtd_total||0),
+    preco_ref: vencedor.preco_ref || (vencedor===a?b.preco_ref:a.preco_ref),
+    ingrediente_ativo: vencedor.ingrediente_ativo || (vencedor===a?b.ingrediente_ativo:a.ingrediente_ativo) };
+  return list.filter(p=>p.nome!==nomeA && p.nome!==nomeB).concat(juntado);
 }
 
 // Liquidação (payoff) de cada tipo de operação financeira de hedge, na data de referência,
@@ -3223,8 +3276,8 @@ function App() {
   }
   function addAduboRow() {
     if (!newAdubo.nome.trim() || !cotContext) return;
-    setAduboProdutos(cotContext, list => [...list, { nome:newAdubo.nome.trim(), unidade:newAdubo.unidade,
-      qtd_total:parseFloat(newAdubo.qtd_total)||0, categoria:"Adubação", preco_ref:parseFloat(newAdubo.preco_ref)||0, ingrediente_ativo:"" }]);
+    setAduboProdutos(cotContext, list => adicionarOuSomarProduto(list, { nome:newAdubo.nome.trim(), unidade:newAdubo.unidade,
+      qtd_total:parseFloat(newAdubo.qtd_total)||0, categoria:"Adubação", preco_ref:parseFloat(newAdubo.preco_ref)||0, ingrediente_ativo:"" }));
     setNewAdubo({nome:"",unidade:"TN",qtd_total:"",preco_ref:""});
     setAddingAdubo(false);
   }
@@ -3245,8 +3298,8 @@ function App() {
   }
   function addSementeRow() {
     if (!newSemente.nome.trim() || !cotContext) return;
-    setSementeProdutos(cotContext, list => [...list, { nome:newSemente.nome.trim(), unidade:newSemente.unidade,
-      qtd_total:parseFloat(newSemente.qtd_total)||0, categoria:"Sementes", preco_ref:parseFloat(newSemente.preco_ref)||0, ingrediente_ativo:"" }]);
+    setSementeProdutos(cotContext, list => adicionarOuSomarProduto(list, { nome:newSemente.nome.trim(), unidade:newSemente.unidade,
+      qtd_total:parseFloat(newSemente.qtd_total)||0, categoria:"Sementes", preco_ref:parseFloat(newSemente.preco_ref)||0, ingrediente_ativo:"" }));
     setNewSemente({nome:"",unidade:"bag",qtd_total:"",preco_ref:""});
     setAddingSemente(false);
   }
@@ -3267,9 +3320,9 @@ function App() {
   }
   function addInsumoRow() {
     if (!newInsumo.nome.trim() || !cotContext) return;
-    setInsumoProdutos(cotContext, list => [...list, { nome:newInsumo.nome.trim(), unidade:newInsumo.unidade,
+    setInsumoProdutos(cotContext, list => adicionarOuSomarProduto(list, { nome:newInsumo.nome.trim(), unidade:newInsumo.unidade,
       qtd_total:parseFloat(newInsumo.qtd_total)||0, categoria:newInsumo.categoria, preco_ref:parseFloat(newInsumo.preco_ref)||0,
-      ingrediente_ativo:newInsumo.ingrediente_ativo.trim() }]);
+      ingrediente_ativo:newInsumo.ingrediente_ativo.trim() }));
     setNewInsumo({nome:"",unidade:"L",qtd_total:"",preco_ref:"",categoria:CATEGORIAS_INSUMOS[0],ingrediente_ativo:""});
     setAddingInsumo(false);
   }
@@ -8018,6 +8071,26 @@ function App() {
             });
             return t;
           });
+          // Pares de produtos com nome igual ou parecido, na lista atual. Dois casos:
+          //  - CHAVE IGUAL ("Sulfato de Magnésio" x "Sulfato de Magnesio"): chaveProduto já trata
+          //    como o mesmo produto — nomesParecidos não pega esse caso porque foi feito pra nomes
+          //    DIFERENTES que parecem o mesmo, e descarta quando a chave é idêntica. Se ainda assim
+          //    aparecem como duas linhas (dado de antes desta correção, ou digitado à mão nos dois
+          //    jeitos antes do dedup existir), o app aponta pra juntar.
+          //  - NOME PARECIDO, chave diferente ("Tricho" x "Tricho N"): chaveProduto trata como
+          //    produtos diferentes DE PROPÓSITO (juntar sozinho seria arriscado); aqui só avisa.
+          const chavesLista = produtos.map(p=>chaveProduto(p.nome));
+          const paresParecidos = [];
+          if (isEditableList) {
+            for (let i=0;i<produtos.length;i++) {
+              for (let j=i+1;j<produtos.length;j++) {
+                const ka = chavesLista[i], kb = chavesLista[j];
+                const parecido = ka===kb || mesmoProdutoQuaseIgual(ka,kb) || nomeComecaComOOutro(ka,kb)
+                  || similaridadeNomes(ka,kb) >= LIMIAR_MESMA_IA;
+                if (parecido) paresParecidos.push([produtos[i], produtos[j]]);
+              }
+            }
+          }
           const filtProds = produtos.filter(p=>filterCat==="Todas"||p.categoria===filterCat);
           // Exporta a lista de cotação (filtrada pela categoria atual) como planilha .xlsx, com
           // colunas em branco pra quem cota preencher (ex: grupo de compras) — fluxo alternativo
@@ -8112,6 +8185,28 @@ function App() {
                   <button onClick={handleCotLogout} style={{padding:"9px 14px",background:"transparent",border:"1px solid #1e3a5f",borderRadius:7,color:"#5a7a9a",fontSize:11,cursor:"pointer"}}>Sair</button>
                 </div>
               </div>
+
+              {paresParecidos.length>0 && (
+                <div style={{margin:"14px 20px 0",padding:"12px 16px",background:"#2a1f0d",border:"1px solid #7a5b00",borderRadius:8}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#f5c542",marginBottom:6}}>⚠ Produto com nome parecido nesta lista</div>
+                  <div style={{fontSize:11,color:"#c9a84c",marginBottom:8,lineHeight:1.5}}>
+                    Pode ser o mesmo produto escrito de dois jeitos — se for, "Juntar" soma a quantidade das duas linhas numa só. Se forem produtos diferentes de verdade, ignore.
+                  </div>
+                  {paresParecidos.map(([a,b],i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i?"1px solid #4a3a12":"none",flexWrap:"wrap"}}>
+                      <div style={{fontSize:12,color:"#e8d8a8"}}>
+                        <b>{a.nome}</b> ({fmtQtd(a.qtd_total)} {a.unidade}) &nbsp;×&nbsp; <b>{b.nome}</b> ({fmtQtd(b.qtd_total)} {b.unidade})
+                      </div>
+                      <button onClick={()=>{
+                          if (!window.confirm(`Juntar "${a.nome}" e "${b.nome}" numa linha só, somando a quantidade?\n\nIsso só muda a lista de cotação — não mexe na Programação.`)) return;
+                          const setter = isAdub ? setAduboProdutos : isSem ? setSementeProdutos : setInsumoProdutos;
+                          setter(cotContext, list => juntarProdutosCotacao(list, a.nome, b.nome));
+                        }}
+                        style={{padding:"5px 12px",background:"#f5c542",border:"none",borderRadius:5,color:"#2a1f0d",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>🔗 Juntar</button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Vencimentos de pagamento (labels manuais, cada um pode ser removido se não for usado nesta cotação) */}
               <div style={{padding:"14px 20px 0",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
