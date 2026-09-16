@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "16/09 · 2";
+const VERSAO_APP = "16/09 · 3";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2300,7 +2300,12 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
         </div>
       )}
       <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-        <div style={{overflowX:"auto"}}>
+        {/* print-wide: no papel a tabela precisa da largura inteira, mesmo em tela estreita —
+            sem isso, imprimindo do celular em retrato, a rolagem horizontal cortava as colunas
+            que não cabiam na tela. Funciona bem de computador; do celular a página tem que estar
+            larga o bastante mesmo assim (deitada), porque o aparelho decide o tamanho do papel,
+            não o app. */}
+        <div className="print-wide" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
