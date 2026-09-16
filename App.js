@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "15/09 · 6";
+const VERSAO_APP = "16/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2633,6 +2633,13 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
   );
 }
 
+// Paleta e borda usadas em toda exportação de planilha .xlsx com visual — cabeçalho colorido,
+// título mesclado, zebra. Um lugar só, pra toda exportação nova ter a mesma cara sem repetir os
+// mesmos códigos de cor espalhados pelo arquivo.
+const XLS_VERDE = "1A5C2E", XLS_VERDE_ESC = "0F3D1E", XLS_AMARELO = "FFF9DB";
+const xlsBorda = { style:"thin", color:{rgb:"D9D9D9"} };
+const xlsBordas = () => ({ top:xlsBorda, bottom:xlsBorda, left:xlsBorda, right:xlsBorda });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4308,6 +4315,65 @@ function App() {
     });
     return linhas;
   }, [comprasCatSel, comprasSafraSel, comprasRecords, dataVerao, dataInverno]);
+
+  // Exporta a lista de Compras da pasta aberta (safra + categoria) como planilha .xlsx — pra
+  // imprimir e entregar em mãos pra quem confere a entrega (ex.: sementes chegando na fazenda),
+  // sem o resto da tela (filtros, abas, o painel de "Média de preço de sementes por cultura" —
+  // esse é um resumo pra análise interna, não faz parte do que se confere na entrega).
+  // Mesma linha visual da planilha de Cotação: cabeçalho colorido, zebra, números formatados.
+  function exportarComprasPlanilha() {
+    if (!comprasCatSel) return;
+    const ehSementes = comprasCatSel.startsWith("Sementes");
+    const COLS = ehSementes
+      ? ["Data Compra","Produto","Tratamento de Sementes","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Vencimento"]
+      : ["Data Compra","Produto","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Vencimento"];
+    const linhasOrdenadas = [...comprasRecordsFiltrados].sort((a,b)=>a.produto.localeCompare(b.produto));
+    const titulo = `GC AGRO — COMPRAS · ${comprasCatSel.toUpperCase()}`;
+    const subtitulo = `Safra ${comprasSafraSel} · ${linhasOrdenadas.length} lançamento(s) · gerada em ${new Date().toLocaleDateString("pt-BR")}`;
+
+    const aoa = [[titulo],[subtitulo],[],COLS,
+      ...linhasOrdenadas.map(r => ehSementes
+        ? [r.data||"", r.produto, r.tratamento||"", r.unidade, r.quantidade, r.precoUnitario, r.valorTotal, r.fornecedor||"", r.obs||""]
+        : [r.data||"", r.produto, r.unidade, r.quantidade, r.precoUnitario, r.valorTotal, r.fornecedor||"", r.obs||""])];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const LIN_CAB = 3;   // 0-based: título, subtítulo, linha vazia
+    const ultima = LIN_CAB + linhasOrdenadas.length;
+    const cel = (r,c) => XLSX.utils.encode_cell({r,c});
+    const COL_PRECO = COLS.indexOf("Preço Unit."), COL_TOTAL = COLS.indexOf("Total"), COL_QTD = COLS.indexOf("Quantidade");
+
+    ws["!merges"] = [0,1].map(r => ({ s:{r,c:0}, e:{r,c:COLS.length-1} }));
+    ws["!cols"] = ehSementes
+      ? [{wch:12},{wch:30},{wch:22},{wch:9},{wch:12},{wch:12},{wch:13},{wch:20},{wch:14}]
+      : [{wch:12},{wch:30},{wch:9},{wch:12},{wch:12},{wch:13},{wch:20},{wch:14}];
+    ws["!rows"] = [{hpt:26},{hpt:17},{hpt:6}];
+    ws["!autofilter"] = { ref:`${cel(LIN_CAB,0)}:${cel(ultima,COLS.length-1)}` };
+
+    ws[cel(0,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE_ESC}},
+      font:{bold:true,sz:15,color:{rgb:"FFFFFF"}}, alignment:{horizontal:"center",vertical:"center"} };
+    ws[cel(1,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+      font:{sz:10,color:{rgb:"D7EBD9"}}, alignment:{horizontal:"center",vertical:"center"} };
+    COLS.forEach((_,c) => {
+      ws[cel(LIN_CAB,c)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+        font:{bold:true,sz:11,color:{rgb:"FFFFFF"}}, border:xlsBordas(),
+        alignment:{horizontal:"center",vertical:"center",wrapText:true} };
+    });
+    linhasOrdenadas.forEach((_,i) => {
+      const r = LIN_CAB + 1 + i;
+      const zebra = i % 2 ? "F7F9F7" : "FFFFFF";
+      COLS.forEach((_,c) => {
+        const k = cel(r,c);
+        if (!ws[k]) ws[k] = {t:"s", v:""};
+        ws[k].s = { fill:{patternType:"solid",fgColor:{rgb:zebra}}, font:{sz:10,color:{rgb:"222222"}},
+          border:xlsBordas(), alignment:{ horizontal: c===1 ? "left" : (c>=2 && c<=5 ? "right" : "left"),
+                                          vertical:"center", wrapText: c===1 } };
+        if (c===COL_QTD) ws[k].z = "#,##0.0";
+        if (c===COL_PRECO || c===COL_TOTAL) ws[k].z = "R$ #,##0.00";
+      });
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, comprasCatSel.slice(0,31));
+    XLSX.writeFile(wb, `Compras_${comprasCatSel}_${comprasSafraSel}`.replace(/[\/\\]/g,"-")+".xlsx");
+  }
 
   const refInsumosSafraAtiva = useMemo(() => {
     const verao = summaryVerao.filter(c=>c.ativo).reduce((s,c)=>s+c.insumos,0);
@@ -8107,9 +8173,6 @@ function App() {
           //    cima. Quem lê de volta é acharLinhaCabecalho, que procura a primeira linha com duas
           //    ou mais células preenchidas — por isso título, subtítulo e instrução são células
           //    MESCLADAS: contam como uma só e não confundem a busca.
-          const XLS_VERDE = "1A5C2E", XLS_VERDE_ESC = "0F3D1E", XLS_AMARELO = "FFF9DB";
-          const xlsBorda = { style:"thin", color:{rgb:"D9D9D9"} };
-          const xlsBordas = () => ({ top:xlsBorda, bottom:xlsBorda, left:xlsBorda, right:xlsBorda });
           function exportarCotacaoPlanilha() {
             const linhasOrdenadas = [...filtProds].sort((a,b)=>
               a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome));
@@ -8576,6 +8639,9 @@ function App() {
                     style={{padding:"6px 14px",background:"none",border:"1px dashed #00695c",color:"#00695c",borderRadius:6,fontSize:11,cursor:"pointer"}}>+ Lançamento manual</button>
                   <button onClick={()=>{setShowImportCompra(true);setImportCompraPreview(null);setImportCompraErro("");}}
                     style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer"}}>📥 Importar planilha</button>
+                  <button onClick={exportarComprasPlanilha} disabled={!comprasRecordsFiltrados.length}
+                    title="Exporta esta lista em .xlsx — só o que está na tabela, sem os painéis de análise. Pra imprimir e entregar em mãos, por exemplo pra quem confere a entrega das sementes."
+                    style={{padding:"6px 14px",background:"#e0f2f1",border:"none",color:"#00695c",borderRadius:6,fontSize:11,fontWeight:700,cursor:comprasRecordsFiltrados.length?"pointer":"default",opacity:comprasRecordsFiltrados.length?1:0.5}}>📊 Exportar planilha</button>
                   {comprasSafraSel===safraAtiva && CATEGORIAS_COMPRA_PADRAO.includes(comprasCatSel) && (
                     <button onClick={()=>{
                         const relatorio = atualizarCustoPorCategoria(comprasCatSel, comprasSafraSel);
