@@ -22,6 +22,10 @@
     #root { min-height: 100vh; }
     #loading { display:flex; align-items:center; justify-content:center; height:100vh; font-size:18px; color:#2e7d32; font-family:sans-serif; }
     @media print { .print-hide { display: none !important; } }
+    /* Tabela larga (ex.: Plano de Campo) precisa da largura inteira no papel, não da rolagem que
+       usa em tela estreita — sem isso, imprimindo de um celular em retrato, as colunas que não
+       cabiam na tela ficavam cortadas de fora do PDF. */
+    @media print { .print-wide { overflow: visible !important; width: max-content !important; max-width: none !important; } }
     .print-only { display: none; }
     @media print { .print-only { display: block !important; } }
     .dash-num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
