@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "16/09 · 1";
+const VERSAO_APP = "16/09 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2285,7 +2285,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     <div style={{padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <div className="print-hide" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
           {CAMPOS_IMPORTAVEIS.length>0 && (
             <button onClick={()=>{setImportCampo(CAMPOS_IMPORTAVEIS[0][0]);setImportPreview(null);setImportErro("");setShowImportCsv(true);}}
@@ -5146,7 +5146,10 @@ function App() {
       <div style={{minHeight:"100vh"}}>
 
       {/* ── TOP NAV ── */}
-      <div style={{background:navBg,color:"#fff",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
+      {/* print-hide: sem isso o cabeçalho (logo, safra, botões) imprimia em toda página impressa,
+          empurrando o conteúdo de verdade — foi o que ajudava a estourar o Plano de Campo pra duas
+          folhas, e fazia o título "Planejamento de Campo — Safra X" parecer puxado/desalinhado. */}
+      <div className="print-hide" style={{background:navBg,color:"#fff",position:"sticky",top:0,zIndex:200,boxShadow:"0 2px 8px rgba(0,0,0,0.25)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",rowGap:6,padding:isMobile?"7px 12px":"0 16px",minHeight:52}}>
           <div style={{display:"flex",alignItems:"center",gap:isMobile?8:12}}>
             <button onClick={()=>setSidebarOpen(true)} aria-label="Abrir menu"
