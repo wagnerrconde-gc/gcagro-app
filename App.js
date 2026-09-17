@@ -6558,6 +6558,14 @@ function App() {
         });
         const mesesList = Object.values(porMes).sort((a,b)=>a.sortKey-b.sortKey);
 
+        // Barras por dia: um lançamento por barra, em ordem cronológica — é o "que dia choveu"
+        // que a tabela (ordem de cadastro) e o resumo mensal (só o total do mês) não mostram.
+        const diasOrdenados = [...recsLote].sort((a,b) => {
+          const da = parseDataBR(a.data), db = parseDataBR(b.data);
+          return (da?da.getTime():0) - (db?db.getTime():0);
+        });
+        const maxMmDia = Math.max(...diasOrdenados.map(r=>r.mm||0), 1);
+
         return (
           <div style={{padding:"16px"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
@@ -6594,6 +6602,25 @@ function App() {
                 <div style={{fontSize:18,fontWeight:800,color:"#0288D1"}}>{fmtN(maiorChuva,1)} mm</div>
               </div>
             </div>
+
+            {diasOrdenados.length>0 && (
+              <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#0277bd",marginBottom:12}}>Chuva por dia — {chuvaLoteTab}</div>
+                <div className="chuva-barras" style={{display:"flex",gap:5,alignItems:"flex-end",overflowX:"auto",paddingBottom:4}}>
+                  {diasOrdenados.map(r=>{
+                    const altura = Math.max(4, Math.round((r.mm||0)/maxMmDia*110));
+                    return (
+                      <div key={r.id} title={`${r.data}: ${fmtN(r.mm,1)} mm`}
+                        style={{display:"flex",flexDirection:"column",alignItems:"center",flex:"0 0 auto",width:28}}>
+                        <div style={{fontSize:9,color:"#0277bd",fontWeight:700,marginBottom:3,height:12}}>{r.mm ? fmtN(r.mm,0) : ""}</div>
+                        <div style={{width:16,height:altura,background:"linear-gradient(180deg,#4fc3f7,#0288D1)",borderRadius:"3px 3px 0 0"}}/>
+                        <div style={{fontSize:8,color:"#999",marginTop:4,whiteSpace:"nowrap"}}>{(r.data||"").slice(0,5)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div style={{display:"flex",gap:8,marginBottom:14}}>
               <button onClick={()=>{setAddingChuva(a=>!a);setChuvaSubmitError("");}}
