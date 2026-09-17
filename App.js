@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "17/09 · 1";
+const VERSAO_APP = "17/09 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2213,6 +2213,17 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
+  // Largura de cada coluna NO PAPEL, em proporção — sem isso (table-layout:fixed reparte em
+  // partes iguais) a coluna Área ficava do mesmo tamanho que Lote ou Adubação, sobrando espaço
+  // vazio nela e faltando nas colunas de texto longo. Área ganha um peso bem menor aqui: no papel
+  // ela só mostra um número curto ("158,0"), não precisa da largura de uma caixa de digitar.
+  // Calculado só sobre as colunas que aparecem impressas — as escondidas (Quantidade, Unid.,
+  // Prev. Colheita) não disputam largura nenhuma.
+  const colsImpressao = cols.filter(c => !c[6]);
+  const pesoImpressao = c => c[0]==="area" ? 44 : (c[3] || 70);
+  const somaPesos = colsImpressao.reduce((s,c) => s+pesoImpressao(c), 0);
+  const larguraImpressaoPct = c => c[6] ? null : (pesoImpressao(c)/somaPesos*100);
+
   // Exporta o Planejamento de Campo em .xlsx — sem a limitação de largura de página que a
   // impressão tem. TODAS as colunas entram, inclusive as que somem no papel por falta de espaço
   // (Quantidade, Unidade, Prev. Colheita): aqui não tem página nenhuma pra estourar.
@@ -2360,8 +2371,9 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           <table className="print-tight" style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
-                {[...cols.map(c=>[c[1],c[6]]),["","print-hide"]].map(([h,printHide])=>(
-                  <th key={h} className={printHide?"print-hide":undefined} style={{padding:"8px 8px",textAlign:"center",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap"}}>{h}</th>
+                {[...cols.map(c=>[c[1],c[6],larguraImpressaoPct(c)]),["","print-hide",null]].map(([h,printHide,pct])=>(
+                  <th key={h} className={printHide?"print-hide":undefined}
+                    style={{padding:"8px 8px",textAlign:"center",fontSize:9,textTransform:"uppercase",letterSpacing:1,whiteSpace:"nowrap",...(pct!=null?{width:pct+"%"}:null)}}>{h}</th>
                 ))}
               </tr>
             </thead>
