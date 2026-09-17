@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "17/09 · 2";
+const VERSAO_APP = "17/09 · 3";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2224,28 +2224,44 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   const somaPesos = colsImpressao.reduce((s,c) => s+pesoImpressao(c), 0);
   const larguraImpressaoPct = c => c[6] ? null : (pesoImpressao(c)/somaPesos*100);
 
-  // Exporta o Planejamento de Campo em .xlsx — sem a limitação de largura de página que a
-  // impressão tem. TODAS as colunas entram, inclusive as que somem no papel por falta de espaço
-  // (Quantidade, Unidade, Prev. Colheita): aqui não tem página nenhuma pra estourar.
+  // Exporta o Planejamento de Campo em .xlsx — documento pra circular fora do app, então segue
+  // o mesmo recorte de colunas da impressão (Quantidade, Unidade e Prev. Colheita ficam de fora,
+  // são só uso interno) e acrescenta a linha de TOTAL e as Observações da safra abaixo da tabela.
   function exportarPlanoPlanilha() {
-    const COLS = cols.map(c => c[1]);   // rótulo de cada coluna, na mesma ordem da tela
-    const linha = row => cols.map(([field,,type]) => {
+    // Mesmo recorte de colunas da impressão: Quantidade, Unidade e Prev. Colheita ficam de fora
+    // — não porque não coubessem (aqui não tem limite de largura), mas porque são informação só
+    // de uso interno, que continua arquivada no app e não precisa ir em documento pra fora.
+    const colsExport = colsImpressao;
+    const COLS = colsExport.map(c => c[1]);
+    const linha = row => colsExport.map(([field,,type]) => {
       if (type==="calc") { const q = calcQtdSementes(row); return q!=null ? q : ""; }
       if (type==="unit") return row.unidadeQtd || (row.cultura==="Soja"?"bag":"saco");
       return row[field] ?? "";
     });
     const titulo = `GC AGRO — PLANEJAMENTO DE CAMPO · ${isVerao?"SAFRA VERÃO":"SAFRINHA/INVERNO"}`;
     const subtitulo = `${data.length} lote(s) · ${fmtN(total,1)} ha · gerada em ${new Date().toLocaleDateString("pt-BR")}`;
-    const aoa = [[titulo],[subtitulo],[],COLS, ...data.map(linha)];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const linhaTotal = colsExport.map((c,ci) => ci===0 ? "TOTAL" : ci===1 ? total : "");
+    const textoObs = [obs,obs2].map(t=>(t||"").trim()).filter(Boolean).join("\n");
+
     const LIN_CAB = 3;
-    const ultima = LIN_CAB + data.length;
+    const LIN_TOTAL = LIN_CAB + 1 + data.length;
+    const temObs = !!textoObs;
+    const LIN_OBS_TITULO = LIN_TOTAL + 2;   // uma linha em branco de respiro antes
+    const LIN_OBS_TEXTO = LIN_OBS_TITULO + 1;
+
+    const aoa = [[titulo],[subtitulo],[],COLS, ...data.map(linha), linhaTotal];
+    if (temObs) { aoa.push([]); aoa.push(["Observações da safra"]); aoa.push([textoObs]); }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const cel = (r,c) => XLSX.utils.encode_cell({r,c});
 
     ws["!merges"] = [0,1].map(r => ({ s:{r,c:0}, e:{r,c:COLS.length-1} }));
-    ws["!cols"] = cols.map(c => ({ wch: Math.max(10, Math.round((c[3]||80)/7)) }));
+    if (temObs) {
+      ws["!merges"].push({ s:{r:LIN_OBS_TITULO,c:0}, e:{r:LIN_OBS_TITULO,c:COLS.length-1} });
+      ws["!merges"].push({ s:{r:LIN_OBS_TEXTO,c:0}, e:{r:LIN_OBS_TEXTO,c:COLS.length-1} });
+    }
+    ws["!cols"] = colsExport.map(c => ({ wch: Math.max(10, Math.round((c[3]||80)/7)) }));
     ws["!rows"] = [{hpt:26},{hpt:17},{hpt:6}];
-    ws["!autofilter"] = { ref:`${cel(LIN_CAB,0)}:${cel(ultima,COLS.length-1)}` };
+    ws["!autofilter"] = { ref:`${cel(LIN_CAB,0)}:${cel(LIN_TOTAL-1,COLS.length-1)}` };
 
     ws[cel(0,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE_ESC}},
       font:{bold:true,sz:15,color:{rgb:"FFFFFF"}}, alignment:{horizontal:"center",vertical:"center"} };
@@ -2259,7 +2275,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     data.forEach((_,i) => {
       const r = LIN_CAB + 1 + i;
       const zebra = i % 2 ? "F7F9F7" : "FFFFFF";
-      cols.forEach((c,ci) => {
+      colsExport.forEach((c,ci) => {
         const k = cel(r,ci);
         if (!ws[k]) ws[k] = {t:"s", v:""};
         ws[k].s = { fill:{patternType:"solid",fgColor:{rgb:zebra}}, font:{sz:10,color:{rgb:"222222"}},
@@ -2267,6 +2283,18 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
         if (c[2]==="number" || c[2]==="calc") ws[k].z = "#,##0.0";
       });
     });
+    colsExport.forEach((c,ci) => {
+      const k = cel(LIN_TOTAL,ci);
+      if (!ws[k]) ws[k] = {t:"s", v:""};
+      ws[k].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}}, font:{bold:true,sz:10,color:{rgb:"FFFFFF"}},
+        border:xlsBordas(), alignment:{ horizontal: ci===0 ? "left" : "center", vertical:"center" } };
+      if (ci===1) ws[k].z = "#,##0.0";
+    });
+    if (temObs) {
+      ws[cel(LIN_OBS_TITULO,0)].s = { font:{bold:true,sz:11,color:{rgb:XLS_VERDE_ESC}} };
+      ws[cel(LIN_OBS_TEXTO,0)].s = { font:{sz:10,color:{rgb:"333333"}}, alignment:{wrapText:true,vertical:"top"} };
+      ws["!rows"][LIN_OBS_TEXTO] = { hpt: Math.max(20, textoObs.split("\n").length*14) };
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, isVerao ? "Verão" : "Inverno");
     XLSX.writeFile(wb, `Plano_Campo_${isVerao?"Verao":"Inverno"}`.replace(/[\/\\]/g,"-")+".xlsx");
