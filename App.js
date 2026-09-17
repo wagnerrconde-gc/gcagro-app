@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "17/09 · 3";
+const VERSAO_APP = "17/09 · 4";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -572,7 +572,10 @@ function fechadoNaPlanilha(p) {
 }
 function produtoJaResolvido(p) {
   const obs = (p.obs||"").trim().toLowerCase();
-  return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra!=null || fechadoNaPlanilha(p);
+  // >0, não "!=null": um clique sem querer no campo Compra(R$) grava 0 (parseNumBR de campo
+  // vazio vira 0, não null) — R$ 0,00 não é uma compra fechada de verdade, e contar como
+  // resolvido tirava o produto inteiro da soma da Cotação sem nenhuma compra ter acontecido.
+  return obs.includes("estoque") || obs.includes("avaliar") || p.preco_compra>0 || fechadoNaPlanilha(p);
 }
 // Só Químicos vão da Programação pra Compras: TS, Kit Sulco, Herbicidas, Foliares, Fungicidas,
 // Inseticidas e Óleos/Adjuvantes. Adubação e Sementes são poucos itens e continuam sendo lançados
@@ -3494,7 +3497,14 @@ function App() {
   function updateField(catIdx, prodIdx, field, value) {
     const cat = data[activeCulture].categories[catIdx];
     const pAtual = cat.products[prodIdx];
-    const novoValor = ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
+    // Compra(R$) vazio precisa virar null, não 0: parseNumBR("") sempre devolve 0, e um clique
+    // sem querer no campo (abre e fecha sem digitar nada) gravava R$ 0,00 — que produtoJaResolvido
+    // e a marcação "comprado" tratam como compra fechada, tirando o produto da soma da Cotação
+    // sem nenhuma compra ter acontecido de verdade. Isso também é o que deixava o campo preso: sem
+    // isso, apagar o valor e sair sempre voltava a gravar 0 em vez de ficar vazio de novo.
+    const vazio = field==="preco_compra" && !String(value||"").trim();
+    const novoValor = vazio ? null
+      : ["produto","fase","obs","revenda","vencimento","ingrediente_ativo","unidade"].includes(field)?value:parseNumBR(value);
     if (novoValor === pAtual[field]) return;
     setData(d=>{
       const nd=JSON.parse(JSON.stringify(d));
@@ -3774,7 +3784,7 @@ function App() {
         "Unidade": p.unidade||"",
         "Fase": p.fase||"",
         "Obs": p.obs||"",
-        "Preço": p.preco_compra!=null ? p.preco_compra : (p.preco_unit||0),
+        "Preço": p.preco_compra>0 ? p.preco_compra : (p.preco_unit||0),
       });
     })));
     if (!linhas.length) { window.alert("Nenhum produto pra exportar nesta safra."); return; }
@@ -5653,7 +5663,7 @@ function App() {
                       const preco = precoEfetivo(p);
                       const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                       const total = qtd*preco;
-                      const comprado = p.preco_compra!=null;
+                      const comprado = p.preco_compra>0;
                       const areaRef = isSementes ? (p.area||0) : culture.area;
                       const unidTxt = p.unidade||(isSementes?"bag":"kg");
                       const chaveProd = activeCulture+"|"+catIdx+"|"+prodIdx;
@@ -5757,7 +5767,7 @@ function App() {
                           const qtd = isTS ? calcQtdTS(p,culture) : isSementes ? (p.qtd||0) : (p.dose>0?p.dose*p.area:p.area);
                           const total = qtd*preco;
                           const bg = prodIdx%2===0?"#fff":"#fafafa";
-                          const comprado = p.preco_compra!=null;
+                          const comprado = p.preco_compra>0;
                           return (
                             <tr key={prodIdx} data-prod={catIdx+"|"+prodIdx} style={{background:bg}}>
                               <td style={{padding:padCel,width:colW("Produto"),textAlign:"center",fontWeight:600,overflowWrap:"break-word",...stickyCol(bg)}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="produto" type="text" value={p.produto}/></td>
@@ -9345,7 +9355,7 @@ function App() {
                                                 <td style={{padding:"4px 7px",textAlign:"right",color:"#666"}}>{fmtN(qtd,1)}</td>
                                                 <td style={{padding:"4px 7px",color:"#888"}}>{p.fase}</td>
                                                 <td style={{padding:"4px 7px",textAlign:"right"}}>{fmt(p.preco_unit)}</td>
-                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{p.preco_compra!=null?fmt(p.preco_compra):"—"}</td>
+                                                <td style={{padding:"4px 7px",textAlign:"right"}}>{p.preco_compra>0?fmt(p.preco_compra):"—"}</td>
                                                 <td style={{padding:"4px 7px",textAlign:"right",fontWeight:700}}>{fmt(qtd*preco)}</td>
                                                 <td style={{padding:"4px 7px",color:"#888"}}>{p.revenda}</td>
                                                 <td style={{padding:"4px 7px",color:"#888",fontSize:10}}>{p.vencimento}</td>
