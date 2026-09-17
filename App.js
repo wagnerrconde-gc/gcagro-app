@@ -200,7 +200,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "16/09 · 3";
+const VERSAO_APP = "17/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2213,6 +2213,54 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
+  // Exporta o Planejamento de Campo em .xlsx — sem a limitação de largura de página que a
+  // impressão tem. TODAS as colunas entram, inclusive as que somem no papel por falta de espaço
+  // (Quantidade, Unidade, Prev. Colheita): aqui não tem página nenhuma pra estourar.
+  function exportarPlanoPlanilha() {
+    const COLS = cols.map(c => c[1]);   // rótulo de cada coluna, na mesma ordem da tela
+    const linha = row => cols.map(([field,,type]) => {
+      if (type==="calc") { const q = calcQtdSementes(row); return q!=null ? q : ""; }
+      if (type==="unit") return row.unidadeQtd || (row.cultura==="Soja"?"bag":"saco");
+      return row[field] ?? "";
+    });
+    const titulo = `GC AGRO — PLANEJAMENTO DE CAMPO · ${isVerao?"SAFRA VERÃO":"SAFRINHA/INVERNO"}`;
+    const subtitulo = `${data.length} lote(s) · ${fmtN(total,1)} ha · gerada em ${new Date().toLocaleDateString("pt-BR")}`;
+    const aoa = [[titulo],[subtitulo],[],COLS, ...data.map(linha)];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const LIN_CAB = 3;
+    const ultima = LIN_CAB + data.length;
+    const cel = (r,c) => XLSX.utils.encode_cell({r,c});
+
+    ws["!merges"] = [0,1].map(r => ({ s:{r,c:0}, e:{r,c:COLS.length-1} }));
+    ws["!cols"] = cols.map(c => ({ wch: Math.max(10, Math.round((c[3]||80)/7)) }));
+    ws["!rows"] = [{hpt:26},{hpt:17},{hpt:6}];
+    ws["!autofilter"] = { ref:`${cel(LIN_CAB,0)}:${cel(ultima,COLS.length-1)}` };
+
+    ws[cel(0,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE_ESC}},
+      font:{bold:true,sz:15,color:{rgb:"FFFFFF"}}, alignment:{horizontal:"center",vertical:"center"} };
+    ws[cel(1,0)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+      font:{sz:10,color:{rgb:"D7EBD9"}}, alignment:{horizontal:"center",vertical:"center"} };
+    COLS.forEach((_,c) => {
+      ws[cel(LIN_CAB,c)].s = { fill:{patternType:"solid",fgColor:{rgb:XLS_VERDE}},
+        font:{bold:true,sz:11,color:{rgb:"FFFFFF"}}, border:xlsBordas(),
+        alignment:{horizontal:"center",vertical:"center",wrapText:true} };
+    });
+    data.forEach((_,i) => {
+      const r = LIN_CAB + 1 + i;
+      const zebra = i % 2 ? "F7F9F7" : "FFFFFF";
+      cols.forEach((c,ci) => {
+        const k = cel(r,ci);
+        if (!ws[k]) ws[k] = {t:"s", v:""};
+        ws[k].s = { fill:{patternType:"solid",fgColor:{rgb:zebra}}, font:{sz:10,color:{rgb:"222222"}},
+          border:xlsBordas(), alignment:{ horizontal: ci===0 ? "left" : "center", vertical:"center" } };
+        if (c[2]==="number" || c[2]==="calc") ws[k].z = "#,##0.0";
+      });
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, isVerao ? "Verão" : "Inverno");
+    XLSX.writeFile(wb, `Plano_Campo_${isVerao?"Verao":"Inverno"}`.replace(/[\/\\]/g,"-")+".xlsx");
+  }
+
   // Taxa média de Adubação, KCl e (no Inverno) N de Cobertura (kg/ha), ponderada pela área de cada lote, separada por cultura.
   const campoAdubacao = isVerao ? "adubacao" : "adubacaoPlantio";
   const campoKcl = isVerao ? "kcl" : "cobertura";
@@ -2286,6 +2334,9 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:16,fontWeight:800,color:cor}}>🗺️ Planejamento de Campo — {isVerao?"Safra Verão":"Safrinha/Inverno"}</div>
         <div className="print-hide" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button onClick={exportarPlanoPlanilha} disabled={!data.length}
+            title="Exporta em .xlsx — todas as colunas, inclusive as que não cabem impressas."
+            style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:data.length?"pointer":"default",opacity:data.length?1:0.5}}>📊 Exportar planilha</button>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
           {CAMPOS_IMPORTAVEIS.length>0 && (
             <button onClick={()=>{setImportCampo(CAMPOS_IMPORTAVEIS[0][0]);setImportPreview(null);setImportErro("");setShowImportCsv(true);}}
@@ -2306,7 +2357,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
             larga o bastante mesmo assim (deitada), porque o aparelho decide o tamanho do papel,
             não o app. */}
         <div className="print-wide" style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <table className="print-tight" style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:cor,color:"#fff"}}>
                 {[...cols.map(c=>[c[1],c[6]]),["","print-hide"]].map(([h,printHide])=>(
@@ -2339,11 +2390,21 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
                             <option value="bag">bag</option>
                             <option value="saco">saco</option>
                           </select>
-                        ) : (
-                          <input type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
+                        ) : (<>
+                          <input className="print-hide" type={type} value={row[field]||(type==="number"?"":"")} onChange={e=>upd(i,field,e.target.value)}
                             placeholder={field.startsWith("data")||field==="previsaoColheita"?"dd/mm/aaaa":""}
                             style={{width:"100%",minWidth:width||(type==="number"?55:80),padding:"3px 5px",border:"1px solid #ddd",borderRadius:3,fontSize:11,textAlign:dataAlign||"center"}}/>
-                        )}
+                          {/* Versão só pra impressão: <input> não quebra linha mesmo com CSS —
+                              texto maior que a caixa fica cortado por dentro, invisível. Isto é
+                              texto comum, que quebra linha normal: nunca perde conteúdo, na pior
+                              das hipóteses a linha fica mais alta. */}
+                          {/* Mesma regra do input: valor "falsy" (0, "", null) mostra em branco — é
+                              assim que o campo sinaliza "ainda não preenchido", inclusive pra
+                              número (Ciclo 0 não é um ciclo real, é campo vazio). */}
+                          <div className="print-only" style={{textAlign:dataAlign||"center",wordBreak:"break-word"}}>
+                            {type==="number" ? (row[field] ? fmtN(row[field],1) : "") : (row[field]||"")}
+                          </div>
+                        </>)}
                       </td>
                     ))}
                     <td className="print-hide" style={{padding:"3px 4px",textAlign:"center",whiteSpace:"nowrap"}}>
@@ -6403,9 +6464,18 @@ function App() {
       ══════════════════════════════════════════════════════ */}
       {appView==="chuva" && (()=>{
         const safrasSet = new Set(chuvaRecords.map(r=>r.safra).filter(Boolean));
+        // Cada lote é um posto de leitura próprio (um pluviômetro), não uma fração da mesma chuva
+        // — somar as leituras de postos diferentes juntas não representa milímetro nenhum real
+        // (289 mm somando 4 postos não quer dizer que choveu 289 mm em lugar nenhum). O número que
+        // faz sentido pra safra inteira é a MÉDIA entre os totais de cada posto: quanto choveu, em
+        // média, nos pontos que a fazenda mede. Total por posto primeiro, média dos totais depois.
         const chuvaSafrasList = Array.from(safrasSet).map(safra => {
           const recs = chuvaRecords.filter(r=>r.safra===safra);
-          return { safra, total: recs.reduce((s,r)=>s+(r.mm||0),0), count: recs.length };
+          const totalPorLote = {};
+          recs.forEach(r => { totalPorLote[r.lote] = (totalPorLote[r.lote]||0) + (r.mm||0); });
+          const totais = Object.values(totalPorLote);
+          const media = totais.length ? totais.reduce((a,b)=>a+b,0)/totais.length : 0;
+          return { safra, media, lotes: totais.length, count: recs.length };
         }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
 
         if (!chuvaSafraSel) return (
@@ -6417,8 +6487,9 @@ function App() {
                   style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #0288D1":"1px solid transparent"}}>
                   <div style={{fontSize:26}}>🌧️</div>
                   <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Safra {s.safra}</div>
-                  <div style={{fontSize:11,color:"#888",marginTop:6}}>{s.count} lançamento{s.count===1?"":"s"}</div>
-                  <div style={{fontSize:14,fontWeight:800,marginTop:4,color:"#0288D1"}}>{fmtN(s.total,1)} mm</div>
+                  <div style={{fontSize:11,color:"#888",marginTop:6}}>{s.count} lançamento{s.count===1?"":"s"} · {s.lotes} lote{s.lotes===1?"":"s"}</div>
+                  <div style={{fontSize:14,fontWeight:800,marginTop:4,color:"#0288D1"}}>{fmtN(s.media,1)} mm</div>
+                  <div style={{fontSize:9,color:"#aaa"}}>média entre os lotes</div>
                 </div>
               ))}
             </div>
