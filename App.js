@@ -20,17 +20,27 @@ try {
 
 // Sincroniza um pedaço de estado com o Firebase Realtime Database.
 // Escuta mudanças remotas (outro dispositivo) e também envia mudanças locais.
+// Guarda o CONTEÚDO do último valor que veio do servidor (ou que subiu pra ele), não um
+// "pule a próxima subida". Com o sinalizador de pular, uma alteração local que acontecesse na
+// mesma rodada de render de um snapshot remoto era engolida: o React junta as duas mudanças,
+// o efeito de subida roda UMA vez só, vê o sinalizador ligado e não enviava nada — a alteração
+// ficava só naquele aparelho e sumia no snapshot seguinte. Era assim que compras lançadas pela
+// Programação desapareciam de vez em quando (e, pior, a memória de "já lançada" subia normal,
+// num nó separado, então o lançamento automático nunca recriava a compra perdida).
+// Comparando o conteúdo, eco do próprio envio não sobe de novo, mas alteração local sempre sobe.
 function useFirebaseSync(path, value, setValue) {
   const ready = useRef(false);
-  const skipNext = useRef(false);
+  const ultimoSincronizado = useRef(undefined);
   useEffect(() => {
     if (!fbDb || !path) return;
     const ref = fbDb.ref(path);
     const cb = ref.on("value", snap => {
       if (snap.exists()) {
-        skipNext.current = true;
-        setValue(snap.val());
+        const remoto = snap.val();
+        ultimoSincronizado.current = JSON.stringify(remoto);
+        setValue(remoto);
       } else if (!ready.current) {
+        ultimoSincronizado.current = JSON.stringify(value);
         ref.set(value).catch(err => console.error("Firebase seed falhou:", err));
       }
       ready.current = true;
@@ -40,7 +50,9 @@ function useFirebaseSync(path, value, setValue) {
   }, [path]);
   useEffect(() => {
     if (!fbDb || !path || !ready.current) return;
-    if (skipNext.current) { skipNext.current = false; return; }
+    const atual = JSON.stringify(value);
+    if (atual === ultimoSincronizado.current) return;
+    ultimoSincronizado.current = atual;
     fbDb.ref(path).set(value).catch(err => console.error("Firebase set falhou:", err));
     // eslint-disable-next-line
   }, [value, path]);
@@ -200,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "17/09 · 4";
+const VERSAO_APP = "23/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
