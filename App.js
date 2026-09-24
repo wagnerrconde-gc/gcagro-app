@@ -2711,29 +2711,50 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     doc.text(`gerado em ${new Date().toLocaleDateString("pt-BR")}`, larg/2, m+15, { align:"center" });
     let y = m + 20;
 
+    // Quebra de página pensada pra folha que vai pro campo: cada CULTURA começa numa página nova
+    // (menos a primeira, que vem logo depois do título geral), e cada bloco (variedade, ou kit
+    // comum) nunca se parte — se não couber no resto da página, desce inteiro. A faixa da cultura
+    // também nunca fica sozinha no pé: desce junto com o primeiro bloco. Pra saber se cabe, cada
+    // bloco é medido antes, desenhado num PDF de rascunho. Bloco maior que uma página inteira não
+    // tem como ficar inteiro — parte, e o nome dele entra no aviso no fim.
+    const opcoesBloco = (tituloBloco, colunas, obs, vazio, comSubtitulo) => {
+      const nCol = Math.max(1, colunas.length);
+      const body = colunas.length ? [colunas.map(([,t]) => t)] : [[vazio]];
+      if (obs) body.push([{ content:"Obs: "+obs, colSpan:nCol, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
+      const largCol = (larg-2*m)/nCol;
+      return {
+        margin:{ left:m, right:m }, theme:"grid", rowPageBreak:"avoid",
+        head: [[{ content:tituloBloco, colSpan:nCol, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
+               ...(comSubtitulo && colunas.length ? [colunas.map(([nome]) => nome)] : [])],
+        body,
+        styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
+        headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
+        columnStyles: Object.fromEntries([...Array(nCol)].map((_,i) => [i, { cellWidth:largCol }])),
+        showHead: "firstPage",
+      };
+    };
+    const alturaBloco = opcoes => {
+      // Rascunho com a mesma largura da A4 mas bem comprido: numa folha normal, bloco que não
+      // coubesse pularia de página e a medida pegaria só o pedaço final.
+      const rascunho = new jsPDF({ orientation:"portrait", unit:"mm", format:[larg, 5000] });
+      rascunho.autoTable({ ...opcoes, startY:m });
+      return rascunho.lastAutoTable.finalY - m;
+    };
+    const cabeUmaPagina = alt - 2*m;
+    const grandes = [];
+    const desenhar = ({ opcoes, rotulo }) => {
+      const h = alturaBloco(opcoes);
+      // Não cabe no resto da página: desce inteiro — a não ser que já esteja logo abaixo da faixa
+      // da cultura (descer deixaria a faixa sozinha e não ganharia espaço nenhum).
+      if (y + h > alt - m && y > m + 10.5) { doc.addPage(); y = m; }
+      if (y + h > alt - m) grandes.push(rotulo);   // nem numa folha inteira cabe: vai partir
+      doc.autoTable({ ...opcoes, startY:y });
+      y = doc.lastAutoTable.finalY + 4;
+    };
+
+    let primeiraCultura = true;
     Object.entries(grouped).forEach(([cult,rows]) => {
       if (!rows.length) return;
-      if (y + 30 > alt - m) { doc.addPage(); y = m; }   // faixa da cultura nunca fica sozinha no pé da página
-      faixa(String(cult).toUpperCase(), y, 8, 11, false);
-      y += 10;
-      // Monta um bloco (tabela) com um título na faixa verde-clara e as colunas que tiverem texto.
-      const bloco = (titulo, colunas, obs, vazio, comSubtitulo) => {
-        const nCol = Math.max(1, colunas.length);
-        const body = colunas.length ? [colunas.map(([,t]) => t)] : [[vazio]];
-        if (obs) body.push([{ content:"Obs: "+obs, colSpan:nCol, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
-        const largCol = (larg-2*m)/nCol;
-        doc.autoTable({
-          startY: y, margin:{ left:m, right:m }, theme:"grid", rowPageBreak:"avoid",
-          head: [[{ content:titulo, colSpan:nCol, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
-                 ...(comSubtitulo && colunas.length ? [colunas.map(([nome]) => nome)] : [])],
-          body,
-          styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
-          headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
-          columnStyles: Object.fromEntries([...Array(nCol)].map((_,i) => [i, { cellWidth:largCol }])),
-          showHead: "firstPage",
-        });
-        y = doc.lastAutoTable.finalY + 4;
-      };
       // Kit Sulco IGUAL em mais de uma variedade da cultura (ex.: milho com tratamento de semente
       // diferente por variedade, mas o mesmo kit) sai UMA vez só, depois dos tratamentos, dizendo
       // pra quais variedades vale. A comparação ignora ordem das linhas, maiúsculas e espaços.
@@ -2746,22 +2767,32 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       // Cada variedade: só a coluna que tem conteúdo — sem tratamento de semente (ex.: soja que não
       // vai ser tratada) sai só o Kit Sulco, e vice-versa. Se o kit dela é o comum, ele fica de fora
       // aqui; e se só tinha o kit (sem tratamento nem obs), a variedade nem ganha bloco próprio.
+      const blocos = [];
       rows.forEach(r => {
         const ts = itens(r.dose100kg);
         const comum = noKitComum.has(r);
         if (comum && !ts && !r.obs) return;
         const colunas = [["Dose por 100 kg de semente", ts], ["Kit Sulco", comum ? "" : itens(r.kitSulco)]].filter(([,t]) => t);
-        bloco("Variedade: "+(r.variedade||"Todas"), colunas, r.obs,
-          comum ? "Sem tratamento de semente" : "Sem tratamento de semente e sem kit sulco", true);
+        const rotulo = `${cult} — ${r.variedade||"Todas"}`;
+        blocos.push({ rotulo, opcoes: opcoesBloco("Variedade: "+(r.variedade||"Todas"), colunas, r.obs,
+          comum ? "Sem tratamento de semente" : "Sem tratamento de semente e sem kit sulco", true) });
       });
       kitsComuns.forEach(g => {
         const quais = g.length === rows.length ? "todas as variedades" : g.map(r => r.variedade||"Todas").join(", ");
-        bloco("Kit Sulco — "+quais, [["Kit Sulco", itens(g[0].kitSulco)]], "", "", false);
+        blocos.push({ rotulo:`${cult} — Kit Sulco (${quais})`, opcoes: opcoesBloco("Kit Sulco — "+quais, [["Kit Sulco", itens(g[0].kitSulco)]], "", "", false) });
       });
-      y += 2;
+      if (!blocos.length) return;
+
+      if (!primeiraCultura) { doc.addPage(); y = m; }
+      else if (y + 10 + Math.min(alturaBloco(blocos[0].opcoes), cabeUmaPagina) > alt - m) { doc.addPage(); y = m; }
+      primeiraCultura = false;
+      faixa(String(cult).toUpperCase(), y, 8, 11, false);
+      y += 10;
+      blocos.forEach(desenhar);
     });
 
     doc.save(String(titulo).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_")+".pdf");
+    if (grandes.length) window.alert("Atenção: estes blocos são maiores que uma página inteira e ficaram partidos entre duas folhas:\n\n• " + grandes.join("\n• ") + "\n\nSe der, divida a lista de produtos dessa variedade.");
   }
   function exportarWord() {
     const verde = cor||"#1a5c2e";
@@ -2773,33 +2804,42 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     const faixa = (texto, tamanho, centro) =>
       `<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:14px 0 6px;">`
       + `<tr><td bgcolor="${verde}" style="background:${verde};padding:6px 12px;${centro?"text-align:center;":""}">`
-      + `<span style="color:#ffffff;font-weight:bold;font-size:${tamanho};font-family:Arial,sans-serif;">${esc(texto)}</span>`
+      + `<p style="margin:0;page-break-after:avoid"><span style="color:#ffffff;font-weight:bold;font-size:${tamanho};font-family:Arial,sans-serif;">${esc(texto)}</span></p>`
       + `</td></tr></table>`;
     let html = `<html><head><meta charset='utf-8'><style>
       body{font-family:Arial,sans-serif;margin:40px;color:#222;}
       h2{color:${verde};font-size:13px;margin:18px 0 4px;}
-      ul{margin:4px 0 10px 20px;}
-      li{font-size:12px;line-height:1.8;}
+      p.rotulo{font-size:12px;font-weight:bold;margin:6px 0 2px;}
+      p.item{font-size:12px;line-height:1.6;margin:0 0 0 18px;}
       .obs{font-size:11px;color:#666;}
       hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
     </style></head><body>
     ${faixa(`GC Agro — ${titulo}`, "16px", true)}`;
-    Object.entries(grouped).forEach(([cult,rows])=>{
+    // Quebra de página pra folha de campo: cada CULTURA começa em página nova (menos a primeira);
+    // todo parágrafo de um bloco de variedade leva "page-break-after:avoid" — o Word lê como
+    // "Manter com o próximo" —, menos o último, então título da variedade, "Dose por 100 kg",
+    // produtos, "Kit Sulco" e obs descem juntos pra próxima folha em vez de partir no meio. A
+    // faixa da cultura também "mantém com o próximo", pra nunca ficar sozinha no pé da página.
+    let culturasEscritas = 0;
+    Object.entries(grouped).forEach(([cult,rows]) => {
+      if (!rows.length) return;
+      if (culturasEscritas++ > 0) html += `<br clear="all" style="page-break-before:always">`;
       html += faixa(String(cult).toUpperCase(), "14px", false);
-      rows.forEach(r=>{
-        html += `<h2>Variedade: ${esc(r.variedade||"Todas")}</h2>`;
-        if (r.dose100kg) {
-          html += `<b style='font-size:12px'>Dose por 100 kg de Semente:</b><ul>`;
-          r.dose100kg.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${esc(l.trim())}</li>`;});
-          html += `</ul>`;
-        }
-        if (r.kitSulco) {
-          html += `<b style='font-size:12px'>Kit Sulco:</b><ul>`;
-          r.kitSulco.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${esc(l.trim())}</li>`;});
-          html += `</ul>`;
-        }
-        if (r.obs) html += `<p class='obs'>Obs: ${esc(r.obs)}</p>`;
-        html += `<hr>`;
+      rows.forEach(r => {
+        const pars = [`<h2>Variedade: ${esc(r.variedade||"Todas")}</h2>`];
+        const lista = (rotulo, texto) => {
+          const linhas = String(texto||"").split("\n").map(l=>l.trim()).filter(Boolean);
+          if (!linhas.length) return;
+          pars.push(`<p class='rotulo'>${rotulo}</p>`);
+          linhas.forEach(l => pars.push(`<p class='item'>• ${esc(l)}</p>`));
+        };
+        lista("Dose por 100 kg de Semente:", r.dose100kg);
+        lista("Kit Sulco:", r.kitSulco);
+        if (r.obs) pars.push(`<p class='obs'>Obs: ${esc(r.obs)}</p>`);
+        const ultimo = pars.length - 1;
+        html += `<div style="page-break-inside:avoid">`
+          + pars.map((p,i) => i < ultimo ? p.replace(/^<(\w+)/, `<$1 style="page-break-after:avoid"`) : p).join("")
+          + `</div><hr>`;
       });
     });
     html += `</body></html>`;
