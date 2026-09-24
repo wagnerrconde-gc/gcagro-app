@@ -2711,10 +2711,10 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     doc.text(`gerado em ${new Date().toLocaleDateString("pt-BR")}`, larg/2, m+15, { align:"center" });
     let y = m + 20;
 
-    // Quebra de página pensada pra folha que vai pro campo: cada CULTURA começa numa página nova
-    // (menos a primeira, que vem logo depois do título geral), e cada bloco (variedade, ou kit
-    // comum) nunca se parte — se não couber no resto da página, desce inteiro. A faixa da cultura
-    // também nunca fica sozinha no pé: desce junto com o primeiro bloco. Pra saber se cabe, cada
+    // Quebra de página pensada pra folha que vai pro campo: as culturas vão uma atrás da outra
+    // (sem forçar página nova), mas cada bloco (variedade, ou kit comum) nunca se parte — se não
+    // couber no resto da página, desce inteiro. A faixa da cultura também nunca fica sozinha no
+    // pé: se ela e o primeiro bloco não couberem juntos, os dois descem. Pra saber se cabe, cada
     // bloco é medido antes, desenhado num PDF de rascunho. Bloco maior que uma página inteira não
     // tem como ficar inteiro — parte, e o nome dele entra no aviso no fim.
     const opcoesBloco = (tituloBloco, colunas, obs, vazio, comSubtitulo) => {
@@ -2790,9 +2790,9 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       });
       if (!blocos.length) return;
 
-      if (!primeiraCultura) { doc.addPage(); y = m; }
-      else if (y + 10 + Math.min(alturaBloco(blocos[0].opcoes), cabeUmaPagina) > alt - m) { doc.addPage(); y = m; }
+      if (!primeiraCultura) y += 4;   // respiro entre uma cultura e a outra
       primeiraCultura = false;
+      if (y + 10 + Math.min(alturaBloco(blocos[0].opcoes), cabeUmaPagina - 10) > alt - m) { doc.addPage(); y = m; }
       faixa(String(cult).toUpperCase(), y, 8, 11, false);
       y += 10;
       blocos.forEach(desenhar);
@@ -2822,15 +2822,13 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
     </style></head><body>
     ${faixa(`GC Agro — ${titulo}`, "16px", true)}`;
-    // Quebra de página pra folha de campo: cada CULTURA começa em página nova (menos a primeira);
-    // todo parágrafo de um bloco de variedade leva "page-break-after:avoid" — o Word lê como
+    // Quebra de página pra folha de campo: as culturas vão uma atrás da outra; todo parágrafo de
+    // um bloco de variedade leva "page-break-after:avoid" — o Word lê como
     // "Manter com o próximo" —, menos o último, então título da variedade, "Dose por 100 kg",
     // produtos, "Kit Sulco" e obs descem juntos pra próxima folha em vez de partir no meio. A
     // faixa da cultura também "mantém com o próximo", pra nunca ficar sozinha no pé da página.
-    let culturasEscritas = 0;
     Object.entries(grouped).forEach(([cult,rows]) => {
       if (!rows.length) return;
-      if (culturasEscritas++ > 0) html += `<br clear="all" style="page-break-before:always">`;
       html += faixa(String(cult).toUpperCase(), "14px", false);
       rows.forEach(r => {
         const pars = [`<h2>Variedade: ${esc(r.variedade||"Todas")}</h2>`];
