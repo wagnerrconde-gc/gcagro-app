@@ -2717,16 +2717,22 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       faixa(String(cult).toUpperCase(), y, 8, 11, false);
       y += 10;
       rows.forEach(r => {
-        const body = [[itens(r.dose100kg) || "—", itens(r.kitSulco) || "—"]];
-        if (r.obs) body.push([{ content:"Obs: "+r.obs, colSpan:2, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
+        // Só sai a coluna que tem conteúdo: variedade sem tratamento de semente (ex.: soja que não
+        // vai ser tratada) sai só com o Kit Sulco, ocupando a largura toda — e vice-versa. Com os
+        // dois preenchidos, sai lado a lado. Com nenhum, uma linha avisando.
+        const colunas = [["Dose por 100 kg de semente", itens(r.dose100kg)], ["Kit Sulco", itens(r.kitSulco)]].filter(([,t]) => t);
+        const nCol = Math.max(1, colunas.length);
+        const body = colunas.length ? [colunas.map(([,t]) => t)] : [["Sem tratamento de semente e sem kit sulco"]];
+        if (r.obs) body.push([{ content:"Obs: "+r.obs, colSpan:nCol, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
+        const largCol = (larg-2*m)/nCol;
         doc.autoTable({
           startY: y, margin:{ left:m, right:m }, theme:"grid", rowPageBreak:"avoid",
-          head: [[{ content:"Variedade: "+(r.variedade||"Todas"), colSpan:2, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
-                 ["Dose por 100 kg de semente", "Kit Sulco"]],
+          head: [[{ content:"Variedade: "+(r.variedade||"Todas"), colSpan:nCol, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
+                 ...(colunas.length ? [colunas.map(([nome]) => nome)] : [])],
           body,
           styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
           headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
-          columnStyles: { 0:{ cellWidth:(larg-2*m)/2 }, 1:{ cellWidth:(larg-2*m)/2 } },
+          columnStyles: Object.fromEntries([...Array(nCol)].map((_,i) => [i, { cellWidth:largCol }])),
           showHead: "firstPage",
         });
         y = doc.lastAutoTable.finalY + 4;
