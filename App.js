@@ -2688,32 +2688,90 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     const comuns = produtosComunsTS(dProg, cult);
     setData(d => [...d, { id:newId(), cultura:cult, variedade:"", dose100kg:comuns.dose100kg, kitSulco:comuns.kitSulco, obs:"" }]);
   }
+  // PDF pronto do TS / Kit Sulco — mesmo conteúdo do Word (faixa por cultura, e por variedade a
+  // dose por 100 kg de semente, o kit sulco e a obs), com as cores gravadas no próprio PDF.
+  // Imprimindo o Word pelo iPhone a visualização do iOS descarta cor de fundo; o PDF sai do jeito
+  // que está. A4 em pé; cada variedade é um bloco que não se parte entre páginas.
+  function exportarPDF() {
+    const jsPDF = window.jspdf && window.jspdf.jsPDF;
+    if (!jsPDF) { window.alert("Não consegui carregar a biblioteca de PDF. Verifique sua internet e recarregue a página."); return; }
+    const hex = /^#[0-9a-f]{6}$/i.test(cor||"") ? cor : "#1a5c2e";
+    const verde = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16));
+    const itens = t => (t||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>"• "+l).join("\n");
+
+    const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
+    const larg = doc.internal.pageSize.getWidth(), alt = doc.internal.pageSize.getHeight(), m = 12;
+    const faixa = (texto, y, altura, tamanho, centro) => {
+      doc.setFillColor(...verde); doc.rect(m, y, larg-2*m, altura, "F");
+      doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(tamanho);
+      doc.text(texto, centro ? larg/2 : m+3, y+altura/2+tamanho*0.13, centro ? { align:"center" } : undefined);
+    };
+    faixa(`GC AGRO — ${String(titulo).toUpperCase()}`, m, 10, 13, true);
+    doc.setTextColor(102,102,102); doc.setFont("helvetica","italic"); doc.setFontSize(9);
+    doc.text(`gerado em ${new Date().toLocaleDateString("pt-BR")}`, larg/2, m+15, { align:"center" });
+    let y = m + 20;
+
+    Object.entries(grouped).forEach(([cult,rows]) => {
+      if (!rows.length) return;
+      if (y + 30 > alt - m) { doc.addPage(); y = m; }   // faixa da cultura nunca fica sozinha no pé da página
+      faixa(String(cult).toUpperCase(), y, 8, 11, false);
+      y += 10;
+      rows.forEach(r => {
+        const body = [[itens(r.dose100kg) || "—", itens(r.kitSulco) || "—"]];
+        if (r.obs) body.push([{ content:"Obs: "+r.obs, colSpan:2, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
+        doc.autoTable({
+          startY: y, margin:{ left:m, right:m }, theme:"grid", rowPageBreak:"avoid",
+          head: [[{ content:"Variedade: "+(r.variedade||"Todas"), colSpan:2, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
+                 ["Dose por 100 kg de semente", "Kit Sulco"]],
+          body,
+          styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
+          headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
+          columnStyles: { 0:{ cellWidth:(larg-2*m)/2 }, 1:{ cellWidth:(larg-2*m)/2 } },
+          showHead: "firstPage",
+        });
+        y = doc.lastAutoTable.finalY + 4;
+      });
+      y += 2;
+    });
+
+    doc.save(String(titulo).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_")+".pdf");
+  }
   function exportarWord() {
+    const verde = cor||"#1a5c2e";
+    // Texto digitado (variedade, produto, obs) vai escapado — um "<" ou "&" quebrava o documento.
+    const esc = t => String(t==null?"":t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    // Faixa colorida como TABELA de uma célula com bgcolor, não como fundo de título (h1): o Word
+    // trata isso como sombreamento de célula, que sai na impressão. Fundo de parágrafo via CSS
+    // podia sumir no papel — e com a letra branca, o título inteiro desaparecia.
+    const faixa = (texto, tamanho, centro) =>
+      `<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:14px 0 6px;">`
+      + `<tr><td bgcolor="${verde}" style="background:${verde};padding:6px 12px;${centro?"text-align:center;":""}">`
+      + `<span style="color:#ffffff;font-weight:bold;font-size:${tamanho};font-family:Arial,sans-serif;">${esc(texto)}</span>`
+      + `</td></tr></table>`;
     let html = `<html><head><meta charset='utf-8'><style>
       body{font-family:Arial,sans-serif;margin:40px;color:#222;}
-      h1{background:${cor||"#1a5c2e"};color:#fff;padding:8px 14px;border-radius:4px;font-size:16px;}
-      h2{color:${cor||"#1a5c2e"};font-size:13px;margin:18px 0 4px;}
+      h2{color:${verde};font-size:13px;margin:18px 0 4px;}
       ul{margin:4px 0 10px 20px;}
       li{font-size:12px;line-height:1.8;}
       .obs{font-size:11px;color:#666;}
       hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
     </style></head><body>
-    <h1 style='text-align:center'>GC Agro — ${titulo}</h1>`;
+    ${faixa(`GC Agro — ${titulo}`, "16px", true)}`;
     Object.entries(grouped).forEach(([cult,rows])=>{
-      html += `<h1>${cult.toUpperCase()}</h1>`;
+      html += faixa(String(cult).toUpperCase(), "14px", false);
       rows.forEach(r=>{
-        html += `<h2>Variedade: ${r.variedade||"Todas"}</h2>`;
+        html += `<h2>Variedade: ${esc(r.variedade||"Todas")}</h2>`;
         if (r.dose100kg) {
           html += `<b style='font-size:12px'>Dose por 100 kg de Semente:</b><ul>`;
-          r.dose100kg.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
+          r.dose100kg.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${esc(l.trim())}</li>`;});
           html += `</ul>`;
         }
         if (r.kitSulco) {
           html += `<b style='font-size:12px'>Kit Sulco:</b><ul>`;
-          r.kitSulco.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
+          r.kitSulco.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${esc(l.trim())}</li>`;});
           html += `</ul>`;
         }
-        if (r.obs) html += `<p class='obs'>Obs: ${r.obs}</p>`;
+        if (r.obs) html += `<p class='obs'>Obs: ${esc(r.obs)}</p>`;
         html += `<hr>`;
       });
     });
@@ -2739,6 +2797,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
             }}
             title="Apaga as linhas marcadas com 🔗 auto e remonta a partir da Programação. Linha criada à mão nesta tela não é afetada."
             style={{padding:"7px 14px",background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:6,color:"#e65100",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Refazer da Programação</button>
+          <button onClick={exportarPDF} title="Baixa o PDF do TS / Kit Sulco, já com as cores — pra imprimir pelo celular sem o verde sumir" style={{padding:"7px 14px",background:"#c62828",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📄 Exportar PDF</button>
           <button onClick={exportarWord} style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📄 Exportar Word</button>
           <button onClick={()=>adicionar()} style={{padding:"7px 14px",background:cor||"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Adicionar</button>
         </div>
