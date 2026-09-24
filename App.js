@@ -2712,9 +2712,10 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     let y = m + 20;
 
     // Quebra de página pensada pra folha que vai pro campo: as culturas vão uma atrás da outra
-    // (sem forçar página nova), mas cada bloco (variedade, ou kit comum) nunca se parte — se não
-    // couber no resto da página, desce inteiro. A faixa da cultura também nunca fica sozinha no
-    // pé: se ela e o primeiro bloco não couberem juntos, os dois descem. Pra saber se cabe, cada
+    // (duas pequenas podem dividir a folha), mas uma CULTURA que cabe numa folha nunca fica
+    // partida em duas — se não couber no resto da página, desce inteira. Só a cultura maior que
+    // uma folha inteira quebra, e mesmo assim entre variedades: cada bloco (variedade, ou kit
+    // comum) desce inteiro se não couber, e a faixa da cultura nunca fica sozinha no pé. Pra saber se cabe, cada
     // bloco é medido antes, desenhado num PDF de rascunho. Bloco maior que uma página inteira não
     // tem como ficar inteiro — parte, e o nome dele entra no aviso no fim.
     const opcoesBloco = (tituloBloco, colunas, obs, vazio, comSubtitulo) => {
@@ -2792,7 +2793,11 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
 
       if (!primeiraCultura) y += 4;   // respiro entre uma cultura e a outra
       primeiraCultura = false;
-      if (y + 10 + Math.min(alturaBloco(blocos[0].opcoes), cabeUmaPagina - 10) > alt - m) { doc.addPage(); y = m; }
+      const alturas = blocos.map(b => alturaBloco(b.opcoes));
+      const alturaCultura = 10 + alturas.reduce((s,h) => s + h + 4, 0) - 4;
+      if (alturaCultura <= cabeUmaPagina) {
+        if (y + alturaCultura > alt - m) { doc.addPage(); y = m; }        // cabe numa folha: vai inteira
+      } else if (y + 10 + Math.min(alturas[0], cabeUmaPagina - 10) > alt - m) { doc.addPage(); y = m; }
       faixa(String(cult).toUpperCase(), y, 8, 11, false);
       y += 10;
       blocos.forEach(desenhar);
@@ -2822,15 +2827,15 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
     </style></head><body>
     ${faixa(`GC Agro — ${titulo}`, "16px", true)}`;
-    // Quebra de página pra folha de campo: as culturas vão uma atrás da outra; todo parágrafo de
-    // um bloco de variedade leva "page-break-after:avoid" — o Word lê como
-    // "Manter com o próximo" —, menos o último, então título da variedade, "Dose por 100 kg",
-    // produtos, "Kit Sulco" e obs descem juntos pra próxima folha em vez de partir no meio. A
-    // faixa da cultura também "mantém com o próximo", pra nunca ficar sozinha no pé da página.
+    // Quebra de página pra folha de campo: as culturas vão uma atrás da outra, mas todo parágrafo
+    // de uma cultura leva "page-break-after:avoid" — o Word lê como "Manter com o próximo" —,
+    // menos o último dela: a cultura inteira desce junta pra próxima folha em vez de partir no
+    // meio. Se a cultura sozinha for maior que uma folha, o Word quebra onde precisar.
     Object.entries(grouped).forEach(([cult,rows]) => {
       if (!rows.length) return;
       html += faixa(String(cult).toUpperCase(), "14px", false);
-      rows.forEach(r => {
+      rows.forEach((r, ri) => {
+        const ultimaDaCultura = ri === rows.length - 1;
         const pars = [`<h2>Variedade: ${esc(r.variedade||"Todas")}</h2>`];
         const lista = (rotulo, texto) => {
           const linhas = String(texto||"").split("\n").map(l=>l.trim()).filter(Boolean);
@@ -2841,10 +2846,10 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
         lista("Dose por 100 kg de Semente:", r.dose100kg);
         lista("Kit Sulco:", r.kitSulco);
         if (r.obs) pars.push(`<p class='obs'>Obs: ${esc(r.obs)}</p>`);
-        const ultimo = pars.length - 1;
+        const ultimo = ultimaDaCultura ? pars.length - 1 : pars.length;
         html += `<div style="page-break-inside:avoid">`
           + pars.map((p,i) => i < ultimo ? p.replace(/^<(\w+)/, `<$1 style="page-break-after:avoid"`) : p).join("")
-          + `</div><hr>`;
+          + `</div>` + (ultimaDaCultura ? `<hr>` : `<hr style="page-break-after:avoid">`);
       });
     });
     html += `</body></html>`;
