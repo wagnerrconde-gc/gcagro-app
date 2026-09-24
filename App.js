@@ -2315,6 +2315,63 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
     XLSX.writeFile(wb, `Plano_Campo_${isVerao?"Verao":"Inverno"}`.replace(/[\/\\]/g,"-")+".xlsx");
   }
 
+  // PDF pronto do Planejamento de Campo — mesmo conteúdo da planilha exportada (título, resumo,
+  // tabela com o recorte de colunas da impressão, TOTAL e Observações da safra), mas com as cores
+  // gravadas no próprio PDF. Imprimindo a planilha pelo iPhone o verde some (a visualização do iOS
+  // descarta cor de fundo de célula na impressão); o PDF sai do jeito que está. A4 paisagem; se
+  // não couber numa página, o cabeçalho da tabela se repete na seguinte.
+  function exportarPlanoPDF() {
+    const jsPDF = window.jspdf && window.jspdf.jsPDF;
+    if (!jsPDF) { alert("Não consegui carregar a biblioteca de PDF. Verifique sua internet e recarregue a página."); return; }
+    const rgb = hex => [0,2,4].map(i => parseInt(hex.slice(i,i+2),16));
+    const verde = rgb(XLS_VERDE), verdeEsc = rgb(XLS_VERDE_ESC);
+    const valor = (row, field, type) => {
+      const v = row[field];
+      if (v==null || v==="") return "";
+      if (field==="area") return fmtN(v,1);
+      if (type==="number") return String(v).replace(".",",");
+      return String(v);
+    };
+    const textoObs = [obs,obs2].map(t=>(t||"").trim()).filter(Boolean).join("\n");
+
+    const doc = new jsPDF({ orientation:"landscape", unit:"mm", format:"a4" });
+    const larg = doc.internal.pageSize.getWidth(), m = 10;
+    doc.setFillColor(...verdeEsc); doc.rect(m, m, larg-2*m, 10, "F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(13);
+    doc.text(`GC AGRO — PLANEJAMENTO DE CAMPO · ${isVerao?"SAFRA VERÃO":"SAFRINHA/INVERNO"}`, larg/2, m+6.8, { align:"center" });
+    doc.setTextColor(102,102,102); doc.setFont("helvetica","italic"); doc.setFontSize(9);
+    doc.text(`${data.length} lote(s) · ${fmtN(total,1)} ha · gerada em ${new Date().toLocaleDateString("pt-BR")}`, larg/2, m+15, { align:"center" });
+
+    doc.autoTable({
+      startY: m+19, margin:{ left:m, right:m },
+      head: [colsImpressao.map(c => c[1])],
+      body: data.map(row => colsImpressao.map(([field,,type]) => valor(row, field, type))),
+      foot: [colsImpressao.map(([field],ci) => ci===0 ? "TOTAL" : field==="area" ? fmtN(total,1) : "")],
+      showFoot: "lastPage",
+      theme: "grid",
+      styles: { font:"helvetica", fontSize:8.5, cellPadding:1.4, lineColor:[200,200,200], lineWidth:0.15, textColor:[34,34,34], halign:"center", valign:"middle" },
+      headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
+      footStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
+      alternateRowStyles: { fillColor:[247,249,247] },
+      columnStyles: { 0:{ halign:"left" } },
+      didParseCell: d => { if (d.section==="foot" && d.column.index===0) d.cell.styles.halign = "left"; },
+    });
+
+    if (textoObs) {
+      const alt = doc.internal.pageSize.getHeight();
+      let y = doc.lastAutoTable.finalY + 8;
+      doc.setFontSize(9); doc.setFont("helvetica","normal");
+      const linhas = doc.splitTextToSize(textoObs, larg-2*m);
+      if (y + 6 + linhas.length*4 > alt - m) { doc.addPage(); y = m + 4; }
+      doc.setTextColor(...verdeEsc); doc.setFont("helvetica","bold"); doc.setFontSize(11);
+      doc.text("Observações da safra", m, y);
+      doc.setTextColor(51,51,51); doc.setFont("helvetica","normal"); doc.setFontSize(9);
+      doc.text(linhas, m, y+5.5);
+    }
+
+    doc.save(`Plano_Campo_${isVerao?"Verao":"Inverno"}.pdf`);
+  }
+
   // Taxa média de Adubação, KCl e (no Inverno) N de Cobertura (kg/ha), ponderada pela área de cada lote, separada por cultura.
   const campoAdubacao = isVerao ? "adubacao" : "adubacaoPlantio";
   const campoKcl = isVerao ? "kcl" : "cobertura";
@@ -2391,6 +2448,9 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
           <button onClick={exportarPlanoPlanilha} disabled={!data.length}
             title="Exporta em .xlsx — todas as colunas, inclusive as que não cabem impressas."
             style={{padding:"7px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:data.length?"pointer":"default",opacity:data.length?1:0.5}}>📊 Exportar planilha</button>
+          <button onClick={exportarPlanoPDF} disabled={!data.length}
+            title="Baixa o PDF deste Planejamento, já com as cores — pra imprimir pelo celular sem o verde sumir."
+            style={{padding:"7px 14px",background:"#c62828",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:data.length?"pointer":"default",opacity:data.length?1:0.5}}>📄 Exportar PDF</button>
           <button onClick={gerarCotacao} style={{padding:"7px 14px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>📋 Gerar Cotação</button>
           {CAMPOS_IMPORTAVEIS.length>0 && (
             <button onClick={()=>{setImportCampo(CAMPOS_IMPORTAVEIS[0][0]);setImportPreview(null);setImportErro("");setShowImportCsv(true);}}
