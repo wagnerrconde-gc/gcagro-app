@@ -2716,19 +2716,16 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
       if (y + 30 > alt - m) { doc.addPage(); y = m; }   // faixa da cultura nunca fica sozinha no pé da página
       faixa(String(cult).toUpperCase(), y, 8, 11, false);
       y += 10;
-      rows.forEach(r => {
-        // Só sai a coluna que tem conteúdo: variedade sem tratamento de semente (ex.: soja que não
-        // vai ser tratada) sai só com o Kit Sulco, ocupando a largura toda — e vice-versa. Com os
-        // dois preenchidos, sai lado a lado. Com nenhum, uma linha avisando.
-        const colunas = [["Dose por 100 kg de semente", itens(r.dose100kg)], ["Kit Sulco", itens(r.kitSulco)]].filter(([,t]) => t);
+      // Monta um bloco (tabela) com um título na faixa verde-clara e as colunas que tiverem texto.
+      const bloco = (titulo, colunas, obs, vazio, comSubtitulo) => {
         const nCol = Math.max(1, colunas.length);
-        const body = colunas.length ? [colunas.map(([,t]) => t)] : [["Sem tratamento de semente e sem kit sulco"]];
-        if (r.obs) body.push([{ content:"Obs: "+r.obs, colSpan:nCol, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
+        const body = colunas.length ? [colunas.map(([,t]) => t)] : [[vazio]];
+        if (obs) body.push([{ content:"Obs: "+obs, colSpan:nCol, styles:{ fontStyle:"italic", textColor:[102,102,102] } }]);
         const largCol = (larg-2*m)/nCol;
         doc.autoTable({
           startY: y, margin:{ left:m, right:m }, theme:"grid", rowPageBreak:"avoid",
-          head: [[{ content:"Variedade: "+(r.variedade||"Todas"), colSpan:nCol, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
-                 ...(colunas.length ? [colunas.map(([nome]) => nome)] : [])],
+          head: [[{ content:titulo, colSpan:nCol, styles:{ fillColor:[232,242,234], textColor:verde, halign:"left", fontSize:10 } }],
+                 ...(comSubtitulo && colunas.length ? [colunas.map(([nome]) => nome)] : [])],
           body,
           styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
           headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
@@ -2736,6 +2733,30 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
           showHead: "firstPage",
         });
         y = doc.lastAutoTable.finalY + 4;
+      };
+      // Kit Sulco IGUAL em mais de uma variedade da cultura (ex.: milho com tratamento de semente
+      // diferente por variedade, mas o mesmo kit) sai UMA vez só, depois dos tratamentos, dizendo
+      // pra quais variedades vale. A comparação ignora ordem das linhas, maiúsculas e espaços.
+      const chaveKit = t => (t||"").split("\n").map(l => l.trim().replace(/\s+/g," ").toLowerCase()).filter(Boolean).sort().join("\n");
+      const porKit = {};
+      rows.forEach(r => { const k = chaveKit(r.kitSulco); if (k) (porKit[k] = porKit[k] || []).push(r); });
+      const kitsComuns = Object.values(porKit).filter(g => g.length > 1);
+      const noKitComum = new Set(kitsComuns.flat());
+
+      // Cada variedade: só a coluna que tem conteúdo — sem tratamento de semente (ex.: soja que não
+      // vai ser tratada) sai só o Kit Sulco, e vice-versa. Se o kit dela é o comum, ele fica de fora
+      // aqui; e se só tinha o kit (sem tratamento nem obs), a variedade nem ganha bloco próprio.
+      rows.forEach(r => {
+        const ts = itens(r.dose100kg);
+        const comum = noKitComum.has(r);
+        if (comum && !ts && !r.obs) return;
+        const colunas = [["Dose por 100 kg de semente", ts], ["Kit Sulco", comum ? "" : itens(r.kitSulco)]].filter(([,t]) => t);
+        bloco("Variedade: "+(r.variedade||"Todas"), colunas, r.obs,
+          comum ? "Sem tratamento de semente" : "Sem tratamento de semente e sem kit sulco", true);
+      });
+      kitsComuns.forEach(g => {
+        const quais = g.length === rows.length ? "todas as variedades" : g.map(r => r.variedade||"Todas").join(", ");
+        bloco("Kit Sulco — "+quais, [["Kit Sulco", itens(g[0].kitSulco)]], "", "", false);
       });
       y += 2;
     });
