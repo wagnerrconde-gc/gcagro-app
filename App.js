@@ -2730,7 +2730,14 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
         styles: { font:"helvetica", fontSize:9, cellPadding:2, lineColor:[210,210,210], lineWidth:0.15, textColor:[34,34,34], valign:"top" },
         headStyles: { fillColor:verde, textColor:[255,255,255], fontStyle:"bold" },
         columnStyles: Object.fromEntries([...Array(nCol)].map((_,i) => [i, { cellWidth:largCol }])),
-        showHead: "firstPage",
+        // Bloco normal nunca chega a partir (é medido e desce inteiro). Só o maior que uma folha
+        // inteira parte — aí o cabeçalho se repete na folha seguinte, com "(continuação)" no título,
+        // pra lista nunca começar numa página sem dizer de qual variedade é.
+        showHead: "everyPage",
+        willDrawCell: d => {
+          if (d.section==="head" && d.row.index===0 && d.pageNumber > 1 && !String(d.cell.text).endsWith("(continuação)"))
+            d.cell.text = [String(tituloBloco)+" (continuação)"];
+        },
       };
     };
     const alturaBloco = opcoes => {
@@ -2792,7 +2799,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     });
 
     doc.save(String(titulo).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_")+".pdf");
-    if (grandes.length) window.alert("Atenção: estes blocos são maiores que uma página inteira e ficaram partidos entre duas folhas:\n\n• " + grandes.join("\n• ") + "\n\nSe der, divida a lista de produtos dessa variedade.");
+    if (grandes.length) window.alert("Atenção: estes blocos são maiores que uma página inteira e continuam na folha seguinte (com o título repetido como \"continuação\"):\n\n• " + grandes.join("\n• ") + "\n\nSe der, divida a lista de produtos dessa variedade.");
   }
   function exportarWord() {
     const verde = cor||"#1a5c2e";
