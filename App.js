@@ -2629,33 +2629,49 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
     setData(d => [...d, { id:newId(), cultura:cult, variedade:"", dose100kg:comuns.dose100kg, kitSulco:comuns.kitSulco, obs:"" }]);
   }
   function exportarWord() {
+    // Quebra de página: no papel, o que confunde quem está no campo é o bloco partido ao meio —
+    // o título "Dose por 100 kg de Semente" no pé de uma página e a lista de produtos no começo
+    // da outra, com um vazio no meio. Então:
+    //  - cultura nova sempre começa em página nova (page-break-before), nunca no pé da anterior;
+    //  - o bloco de cada variedade não se parte (page-break-inside), vai inteiro pra próxima
+    //    página se não couber no resto desta;
+    //  - título nunca fica sozinho no fim da página, sempre desce junto com a lista dele
+    //    (page-break-after: avoid, que o Word entende como "manter com o próximo").
     let html = `<html><head><meta charset='utf-8'><style>
       body{font-family:Arial,sans-serif;margin:40px;color:#222;}
-      h1{background:${cor||"#1a5c2e"};color:#fff;padding:8px 14px;border-radius:4px;font-size:16px;}
-      h2{color:${cor||"#1a5c2e"};font-size:13px;margin:18px 0 4px;}
-      ul{margin:4px 0 10px 20px;}
+      h1{background:${cor||"#1a5c2e"};color:#fff;padding:8px 14px;border-radius:4px;font-size:16px;page-break-after:avoid;}
+      h2{color:${cor||"#1a5c2e"};font-size:13px;margin:18px 0 4px;page-break-after:avoid;}
+      ul{margin:4px 0 10px 20px;page-break-inside:avoid;}
       li{font-size:12px;line-height:1.8;}
       .obs{font-size:11px;color:#666;}
       hr{border:none;border-top:1px solid #ddd;margin:12px 0;}
+      .rotulo{font-size:12px;font-weight:bold;page-break-after:avoid;}
+      .cultura{page-break-before:always;}
+      .cultura.primeira{page-break-before:auto;}
+      .variedade{page-break-inside:avoid;}
     </style></head><body>
     <h1 style='text-align:center'>GC Agro — ${titulo}</h1>`;
-    Object.entries(grouped).forEach(([cult,rows])=>{
+    Object.entries(grouped).forEach(([cult,rows],iCult)=>{
+      html += `<div class='cultura${iCult===0?" primeira":""}'>`;
       html += `<h1>${cult.toUpperCase()}</h1>`;
       rows.forEach(r=>{
+        html += `<div class='variedade'>`;
         html += `<h2>Variedade: ${r.variedade||"Todas"}</h2>`;
         if (r.dose100kg) {
-          html += `<b style='font-size:12px'>Dose por 100 kg de Semente:</b><ul>`;
+          html += `<p class='rotulo'>Dose por 100 kg de Semente:</p><ul>`;
           r.dose100kg.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
           html += `</ul>`;
         }
         if (r.kitSulco) {
-          html += `<b style='font-size:12px'>Kit Sulco:</b><ul>`;
+          html += `<p class='rotulo'>Kit Sulco:</p><ul>`;
           r.kitSulco.split("\n").filter(l=>l.trim()).forEach(l=>{html+=`<li>${l.trim()}</li>`;});
           html += `</ul>`;
         }
         if (r.obs) html += `<p class='obs'>Obs: ${r.obs}</p>`;
         html += `<hr>`;
+        html += `</div>`;
       });
+      html += `</div>`;
     });
     html += `</body></html>`;
     const blob = new Blob([html], {type:"application/msword"});
