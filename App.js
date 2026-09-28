@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "28/09 · 1";
+const VERSAO_APP = "28/09 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4719,6 +4719,22 @@ function App() {
     if (!comprasCatSel) return [];
     return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
   }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel]);
+
+  // Compras que não têm produto correspondente na Programação — é o que eu preciso cadastrar lá
+  // pra essa compra entrar no custo da lavoura. Calculado AO VIVO, não gravado no lançamento: no
+  // dia em que o produto for cadastrado, a marca some sozinha, sem precisar reimportar nada.
+  // Fica de fora Sementes, onde a compra vem com o nome da variedade ("TMG 7062") e a Programação
+  // tem o nome da cultura ("SEMENTE SOJA") — ali nada casaria por nome e tudo seria acusado à toa.
+  const comprasForaDaProgramacao = useMemo(() => {
+    const fora = new Set();
+    if (!comprasCatSel || comprasCatSel.startsWith("Sementes")) return fora;
+    comprasRecordsFiltrados.forEach(r => {
+      if (r.origemProg || r.vinculoChave) return;   // veio de lá, ou já foi vinculado na importação
+      if (!(r.produto||"").trim()) return;
+      if (!casarCompraNaProgramacao(r.produto, "", candidatosImportCompra)) fora.add(r.id);
+    });
+    return fora;
+  }, [comprasRecordsFiltrados, candidatosImportCompra, comprasCatSel]);
 
   // Média de preço de sementes por cultura (Soja, Milho...) dentro da safra/categoria "Sementes
   // Verão"/"Sementes Inverno" aberta em Compras — mesma classificação usada por "Atualizar Custo
@@ -9294,9 +9310,12 @@ function App() {
                       style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
                     {importCompraPreview && (
                       <button onClick={()=>{
-                        // Guarda a compra sem os campos de vínculo — eles só servem pra decidir o
-                        // que vai pra Programação, não fazem parte do lançamento financeiro.
-                        const limpos = importCompraPreview.map(({vinculoChave, vinculoNivel, vinculoMotivo, ...r}) => r);
+                        // vinculoNivel/vinculoMotivo são só da prévia e não ficam guardados, mas
+                        // vinculoChave sim: é ele que diz que esta compra JÁ corresponde a um
+                        // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
+                        // isso, a marca de "não está na Programação" acusaria errado justamente
+                        // os casos de nome diferente que você acabou de confirmar.
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, ...r}) => r);
                         setComprasRecords(rs => [...rs, ...limpos]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
@@ -9309,6 +9328,21 @@ function App() {
                 </div>
               </div>
             )}
+
+            {comprasForaDaProgramacao.size > 0 && (()=>{
+              const nomes = [...new Set(comprasRecordsFiltrados.filter(r=>comprasForaDaProgramacao.has(r.id)).map(r=>r.produto.trim()))];
+              return (
+                <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#e65100",marginBottom:4}}>
+                    ⚠ {nomes.length} produto(s) comprados que não estão na Programação {(comprasCatSel||"").includes("Inverno")?"Inverno":"Verão"}
+                  </div>
+                  <div style={{fontSize:12,color:"#8a4b00",lineHeight:1.6}}>{nomes.join(" · ")}</div>
+                  <div style={{fontSize:10,color:"#a06a30",marginTop:5}}>
+                    Enquanto não estiverem cadastrados lá, essas compras não entram no custo da lavoura. Cadastre na Programação e esta marca some sozinha.
+                  </div>
+                </div>
+              );
+            })()}
 
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
               <div style={{overflowX:"auto"}}>
@@ -9331,6 +9365,7 @@ function App() {
                       <td style={{padding:"6px 9px",fontWeight:600}}>
                         <RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/>
                         {r.origemProg && <span title="Veio automático da Programação (produto com preço, revenda e vencimento preenchidos). Editar aqui é temporário: muda na Programação que atualiza aqui." style={{background:"#e8f5e9",color:"#2e7d32",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>🔗 Programação</span>}
+                        {comprasForaDaProgramacao.has(r.id) && <span title="Comprado, mas não existe na Programação desta safra. Cadastre lá pra esta compra entrar no custo da lavoura — a marca some sozinha quando o produto aparecer." style={{background:"#fff3e0",color:"#e65100",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap",marginLeft:4}}>⚠ fora da Programação</span>}
                       </td>
                       {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
