@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "23/09 · 1";
+const VERSAO_APP = "28/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -819,6 +819,28 @@ function nomeComecaComOOutro(a, b) {
 function nomesParecidos(chaveAlvo, todasAsChaves) {
   return todasAsChaves.filter(o => o !== chaveAlvo && (mesmoProdutoQuaseIgual(chaveAlvo, o)
     || nomeComecaComOOutro(chaveAlvo, o) || similaridadeNomes(chaveAlvo, o) >= LIMIAR_MESMA_IA));
+}
+// Casa uma linha da planilha do grupo de compras com um produto da Programação. Três níveis,
+// porque a certeza de cada um é diferente e só o primeiro pode passar sozinho:
+//  - "igual": mesma chave (acento, maiúscula e ordem da barra já normalizados) ou nome quase
+//    igual ("Heavy" x "Heavy Oil") — casa sem perguntar;
+//  - "sugestao": o nome só se parece, ou o que bate é o INGREDIENTE ATIVO e não o nome (comprei
+//    "Tecnup" onde planejei "Roundup") — precisa de confirmação, porque o mesmo ingrediente ativo
+//    numa concentração diferente não vale a mesma dose;
+//  - null: não achou, entra só como compra e não mexe no custo.
+function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
+  const chave = chaveProduto(nomeComprado);
+  if (!chave) return null;
+  const exato = candidatos.find(c => c.chave === chave)
+             || candidatos.find(c => mesmoProdutoQuaseIgual(c.chave, chave));
+  if (exato) return { chave: exato.chave, nivel: "igual", motivo: "nome igual" };
+  const parecido = candidatos.find(c => nomeComecaComOOutro(c.chave, chave)
+                                     || similaridadeNomes(c.chave, chave) >= LIMIAR_MESMA_IA);
+  if (parecido) return { chave: parecido.chave, nivel: "sugestao", motivo: "nome parecido" };
+  const ia = normalizarNome(iaComprado);
+  const porIA = ia && candidatos.find(c => c.ia && c.ia === ia);
+  if (porIA) return { chave: porIA.chave, nivel: "sugestao", motivo: "mesmo ingrediente ativo" };
+  return null;
 }
 // Traduz a unidade da Programação (kg/Lt/Tn/bag/sc/doses) pro vocabulário de cada tela de
 // Cotação — cada uma só aceita um conjunto próprio de unidades (ver unitOptions):
@@ -1433,6 +1455,9 @@ function buildInsumoEstoqueRecord(m) {
 // da Cotação (Herbicidas, Fungicidas...), que não batem com as categorias de Compras.
 const ALIASES_COMPRAS = {
   produto:       ["produto","nome","item"],
+  // Não vira campo do lançamento de compra: serve pra casar a compra com o produto da
+  // Programação quando o nome comprado é outro (comprei "Tecnup" onde planejei "Roundup").
+  ingredienteAtivo: ["ingrediente_ativo","ia","i_a","principio_ativo","formula"],
   unidade:       ["unidade","unid"],
   quantidade:    ["quantidade","qtd"],
   precoUnitario: ["preco_fechado","preco_unitario","preco","preco_unit"],
@@ -4293,6 +4318,89 @@ function App() {
       });
     }
     return relatorio;
+  }
+  // Quais produtos da Programação uma pasta de Compras pode alimentar. O mesmo produto costuma
+  // estar em várias culturas (Offroad na soja, no milho e no feijão) e a compra foi UMA só, então
+  // a lista é por produto (chave normalizada), guardando em quais culturas ele aparece — é nessas
+  // todas que o preço de compra entra depois.
+  function candidatosProgramacaoPraCompras(categoriaCompra) {
+    const d = categoriaCompra.includes("Verão") ? dataVerao : dataInverno;
+    const isAdub = categoriaCompra.startsWith("Adubação");
+    const isSem = categoriaCompra.startsWith("Sementes");
+    const relevante = cat => isAdub ? cat.name === "Adubação"
+      : isSem ? cat.name === "Sementes"
+      : (cat.name !== "Adubação" && cat.name !== "Sementes");
+    const porChave = new Map();
+    Object.entries(d||{}).forEach(([cultura, c]) => (c.categories||[]).forEach(cat => {
+      if (!relevante(cat)) return;
+      (cat.products||[]).forEach(p => {
+        const nome = (p.produto||"").trim();
+        if (!nome) return;
+        const chave = chaveProduto(nome);
+        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:normalizarNome(p.ingrediente_ativo), culturas:[] });
+        const alvo = porChave.get(chave);
+        if (!alvo.culturas.includes(cultura)) alvo.culturas.push(cultura);
+        // Fica o nome mais completo como rótulo, igual às outras telas fazem.
+        if (nome.length > alvo.nome.length) alvo.nome = nome;
+      });
+    }));
+    return [...porChave.values()].sort((a,b)=>a.nome.localeCompare(b.nome));
+  }
+  const candidatosImportCompra = useMemo(
+    () => comprasCatSel ? candidatosProgramacaoPraCompras(comprasCatSel) : [],
+    // eslint-disable-next-line
+    [comprasCatSel, dataVerao, dataInverno]);
+  // Leva o preço REALMENTE PAGO das compras importadas pros produtos da Programação que o usuário
+  // vinculou na prévia. Só mexe em preco_compra — preco_unit é o preço de referência do ano
+  // passado, que serve justamente pra comparar se comprou mais caro ou mais barato, e sobrescrever
+  // isso apagaria a comparação.
+  // Vários lançamentos do mesmo produto (notas diferentes) viram um preço médio ponderado pela
+  // quantidade, não o preço da última linha lida.
+  function levarComprasImportadasPraProgramacao(registros, categoriaCompra) {
+    const porProduto = new Map();
+    registros.forEach(r => {
+      if (!r.vinculoChave || !r.quantidade) return;
+      if (!porProduto.has(r.vinculoChave)) porProduto.set(r.vinculoChave, { totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set() });
+      const g = porProduto.get(r.vinculoChave);
+      g.totalPago += r.valorTotal||0;
+      g.totalQtd += r.quantidade||0;
+      if ((r.fornecedor||"").trim()) g.fornecedores.add(r.fornecedor.trim());
+      if ((r.obs||"").trim()) g.vencimentos.add(r.obs.trim());
+    });
+    if (!porProduto.size) return 0;
+    const isVerao = categoriaCompra.includes("Verão");
+    const setD = isVerao ? setDataVerao : setDataInverno;
+    const isAdub = categoriaCompra.startsWith("Adubação");
+    const isSem = categoriaCompra.startsWith("Sementes");
+    const relevante = cat => isAdub ? cat.name === "Adubação"
+      : isSem ? cat.name === "Sementes"
+      : (cat.name !== "Adubação" && cat.name !== "Sementes");
+    salvarSnapshot(`Importar compras — custo na Programação (${categoriaCompra})`,
+      isVerao ? { prog_verao: dataVerao } : { prog_inv: dataInverno });
+    let tocados = 0;
+    setD(d => {
+      const nd = JSON.parse(JSON.stringify(d));
+      Object.values(nd).forEach(cultura => (cultura.categories||[]).forEach(cat => {
+        if (!relevante(cat)) return;
+        (cat.products||[]).forEach(p => {
+          const g = porProduto.get(chaveProduto(p.produto||""));
+          if (!g || !(g.totalQtd > 0)) return;
+          // Arredonda: dividir em ponto flutuante devolve 244,99999999999997 pra R$ 245 redondos,
+          // e esse número é o que alimenta todo o custo da safra daí pra frente.
+          p.preco_compra = Math.round((g.totalPago/g.totalQtd)*1e6)/1e6;
+          if (g.fornecedores.size) p.revenda = [...g.fornecedores].join(" + ");
+          if (g.vencimentos.size) p.vencimento = [...g.vencimentos].join(" + ");
+          // Marca com o fornecedor de verdade (não "Compra manual"): é o que faz o lançamento
+          // automático da Programação pular esse produto. Sem isso ele criaria uma SEGUNDA compra
+          // em cima da que acabou de ser importada — e aqui os nomes são diferentes de propósito,
+          // então a proteção que compara nome não pegaria.
+          if (g.fornecedores.size) p.fornecedor_compra = [...g.fornecedores].join(" + ");
+          tocados++;
+        });
+      }));
+      return nd;
+    });
+    return tocados;
   }
   // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
   // Compras — soma o valor pago por produto e divide pela quantidade comprada. Pra Sementes, a
@@ -9088,7 +9196,9 @@ function App() {
                 <div style={{fontSize:11,color:"#999",marginTop:8}}>Fechar uma cotação de adubação lança automaticamente aqui. Use o lançamento manual para registrar compras feitas fora da cotação (ex: calcário, gesso, semente de planta de cobertura).</div>
                 {custoCompraMsg && custoCompraMsg.categoria===comprasCatSel && (
                   <div style={{padding:"8px 14px",background:"#e3f2fd",color:"#1565C0",borderRadius:6,fontSize:12,marginTop:8}}>
-                    {custoCompraMsg.relatorio.length===0
+                    {custoCompraMsg.importadas != null
+                      ? `✓ ${custoCompraMsg.importadas} compra(s) lançadas. ${custoCompraMsg.vinculadas} vinculada(s) à Programação, atualizando o preço de compra de ${custoCompraMsg.tocados} produto(s).`
+                      : custoCompraMsg.relatorio.length===0
                       ? "Nenhum produto com compras suficientes nesta categoria pra calcular o custo médio."
                       : custoCompraMsg.relatorio.map((r,i)=>`✓ ${r.produto||r.cultura}: ${fmt(r.precoMedio)}${r.produto?"/unid.":"/ha"}`).join("  •  ")}
                   </div>
@@ -9110,7 +9220,22 @@ function App() {
                       const file = e.target.files[0]; if (!file) return;
                       try {
                         const rows = await readSpreadsheetRows(file);
-                        const registros = rows.map(row => buildCompraRecord(mapRowByAliases(row, ALIASES_COMPRAS), comprasCatSel, comprasSafraSel)).filter(Boolean);
+                        const mapeadas = rows.map(row => mapRowByAliases(row, ALIASES_COMPRAS));
+                        const registros = mapeadas.map(m => buildCompraRecord(m, comprasCatSel, comprasSafraSel))
+                          .map((r, i) => {
+                            if (!r) return null;
+                            // Casa com a Programação já na leitura, pra prévia mostrar o que casou
+                            // sozinho e o que precisa de confirmação antes de aplicar qualquer coisa.
+                            const achado = casarCompraNaProgramacao(r.produto, mapeadas[i].ingredienteAtivo||"", candidatosImportCompra);
+                            return { ...r,
+                              // Só o "igual" já entra vinculado. "sugestao" fica escolhido também,
+                              // mas a linha aparece destacada pra ser conferida — nada é aplicado
+                              // sem passar pelos olhos.
+                              vinculoChave: achado ? achado.chave : "",
+                              vinculoNivel: achado ? achado.nivel : null,
+                              vinculoMotivo: achado ? achado.motivo : "",
+                            };
+                          }).filter(Boolean);
                         if (!registros.length) { setImportCompraErro("⚠ Nenhuma linha reconhecida. Confira os nomes das colunas."); return; }
                         setImportCompraPreview(registros);
                         setImportCompraErro("");
@@ -9122,13 +9247,15 @@ function App() {
                       <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>{importCompraPreview.length} compra(s) prontas pra importar:</div>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr style={{background:"#e0f2f1"}}>
-                          {["Produto","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Data","Obs"].map(h=>(
+                          {["Produto","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Data","Obs","Na Programação"].map(h=>(
                             <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#00695c",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
-                          {importCompraPreview.map((r,i)=>(
-                            <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
+                          {importCompraPreview.map((r,i)=>{
+                            const confirmar = r.vinculoNivel === "sugestao";
+                            return (
+                            <tr key={r.id} style={{background:confirmar?"#fffde7":(i%2===0?"#fff":"#fafafa")}}>
                               <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}</td>
                               <td style={{padding:"5px 7px"}}>{r.unidade}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtQtd(r.quantidade)}</td>
@@ -9137,8 +9264,26 @@ function App() {
                               <td style={{padding:"5px 7px"}}>{r.fornecedor||"—"}</td>
                               <td style={{padding:"5px 7px"}}>{r.data||"—"}</td>
                               <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
+                              <td style={{padding:"5px 7px",whiteSpace:"nowrap"}}>
+                                <select value={r.vinculoChave||""}
+                                  onChange={e=>setImportCompraPreview(ls => ls.map(x => x.id===r.id
+                                    ? {...x, vinculoChave:e.target.value, vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"}
+                                    : x))}
+                                  style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
+                                    border:"1px solid "+(confirmar?"#ffb74d":"#ccc")}}>
+                                  <option value="">— não vincular (só compra) —</option>
+                                  {candidatosImportCompra.map(c=>(
+                                    <option key={c.chave} value={c.chave}>{c.nome}{c.culturas.length>1?` (${c.culturas.length} culturas)`:""}</option>
+                                  ))}
+                                </select>
+                                <div style={{fontSize:9,marginTop:2,color:confirmar?"#e65100":r.vinculoChave?"#2e7d32":"#999"}}>
+                                  {confirmar ? "❓ confira: "+r.vinculoMotivo
+                                    : r.vinculoChave ? "✓ "+(r.vinculoMotivo||"vinculado")
+                                    : "não achei na Programação"}
+                                </div>
+                              </td>
                             </tr>
-                          ))}
+                          );})}
                         </tbody>
                       </table>
                     </div>
@@ -9149,8 +9294,15 @@ function App() {
                       style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
                     {importCompraPreview && (
                       <button onClick={()=>{
-                        setComprasRecords(rs => [...rs, ...importCompraPreview]);
+                        // Guarda a compra sem os campos de vínculo — eles só servem pra decidir o
+                        // que vai pra Programação, não fazem parte do lançamento financeiro.
+                        const limpos = importCompraPreview.map(({vinculoChave, vinculoNivel, vinculoMotivo, ...r}) => r);
+                        setComprasRecords(rs => [...rs, ...limpos]);
+                        const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
+                        const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
                         setShowImportCompra(false); setImportCompraPreview(null); setImportCompraErro("");
+                        if (tocados) setCustoCompraMsg({ categoria: comprasCatSel, relatorio: [],
+                          importadas: importCompraPreview.length, vinculadas, tocados });
                       }} style={{padding:"7px 14px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Importar {importCompraPreview.length} compra(s)</button>
                     )}
                   </div>
