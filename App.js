@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "28/09 · 2";
+const VERSAO_APP = "29/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -3438,10 +3438,25 @@ function App() {
     const jaLancadas = new Set(comprasProgLancadas);
     // Produto que já tem lançamento próprio na mesma pasta — fechamento de cotação, digitado à
     // mão ou importado de planilha — não é lançado de novo: a compra já está registrada.
-    const chaveCompra = r => [r.safra, r.categoria, normalizarNome(r.produto)].join("|");
-    const jaRegistrados = new Set(comprasRecords.filter(r=>!r.origemProg).map(chaveCompra));
+    // A comparação NÃO exige nome idêntico. O caminho normal é comprar um produto que não estava
+    // na Programação (a compra entra pela planilha do grupo de compras) e só depois cadastrá-lo à
+    // mão na cultura onde foi usado — e nesse cadastro o nome sai um pouco diferente do que veio
+    // na nota ("Fox Xpro" x "Fox Xpro Bayer"). Comparando só o nome exato, o automático criava uma
+    // SEGUNDA compra em cima da que já estava lançada.
+    // De propósito mais restrito que a marca "fora da Programação" da tela de Compras: lá errar
+    // pra frouxo só deixa de avisar; aqui deixaria uma compra de verdade sem nunca aparecer.
+    const chavesPorPasta = {};
+    comprasRecords.filter(r => !r.origemProg).forEach(r => {
+      const pasta = r.safra + "|" + r.categoria;
+      (chavesPorPasta[pasta] = chavesPorPasta[pasta] || []).push(chaveProduto(r.produto||""));
+    });
+    const jaRegistrado = d => {
+      const alvo = chaveProduto(d.produto||"");
+      return (chavesPorPasta[d.safra + "|" + d.categoria] || [])
+        .some(k => k === alvo || mesmoProdutoQuaseIgual(k, alvo) || nomeComecaComOOutro(k, alvo));
+    };
     const novos = desejados.filter(d => !porOrigem.has(d.origemProg) && !jaLancadas.has(d.origemProg)
-      && !jaRegistrados.has(chaveCompra(d)));
+      && !jaRegistrado(d));
     const mudados = desejados.filter(d => {
       const atual = porOrigem.get(d.origemProg);
       if (!atual) return false;
@@ -4402,8 +4417,10 @@ function App() {
     });
     return tocados;
   }
-  // Atualiza o preço/kg-L (preco_unit) da Programação a partir do que foi realmente pago em
-  // Compras — soma o valor pago por produto e divide pela quantidade comprada. Pra Sementes, a
+  // Atualiza o preço de COMPRA da Programação a partir do que foi realmente pago em Compras —
+  // soma o valor pago por produto e divide pela quantidade comprada. O preço de referência
+  // (preco_unit) não é tocado: ele é o preço do ano anterior e serve pra comparar se comprei mais
+  // caro ou mais barato. Pra Sementes, a
   // compra normalmente vem com o nome da variedade (ex: "TMG 7062"), não da cultura — então em
   // vez de casar produto por produto, classifica cada compra por cultura (classificarCulturaSemente,
   // a mesma classificação já usada na prévia "Média de preço de sementes por cultura" em Compras)
@@ -4476,7 +4493,9 @@ function App() {
           (cat.products||[]).forEach(p => {
             const match = procuraMatch(p, culturaNome);
             if (match) {
-              p.preco_unit = match.precoMedio;
+              // Só o preço de COMPRA. O de referência (preco_unit) é o preço do ano anterior, que
+              // serve justamente pra comparar se comprei mais caro ou mais barato — sobrescrever
+              // com o que acabei de pagar apagava a comparação e igualava os dois números.
               p.preco_compra = match.precoMedio;
               p.fornecedor_compra = "Compra manual";
               if (isSementes) p.qtd = match.totalQtd;
