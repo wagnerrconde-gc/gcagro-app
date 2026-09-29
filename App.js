@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "23/09 · 1";
+const VERSAO_APP = "29/09 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -819,6 +819,124 @@ function nomeComecaComOOutro(a, b) {
 function nomesParecidos(chaveAlvo, todasAsChaves) {
   return todasAsChaves.filter(o => o !== chaveAlvo && (mesmoProdutoQuaseIgual(chaveAlvo, o)
     || nomeComecaComOOutro(chaveAlvo, o) || similaridadeNomes(chaveAlvo, o) >= LIMIAR_MESMA_IA));
+}
+// ── Importação da planilha do grupo de compras → Compras E Programação ──
+// Conjunto de ingredientes ativos de um produto, pra comparar INTEIRO: só é o mesmo produto quando
+// tem exatamente os mesmos ingredientes — faltando ou sobrando um, é outro produto, com outra
+// recomendação ("Piraclostrobina" ≠ "Piraclostrobina + Fluxapiroxade"). Separa por "+" e "/",
+// NUNCA por vírgula: "2,4-D" é um ingrediente só, e quebrando na vírgula viraria "2" e "4-D".
+// Concentração com barra ("480 g/L") sai antes, senão a barra da unidade virava separador.
+// Ordena no fim, pra ordem em que foram escritos não contar.
+function conjuntoIA(texto) {
+  const semConcentracao = String(texto||"")
+    .replace(/\d+(?:[.,]\d+)?\s*(?:g|mg|ml|kg|l|%)\s*\/\s*(?:l|kg|ha|100\s*kg)\b/gi, " ");
+  const partes = semConcentracao.split(/[+\/]/)
+    .map(s => normalizarNome(s).replace(/\s*-\s*/g, "-").trim()).filter(Boolean);
+  return [...new Set(partes)].sort().join(" + ");
+}
+function mesmoConjuntoIA(a, b) {
+  const ca = conjuntoIA(a), cb = conjuntoIA(b);
+  return !!ca && ca === cb;
+}
+// Palavra que, no fim do nome, costuma marcar OUTRA formulação e não o mesmo produto: "Priori" e
+// "Priori Xtra" têm composição diferente. Nome que só difere por uma dessas nunca casa sozinho.
+const PALAVRAS_DE_FORMULACAO = new Set(["plus","xtra","extra","top","max","pro","xpro","ultra","duo","gold","flex",
+  "turbo","super","forte","premium","prime","evo","star","advance","new","nf","sc","wg","ec","sl","cs","ce","wp","fs","od"]);
+// Produtos da Programação que uma pasta de Compras alimenta, um por nome (chaveProduto), com as
+// culturas onde aparece e o ingrediente ativo. Sementes fica de fora: ali a compra vem com o nome
+// da variedade ("TMG 7062") e a Programação tem o da cultura ("SEMENTE SOJA") — o custo de semente
+// continua pelo "Atualizar Custo", por cultura. Pasta que não é das padrão devolve null.
+function produtosDaProgramacaoPara(categoriaCompra, dVerao, dInverno) {
+  const cat = String(categoriaCompra||"");
+  const ehAdub = cat.startsWith("Adubação"), ehQuim = cat.startsWith("Químicos");
+  if (!ehAdub && !ehQuim) return null;
+  const dProg = cat.includes("Inverno") ? dInverno : dVerao;
+  const porChave = new Map();
+  Object.entries(dProg||{}).forEach(([cultura, c]) => (c.categories||[]).forEach(ct => {
+    if (ehAdub ? ct.name !== "Adubação" : !categoriaDeQuimicos(ct.name)) return;
+    (ct.products||[]).forEach(p => {
+      const nome = (p.produto||"").trim();
+      if (!nome) return;
+      const chave = chaveProduto(nome);
+      if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:"", culturas:new Set() });
+      const reg = porChave.get(chave);
+      reg.culturas.add(cultura);
+      if (!reg.ia && (p.ingrediente_ativo||"").trim()) reg.ia = p.ingrediente_ativo.trim();
+    });
+  }));
+  return [...porChave.values()].sort((a,b) => a.nome.localeCompare(b.nome));
+}
+// A qual produto da Programação uma linha da planilha de compras vai, em três níveis de certeza:
+//  - "igual": mesmo nome (sem acento/maiúscula/espaço) ou um nome começando com o outro palavra
+//    por palavra ("Heavy" x "Heavy Oil") — casa sozinho. Exceto quando a palavra a mais é de
+//    formulação ("Xtra", "Plus"...) ou o ingrediente ativo da compra diverge: aí vira sugestão;
+//  - "sugestao": marca a mais, nome só parecido, ou MESMO CONJUNTO de ingrediente ativo com nome
+//    diferente (comprou "Tecnup" onde planejou "Roundup Original"). Nunca passa calado: o mesmo
+//    ingrediente em outra concentração não vale a mesma dose — decisão agronômica, não do app;
+//  - "sem": não achou — entra só como compra, sem mexer em custo nenhum.
+// iaDoNome(nome) é opcional: procura o ingrediente ativo da compra no catálogo quando a planilha
+// não trouxe a coluna.
+function vincularCompraAProgramacao(nomeCompra, iaCompra, candidatos, iaDoNome) {
+  const k = chaveProduto(nomeCompra);
+  if (!k || !candidatos || !candidatos.length) return { nivel:"sem", alvo:null, motivo:"" };
+  const igual = candidatos.find(c => c.chave === k);
+  if (igual) return { nivel:"igual", alvo:igual.chave, motivo:"mesmo nome" };
+  const semBarra = !k.includes("/");
+  const prefixo = semBarra ? candidatos.filter(c => !c.chave.includes("/") && nomeComecaComOOutro(c.chave, k)) : [];
+  if (prefixo.length === 1) {
+    const c = prefixo[0];
+    const [curto, longo] = c.chave.length <= k.length ? [c.chave, k] : [k, c.chave];
+    const extras = longo.split(" ").slice(curto.split(" ").length);
+    const formulacao = extras.find(w => PALAVRAS_DE_FORMULACAO.has(w) || /\d/.test(w));
+    const iaDiverge = (iaCompra||"").trim() && c.ia && !mesmoConjuntoIA(iaCompra, c.ia);
+    if (!formulacao && !iaDiverge) return { nivel:"igual", alvo:c.chave, motivo:"nome começa igual" };
+    return { nivel:"sugestao", alvo:c.chave, motivo: iaDiverge
+      ? `nome começa igual, mas o ingrediente ativo é outro (${conjuntoIA(iaCompra)} × ${conjuntoIA(c.ia)})`
+      : `nome começa igual, mas "${formulacao}" pode ser outra formulação — confira` };
+  }
+  if (prefixo.length > 1) return { nivel:"sugestao", alvo:prefixo[0].chave,
+    motivo:`mais de um produto começa com esse nome (${prefixo.map(c=>c.nome).join(", ")}) — escolha o certo` };
+  const porMarca = candidatos.find(c => mesmoProdutoQuaseIgual(c.chave, k));
+  if (porMarca) return { nivel:"sugestao", alvo:porMarca.chave, motivo:"mesmo nome com uma palavra (marca) a mais" };
+  let ia = (iaCompra||"").trim(), iaDoCatalogo = false;
+  if (!ia && iaDoNome) { ia = iaDoNome(nomeCompra) || ""; iaDoCatalogo = !!ia; }
+  if (ia) {
+    const porIA = candidatos.filter(c => c.ia && mesmoConjuntoIA(c.ia, ia));
+    if (porIA.length) return { nivel:"sugestao", alvo:porIA[0].chave,
+      motivo:`mesmo ingrediente ativo (${conjuntoIA(ia)})${iaDoCatalogo?", achado no catálogo":""}${porIA.length>1?` — também em ${porIA.slice(1).map(c=>c.nome).join(", ")}`:""}; confira concentração e dose` };
+  }
+  const parecido = candidatos.map(c => ({ c, s: similaridadeNomes(c.chave, k) })).sort((a,b) => b.s-a.s)[0];
+  if (parecido && parecido.s >= 0.6) return { nivel:"sugestao", alvo:parecido.c.chave, motivo:"nome parecido" };
+  return { nivel:"sem", alvo:null, motivo:"" };
+}
+// A compra está na Programação? Calculado AO VIVO (nunca gravado no lançamento): no dia em que o
+// produto for cadastrado lá, a marca some sozinha. Aqui errar pra frouxo só deixa de avisar, então
+// aceita nome parecido; compra vinculada na importação (vinculoProg) conta pelo vínculo. Sementes,
+// lançamento automático da Programação e pasta fora das padrão nunca são acusados.
+function compraForaDaProgramacao(r, dVerao, dInverno) {
+  if (r.origemProg || String(r.categoria||"").startsWith("Sementes")) return false;
+  const cands = produtosDaProgramacaoPara(r.categoria, dVerao, dInverno);
+  if (!cands) return false;
+  if (r.vinculoProg && cands.some(c => c.chave === chaveProduto(r.vinculoProg))) return false;
+  const k = chaveProduto(r.produto);
+  if (!k) return false;
+  return !cands.some(c => c.chave === k || mesmoProdutoQuaseIgual(c.chave, k) || nomeComecaComOOutro(c.chave, k)
+    || similaridadeNomes(c.chave, k) >= LIMIAR_MESMA_IA);
+}
+// Proteção contra lançar em dobro: produto da Programação cuja compra já está em Compras. Mais
+// RESTRITA que a marca acima de propósito — aqui errar pra frouxo faria uma compra de verdade nunca
+// aparecer em Compras. Aceita só acento/maiúscula e UMA palavra de marca a mais, na frente
+// ("Bayer Fox Xpro") ou no fim ("Fox Xpro Bayer"), sem número e sem palavra de formulação;
+// semelhança por letra, não.
+function mesmoNomeParaDuplicata(a, b) {
+  const x = chaveProduto(a), y = chaveProduto(b);
+  if (!x || !y) return false;
+  if (x === y || mesmoProdutoQuaseIgual(x, y)) return true;
+  if (/\d/.test(x) || /\d/.test(y) || x.includes("/") || y.includes("/")) return false;
+  const [curto, longo] = x.length <= y.length ? [x, y] : [y, x];
+  if (curto.length < 5 || !longo.startsWith(curto + " ")) return false;
+  const extra = longo.slice(curto.length).trim();
+  return !!extra && !extra.includes(" ") && !PALAVRAS_DE_FORMULACAO.has(extra);
 }
 // Traduz a unidade da Programação (kg/Lt/Tn/bag/sc/doses) pro vocabulário de cada tela de
 // Cotação — cada uma só aceita um conjunto próprio de unidades (ver unitOptions):
@@ -1442,6 +1560,7 @@ const ALIASES_COMPRAS = {
   vencimento:    ["vencimento","venc"],
   obs:           ["obs","observacao","observacoes"],
   tratamento:    ["tratamento"],
+  ingredienteAtivo: ["ingrediente_ativo","i_a","ia","principio_ativo"],
 };
 function buildCompraRecord(m, categoria, safra) {
   const produto = String(m.produto||"").trim();
@@ -1454,7 +1573,8 @@ function buildCompraRecord(m, categoria, safra) {
     unidade: String(m.unidade||"TN").trim(), quantidade,
     precoUnitario, valorTotal: valorTotalInformado || precoUnitario*quantidade,
     fornecedor: String(m.fornecedor||"").trim(), data: String(m.data||"").trim(),
-    obs: String(m.vencimento||m.obs||"").trim(), tratamento: String(m.tratamento||"").trim() };
+    obs: String(m.vencimento||m.obs||"").trim(), tratamento: String(m.tratamento||"").trim(),
+    ...(String(m.ingredienteAtivo||"").trim() ? { ingredienteAtivo: String(m.ingredienteAtivo).trim() } : {}) };
 }
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
 function deleteRecord(setRecords, id) { setRecords(rs => rs.filter(r => r.id !== id)); }
@@ -3413,10 +3533,14 @@ function App() {
     const jaLancadas = new Set(comprasProgLancadas);
     // Produto que já tem lançamento próprio na mesma pasta — fechamento de cotação, digitado à
     // mão ou importado de planilha — não é lançado de novo: a compra já está registrada.
-    const chaveCompra = r => [r.safra, r.categoria, normalizarNome(r.produto)].join("|");
-    const jaRegistrados = new Set(comprasRecords.filter(r=>!r.origemProg).map(chaveCompra));
+    // A comparação aceita acento e UMA palavra de marca a mais ("Fox Xpro" na nota, "Fox Xpro
+    // Bayer" cadastrado depois na Programação) e o vínculo gravado na importação — e nada além
+    // disso: aqui errar pra frouxo faria uma compra de verdade nunca aparecer em Compras.
+    const registrados = comprasRecords.filter(r=>!r.origemProg);
+    const jaRegistrado = d => registrados.some(r => r.safra===d.safra && r.categoria===d.categoria
+      && (mesmoNomeParaDuplicata(r.produto, d.produto) || (r.vinculoProg && chaveProduto(r.vinculoProg)===chaveProduto(d.produto))));
     const novos = desejados.filter(d => !porOrigem.has(d.origemProg) && !jaLancadas.has(d.origemProg)
-      && !jaRegistrados.has(chaveCompra(d)));
+      && !jaRegistrado(d));
     const mudados = desejados.filter(d => {
       const atual = porOrigem.get(d.origemProg);
       if (!atual) return false;
@@ -4117,7 +4241,7 @@ function App() {
             const nomeMatch = mesmoProdutoQuaseIgual(chaveProduto(p.produto), chaveProduto(prodKey));
             const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
             if (nomeMatch || iaMatch) {
-              p.preco_unit = precoMedio;
+              // Preço pago vai só no de COMPRA; o de referência (ano anterior) fica pra comparação.
               p.preco_compra = precoMedio;
               p.fornecedor_compra = fornecedorLabel;
               p.revenda = fornecedorLabel;
@@ -4321,9 +4445,11 @@ function App() {
         if (!cultura) return;
         key = normalizarNome(cultura); label = cultura;
       } else {
-        key = normalizarNome(r.produto);
+        // Compra vinculada na importação (nome da nota diferente do da Programação) conta pelo
+        // produto a que foi vinculada.
+        label = (r.vinculoProg || r.produto || "").trim();
+        key = normalizarNome(label);
         if (!key) return;
-        label = r.produto.trim();
       }
       if (!grupos[key]) grupos[key] = { produto:label, totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set() };
       grupos[key].totalPago += r.valorTotal||0;
@@ -4368,9 +4494,14 @@ function App() {
           (cat.products||[]).forEach(p => {
             const match = procuraMatch(p, culturaNome);
             if (match) {
-              p.preco_unit = match.precoMedio;
+              // Só o preço de COMPRA: o de referência (preco_unit) é o do ano anterior e existe
+              // pra comparar se comprou mais caro ou mais barato — gravar o pago nele igualava os
+              // dois e apagava a comparação. Produto sem referência continua sem.
               p.preco_compra = match.precoMedio;
-              p.fornecedor_compra = "Compra manual";
+              // Fornecedor de verdade (importação/cotação) marca a compra como já registrada em
+              // Compras; "Compra manual" não. Não rebaixa um pelo outro, senão o lançamento
+              // automático voltava a criar a mesma compra.
+              if (!(p.fornecedor_compra||"").trim() || p.fornecedor_compra === "Compra manual") p.fornecedor_compra = "Compra manual";
               if (isSementes) p.qtd = match.totalQtd;
               if (match.fornecedores && match.fornecedores.size) p.revenda = [...match.fornecedores].join(" + ");
               // Só sobrescreve o vencimento quando a planilha trouxe algum — sem isso, um lote
@@ -4383,6 +4514,62 @@ function App() {
       return nd;
     });
     return medias.filter(m=>atingidos.has(m.produto));
+  }
+
+  // Importação da planilha do grupo de compras: UMA passada alimenta Compras E a Programação,
+  // sempre nesse sentido (planilha -> Compras -> Programação). Recebe as linhas da prévia já com o
+  // vínculo conferido ({ rec, alvo }, alvo = chave do produto na Programação ou null).
+  //  - Compras: um lançamento por linha da planilha, com o vínculo gravado (vinculoProg), pra a
+  //    compra comprada com outro nome não ser acusada de "fora da Programação";
+  //  - Programação: o preço PAGO vai só no preço de COMPRA, em TODAS as culturas onde o produto
+  //    está (a compra foi uma só). Várias notas do mesmo produto viram média ponderada pela
+  //    quantidade (soma pago / soma qtd), arredondada — em ponto flutuante R$ 245 viravam
+  //    244,99999999999997. O fornecedor fica gravado no produto, marcando a compra como já
+  //    registrada, pra o lançamento automático não criar outra em cima.
+  // Devolve quantos produtos da Programação receberam preço.
+  function aplicarImportacaoCompras(linhas, categoriaCompra) {
+    const cands = produtosDaProgramacaoPara(categoriaCompra, dataVerao, dataInverno) || [];
+    const nomePorChave = new Map(cands.map(c => [c.chave, c.nome]));
+    const registros = linhas.map(l => l.alvo && nomePorChave.has(l.alvo) ? { ...l.rec, vinculoProg: nomePorChave.get(l.alvo) } : l.rec);
+    const grupos = new Map();
+    linhas.forEach(l => {
+      if (!l.alvo || !nomePorChave.has(l.alvo) || !(l.rec.quantidade > 0)) return;
+      if (!grupos.has(l.alvo)) grupos.set(l.alvo, { pago:0, qtd:0, fornecedores:new Set(), vencimentos:new Set() });
+      const g = grupos.get(l.alvo);
+      g.pago += l.rec.valorTotal || 0;
+      g.qtd += l.rec.quantidade;
+      if ((l.rec.fornecedor||"").trim()) g.fornecedores.add(l.rec.fornecedor.trim());
+      if ((l.rec.obs||"").trim()) g.vencimentos.add(l.rec.obs.trim());
+    });
+    let atingidos = 0;
+    if (grupos.size) {
+      const isVerao = !String(categoriaCompra).includes("Inverno");
+      const isAdub = String(categoriaCompra).startsWith("Adubação");
+      salvarSnapshot(`Importar compras — ${categoriaCompra}`, isVerao ? { prog_verao: dataVerao, compras: comprasRecords } : { prog_inv: dataInverno, compras: comprasRecords });
+      const dAtual = isVerao ? dataVerao : dataInverno;
+      Object.values(dAtual).forEach(c => (c.categories||[]).forEach(ct => {
+        if (isAdub ? ct.name !== "Adubação" : !categoriaDeQuimicos(ct.name)) return;
+        (ct.products||[]).forEach(p => { if (grupos.has(chaveProduto(p.produto))) atingidos++; });
+      }));
+      (isVerao ? setDataVerao : setDataInverno)(d => {
+        const nd = JSON.parse(JSON.stringify(d));
+        Object.values(nd).forEach(c => (c.categories||[]).forEach(ct => {
+          if (isAdub ? ct.name !== "Adubação" : !categoriaDeQuimicos(ct.name)) return;
+          (ct.products||[]).forEach(p => {
+            const g = grupos.get(chaveProduto(p.produto));
+            if (!g || !(g.qtd > 0)) return;
+            p.preco_compra = Math.round((g.pago / g.qtd) * 1e6) / 1e6;   // referência (preco_unit) não é tocada
+            const forn = [...g.fornecedores].join(" + ");
+            p.fornecedor_compra = forn || "Importação de compras";
+            if (!(p.revenda||"").trim() && forn) p.revenda = forn;
+            if (!(p.vencimento||"").trim() && g.vencimentos.size) p.vencimento = [...g.vencimentos].join(" + ");
+          });
+        }));
+        return nd;
+      });
+    }
+    setComprasRecords(rs => [...rs, ...registros]);
+    return atingidos;
   }
 
   // ── Safras ──
@@ -9103,7 +9290,8 @@ function App() {
                 <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:680,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:10}}>📥 Importar compras (planilha)</div>
                   <div style={{fontSize:12,color:"#666",marginBottom:12}}>
-                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Produto</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Preço Fechado</b> (ou Valor Total), <b>Fornecedor</b>, <b>Vencimento</b>/<b>Obs</b> (opcional). Todas as linhas entram na safra <b>{comprasSafraSel}</b>, categoria <b>{comprasCatSel}</b> — a mesma pasta onde você está agora.
+                    Arquivo .xlsx, .xls ou .csv com colunas: <b>Produto</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Preço Fechado</b> (ou Valor Total), <b>Fornecedor</b>, <b>Vencimento</b>/<b>Obs</b> e <b>Ingrediente Ativo</b> (opcionais). Todas as linhas entram na safra <b>{comprasSafraSel}</b>, categoria <b>{comprasCatSel}</b> — a mesma pasta onde você está agora.
+                    {" "}Na mesma importação, o preço pago vai pro <b>preço de compra</b> dos produtos da Programação — antes de gravar, a prévia mostra a qual produto cada linha vai, pra conferir.
                   </div>
                   {!importCompraPreview ? (
                     <input type="file" accept=".xlsx,.xls,.csv" onChange={async e=>{
@@ -9112,24 +9300,76 @@ function App() {
                         const rows = await readSpreadsheetRows(file);
                         const registros = rows.map(row => buildCompraRecord(mapRowByAliases(row, ALIASES_COMPRAS), comprasCatSel, comprasSafraSel)).filter(Boolean);
                         if (!registros.length) { setImportCompraErro("⚠ Nenhuma linha reconhecida. Confira os nomes das colunas."); return; }
-                        setImportCompraPreview(registros);
+                        // Cada linha já sai com o vínculo proposto (igual / sugestão / sem) — nada
+                        // é gravado antes de passar pela prévia.
+                        const cands = produtosDaProgramacaoPara(comprasCatSel, dataVerao, dataInverno);
+                        const mapas = mapasIA();
+                        const iaDoNome = nome => (buscarIngredienteAtivo(nome, mapas) || {}).ia || "";
+                        setImportCompraPreview(registros.map(rec => {
+                          const v = cands ? vincularCompraAProgramacao(rec.produto, rec.ingredienteAtivo, cands, iaDoNome) : { nivel:"sem", alvo:null, motivo:"" };
+                          return { rec, ...v, proposto: v };
+                        }));
                         setImportCompraErro("");
                       } catch (err) { setImportCompraErro("❌ Erro ao ler o arquivo: "+err.message); }
                       e.target.value = "";
                     }} style={{marginBottom:10}}/>
                   ) : (
+                    (()=>{
+                    const cands = produtosDaProgramacaoPara(comprasCatSel, dataVerao, dataInverno);
+                    const nIgual = importCompraPreview.filter(l=>l.alvo && l.nivel==="igual").length;
+                    const nSug = importCompraPreview.filter(l=>l.alvo && l.nivel!=="igual").length;
+                    const nSem = importCompraPreview.filter(l=>!l.alvo).length;
+                    // Voltar pro proposto devolve o nível/motivo original; qualquer outro é escolha minha.
+                    const trocar = (i, alvo) => setImportCompraPreview(ls => ls.map((l,j) => j!==i ? l
+                      : !alvo ? { ...l, alvo:null, nivel:"sem" }
+                      : alvo===l.proposto.alvo ? { ...l, ...l.proposto }
+                      : { ...l, alvo, nivel:"escolhido" }));
+                    return (
                     <div style={{overflowX:"auto",marginBottom:14}}>
-                      <div style={{fontSize:12,color:"#00695c",marginBottom:8}}>{importCompraPreview.length} compra(s) prontas pra importar:</div>
+                      <div style={{fontSize:12,color:"#00695c",marginBottom:6}}>{importCompraPreview.length} compra(s) prontas pra importar.</div>
+                      {cands ? (
+                        <div style={{fontSize:11,color:"#555",marginBottom:8,lineHeight:1.6}}>
+                          Coluna <b>Vai para</b>: o produto da Programação que recebe o preço pago (só o preço de <b>compra</b> — o de referência não muda), em todas as culturas onde ele está.
+                          {" "}<b style={{color:"#2e7d32"}}>{nIgual} igual</b> · <b style={{color:"#b26a00"}}>{nSug} pra conferir</b> (em amarelo, com o motivo) · <b style={{color:"#888"}}>{nSem} sem vínculo</b> (entra só em Compras).
+                          Dá pra trocar em qualquer linha, ou escolher "não vincular".
+                        </div>
+                      ) : (
+                        <div style={{fontSize:11,color:"#888",marginBottom:8}}>
+                          {(comprasCatSel||"").startsWith("Sementes")
+                            ? "Sementes entram só em Compras: o custo de semente vai pra Programação por cultura, no botão Atualizar Custo."
+                            : "Esta pasta não corresponde a uma categoria da Programação — as linhas entram só em Compras."}
+                        </div>
+                      )}
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr style={{background:"#e0f2f1"}}>
-                          {["Produto","Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Data","Obs"].map(h=>(
+                          {["Produto",...(cands?["Vai para (Programação)"]:[]),"Unidade","Quantidade","Preço Unit.","Total","Fornecedor","Data","Obs"].map(h=>(
                             <th key={h} style={{padding:"5px 7px",textAlign:"left",color:"#00695c",textTransform:"uppercase",fontSize:9,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
-                          {importCompraPreview.map((r,i)=>(
-                            <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
-                              <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}</td>
+                          {importCompraPreview.map((l,i)=>{
+                            const r = l.rec;
+                            const conferir = l.alvo && l.nivel==="sugestao";
+                            const alvoInfo = cands && l.alvo && cands.find(c=>c.chave===l.alvo);
+                            return (
+                            <tr key={r.id} style={{background: conferir ? "#fff8c4" : (i%2===0?"#fff":"#fafafa")}}>
+                              <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}{r.ingredienteAtivo && <div style={{fontSize:9,color:"#888",fontWeight:400}}>{r.ingredienteAtivo}</div>}</td>
+                              {cands && (
+                                <td style={{padding:"5px 7px",minWidth:190}}>
+                                  <select value={l.alvo||""} onChange={e=>trocar(i, e.target.value)}
+                                    style={{width:"100%",padding:"3px 4px",fontSize:11,border:"1px solid "+(conferir?"#e0a800":"#ccc"),borderRadius:4,background:"#fff"}}>
+                                    <option value="">— não vincular (só Compras) —</option>
+                                    {cands.map(c=><option key={c.chave} value={c.chave}>{c.nome}{c.culturas.size>1?` (${c.culturas.size} culturas)`:""}</option>)}
+                                  </select>
+                                  <div style={{fontSize:9,marginTop:2,color: conferir ? "#8a5a00" : l.alvo ? "#2e7d32" : "#999"}}>
+                                    {!l.alvo ? "sem correspondência — entra só como compra"
+                                      : l.nivel==="igual" ? "✓ igual" + (l.motivo && l.motivo!=="mesmo nome" ? ` (${l.motivo})` : "")
+                                      : l.nivel==="escolhido" ? "✓ escolhido por você"
+                                      : "⚠ confira: " + l.motivo}
+                                    {alvoInfo && ` · ${[...alvoInfo.culturas].join(", ")}`}
+                                  </div>
+                                </td>
+                              )}
                               <td style={{padding:"5px 7px"}}>{r.unidade}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtQtd(r.quantidade)}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmt(r.precoUnitario)}</td>
@@ -9138,10 +9378,13 @@ function App() {
                               <td style={{padding:"5px 7px"}}>{r.data||"—"}</td>
                               <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
+                    );
+                    })()
                   )}
                   {importCompraErro && <div style={{fontSize:12,color:"#c62828",marginBottom:10}}>{importCompraErro}</div>}
                   <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
@@ -9149,8 +9392,9 @@ function App() {
                       style={{padding:"7px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Cancelar</button>
                     {importCompraPreview && (
                       <button onClick={()=>{
-                        setComprasRecords(rs => [...rs, ...importCompraPreview]);
+                        const atingidos = aplicarImportacaoCompras(importCompraPreview, comprasCatSel);
                         setShowImportCompra(false); setImportCompraPreview(null); setImportCompraErro("");
+                        if (atingidos) window.alert(`${importCompraPreview.length} compra(s) importada(s).\n\nPreço de compra atualizado em ${atingidos} produto(s) da Programação (o preço de referência não foi alterado).`);
                       }} style={{padding:"7px 14px",background:"#00695c",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>✓ Importar {importCompraPreview.length} compra(s)</button>
                     )}
                   </div>
@@ -9158,6 +9402,20 @@ function App() {
               </div>
             )}
 
+            {(()=>{
+              // Lista do que falta cadastrar na Programação: compra registrada (o dinheiro saiu),
+              // mas que não entra no custo da lavoura enquanto o produto não estiver lá. Calculado
+              // ao vivo — some sozinho quando o produto é cadastrado, sem reimportar nada.
+              const fora = comprasRecordsFiltrados.filter(r => compraForaDaProgramacao(r, dataVerao, dataInverno));
+              if (!fora.length) return null;
+              const nomes = [...new Map(fora.map(r => [chaveProduto(r.produto), r.produto.trim()])).values()];
+              return (
+                <div style={{background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:12,color:"#8a4b00",lineHeight:1.6}}>
+                  <b>⚠ {nomes.length} produto(s) comprado(s) fora da Programação</b> — estão salvos em Compras, mas não entram no custo da lavoura até serem cadastrados na Programação:
+                  <div style={{marginTop:4,fontWeight:600}}>{nomes.join(" · ")}</div>
+                </div>
+              );
+            })()}
             <div style={{background:"#fff",borderRadius:10,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
               <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -9179,6 +9437,8 @@ function App() {
                       <td style={{padding:"6px 9px",fontWeight:600}}>
                         <RecEditCell recKey={"compra|"+r.id} field="produto" value={r.produto} onCommit={v=>updateRecordField(setComprasRecords,r.id,"produto",v)}/>
                         {r.origemProg && <span title="Veio automático da Programação (produto com preço, revenda e vencimento preenchidos). Editar aqui é temporário: muda na Programação que atualiza aqui." style={{background:"#e8f5e9",color:"#2e7d32",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>🔗 Programação</span>}
+                        {r.vinculoProg && chaveProduto(r.vinculoProg)!==chaveProduto(r.produto) && <span title="Comprado com este nome, vinculado na importação a este produto da Programação" style={{background:"#e3f2fd",color:"#1565C0",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap",marginLeft:4}}>→ {r.vinculoProg}</span>}
+                        {compraForaDaProgramacao(r, dataVerao, dataInverno) && <span title="Este produto não está cadastrado na Programação — enquanto não estiver, não entra no custo da lavoura. A marca some sozinha quando ele for cadastrado." style={{background:"#fff3e0",color:"#e65100",borderRadius:8,padding:"1px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap",marginLeft:4}}>⚠ fora da Programação</span>}
                       </td>
                       {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
