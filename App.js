@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "29/09 · 1";
+const VERSAO_APP = "29/09 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -837,10 +837,21 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
   const parecido = candidatos.find(c => nomeComecaComOOutro(c.chave, chave)
                                      || similaridadeNomes(c.chave, chave) >= LIMIAR_MESMA_IA);
   if (parecido) return { chave: parecido.chave, nivel: "sugestao", motivo: "nome parecido" };
-  const ia = normalizarNome(iaComprado);
+  const ia = conjuntoIngredientes(iaComprado);
   const porIA = ia && candidatos.find(c => c.ia && c.ia === ia);
   if (porIA) return { chave: porIA.chave, nivel: "sugestao", motivo: "mesmo ingrediente ativo" };
   return null;
+}
+// O conjunto de ingredientes ativos de um produto, num texto comparável. Produto com dois, três
+// ou quatro ingredientes só é o MESMO produto se tiver EXATAMENTE os mesmos: um "Glifosato" não é
+// um "Glifosato + 2,4-D", e uma mistura a que falta um ingrediente é outro produto, com outra
+// recomendação. Então a comparação é de conjunto inteiro, nunca de pedaço.
+// Separa por "+" e "/", normaliza cada ingrediente e ORDENA, pra que a ordem em que foram
+// escritos não conte ("Piraclostrobina + Fluxapiroxade" = "Fluxapiroxade + Piraclostrobina").
+// NÃO separa por vírgula de propósito: ingrediente de verdade leva vírgula no nome ("2,4-D"), e
+// quebrar nela transformaria um ingrediente em dois e faria produtos diferentes parecerem iguais.
+function conjuntoIngredientes(txt) {
+  return (txt||"").split(/[+\/]/).map(s => normalizarNome(s)).filter(Boolean).sort().join("|");
 }
 // Traduz a unidade da Programação (kg/Lt/Tn/bag/sc/doses) pro vocabulário de cada tela de
 // Cotação — cada uma só aceita um conjunto próprio de unidades (ver unitOptions):
@@ -4352,7 +4363,7 @@ function App() {
         const nome = (p.produto||"").trim();
         if (!nome) return;
         const chave = chaveProduto(nome);
-        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:normalizarNome(p.ingrediente_ativo), culturas:[] });
+        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo), culturas:[] });
         const alvo = porChave.get(chave);
         if (!alvo.culturas.includes(cultura)) alvo.culturas.push(cultura);
         // Fica o nome mais completo como rótulo, igual às outras telas fazem.
