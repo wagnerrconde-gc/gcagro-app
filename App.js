@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "29/09 · 2";
+const VERSAO_APP = "13/10 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -992,6 +992,18 @@ function calcResultadoOperacao(o) {
 function parseDataBR(s) {
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((s||"").trim());
   return m ? new Date(+m[3], +m[2]-1, +m[1]) : null;
+}
+// Previsão de colheita = data de plantio + ciclo, em dias. É a conta que já era feita à mão na
+// planilha do Plano de Campo (16/10/2025 + 117 dias = 10/02/2026). setDate() vira o mês e o ano
+// sozinho, então não precisa cuidar de fim de mês nem de ano bissexto na mão.
+// Devolve "" quando falta a data ou o ciclo — aí o campo fica em branco pra preencher à mão, em
+// vez de inventar uma data a partir de dado que não existe.
+function calcPrevisaoColheita(dataPlantio, ciclo) {
+  const d = parseDataBR(dataPlantio);
+  const dias = Number(ciclo);
+  if (!d || !(dias > 0)) return "";
+  d.setDate(d.getDate() + dias);
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
 }
 
 function loadLS(key, def) { try { const r=localStorage.getItem(key); return r?JSON.parse(r):def; } catch { return def; } }
@@ -2221,13 +2233,36 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
   const [genAdubMsg, setGenAdubMsg] = useState(null);
   const [enviarMsg, setEnviarMsg] = useState(null);
 
+  // Mexer na data de plantio ou no ciclo recalcula a previsão de colheita na hora. A previsão
+  // continua um campo gravado e editável — outras telas (Colheita, Áreas, resumos) leem ela do
+  // lote, então calcular só na exibição deixaria essas telas vendo campo vazio.
+  // Digitar direto na previsão sobrescreve normalmente; ela volta a ser calculada na próxima vez
+  // que a data ou o ciclo mudarem.
   function upd(i, field, val) {
-    setData(d => d.map((r,ri) => ri===i ? { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val } : r));
+    setData(d => d.map((r,ri) => {
+      if (ri !== i) return r;
+      const novo = { ...r, [field]: ["area","ciclo","populacao"].includes(field) ? (parseFloat(val)||0) : val };
+      if (field === "dataPlantio" || field === "ciclo") {
+        const prev = calcPrevisaoColheita(novo.dataPlantio, novo.ciclo);
+        if (prev) novo.previsaoColheita = prev;
+      }
+      return novo;
+    }));
   }
+  // Linha que já tem data de plantio e ciclo, mas está com a previsão em branco, ganha a previsão
+  // calculada sozinha — senão o lote antigo só seria preenchido no dia em que alguém reeditasse a
+  // célula, e a tela abriria com a coluna vazia sem motivo.
+  // Só preenche o que está EM BRANCO: previsão digitada à mão nunca é sobrescrita aqui.
+  useEffect(() => {
+    const falta = r => !(r.previsaoColheita||"").trim() && calcPrevisaoColheita(r.dataPlantio, r.ciclo);
+    if (!data.some(falta)) return;
+    setData(d => d.map(r => falta(r) ? { ...r, previsaoColheita: calcPrevisaoColheita(r.dataPlantio, r.ciclo) } : r));
+    // eslint-disable-next-line
+  }, [data]);
   function addLote() {
     setData(d => [...d, isVerao
       ? { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacao:"", kcl:"", ciclo:0, populacao:0, unidadeQtd:"bag", dataPlantio:"", previsaoColheita:"", obs:"" }
-      : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", populacao:0, unidadeQtd:"saco", dataPlantio:"", previsaoColheita:"", obs:"" }
+      : { id:newId(), lote:"", area:0, cultura:culturaOpts[0], variedade:"", adubacaoPlantio:"", cobertura:"", nCobertura:"", ciclo:0, populacao:0, unidadeQtd:"saco", dataPlantio:"", previsaoColheita:"", obs:"" }
     ]);
   }
   // Divide um lote/pivô ao meio: usado quando duas variedades são plantadas na mesma área física
@@ -2261,7 +2296,7 @@ function PlanejamentoTable({data, setData, tipo, cultureColors, onGerarCotacao, 
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]]
     : [["lote","Lote / Fazenda","text",120],["area","Área (ha)","number",65],["cultura","Cultura","select"],["variedade","Variedade","text",100],
        ["adubacaoPlantio","Adubação","text",90,"center"],["cobertura","KCl","text",90,"center"],["nCobertura","N Cobertura","text",90,"center"],
-       ["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
+       ["ciclo","Ciclo (d)","number",55],["populacao","Pop.(sem/m)","number",55,"center","center"],["quantidade","Quantidade","calc",70,"center","center",true],["unidadeQtd","Unid.","unit",60,null,null,true],
        ["dataPlantio","Data Plantio","text",80],["previsaoColheita","Prev. Colheita","text",80,null,null,true]];
 
   // Largura de cada coluna NO PAPEL, em proporção — sem isso (table-layout:fixed reparte em
