@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 7";
+const VERSAO_APP = "21/10 · 8";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -3315,35 +3315,39 @@ function App() {
     setRecuperacao({ carregando:false, itens, marcados:new Set(itens.map(i=>i.chave)), erroServidor,
       fontesLocais: fontes.filter(f=>f.tipo==="local").length, fontesServidor: fontes.filter(f=>f.tipo==="servidor").length });
   }
-  // Junta uma pasta de Compras de outra safra (ex: nome antigo antes de renomear, ou compras
-  // recuperadas de um ponto de retorno antigo) na safra atual. Compras que já existem iguais
-  // na safra atual (mesmo produto, categoria, quantidade e valor) não são duplicadas.
-  function separarPastaParaJuntar(rs, safraOrigem) {
-    const destino = rs.filter(r => r.safra===safraAtiva);
-    const ids = new Set(destino.map(r => r.id).filter(Boolean));
-    const origens = new Set(destino.map(r => r.origemProg).filter(Boolean));
-    const conteudos = new Set(destino.map(compraConteudoSemSafra));
-    const mover = [], repetidas = [];
-    rs.filter(r => r.safra===safraOrigem).forEach(r => {
-      const igual = (r.id && ids.has(r.id)) || (r.origemProg && origens.has(r.origemProg)) || conteudos.has(compraConteudoSemSafra(r));
-      (igual ? repetidas : mover).push(r);
+  // Compras gravadas com um nome de safra que não é o atual nem o de uma safra já encerrada
+  // (arquivada). Aconteceu com compras lançadas antes de a safra ser renomeada, ou recuperadas de
+  // um ponto de retorno antigo: são desta safra, mas com o rótulo velho, e não apareciam na tela.
+  const comprasComSafraErrada = useMemo(() => {
+    const encerradas = new Set((safrasArquivadas||[]).map(a => a && a.nome).filter(Boolean));
+    // Cópia de compra que já está na safra atual (mesmo produto, categoria, quantidade e valor)
+    // não conta: fica só guardada, sem aviso nenhum — a compra já aparece na pasta da safra.
+    const naAtual = new Set(comprasRecords.filter(r=>r.safra===safraAtiva).map(compraConteudoSemSafra));
+    const porRotulo = new Map();
+    comprasRecords.forEach(r => {
+      if (r.safra===safraAtiva || encerradas.has(r.safra) || naAtual.has(compraConteudoSemSafra(r))) return;
+      const k = r.safra || "";
+      if (!porRotulo.has(k)) porRotulo.set(k, []);
+      porRotulo.get(k).push(r);
     });
-    return { mover, repetidas };
-  }
-  function juntarPastaCompras(safraOrigem) {
-    if (safraOrigem===safraAtiva) return;
-    const { mover, repetidas } = separarPastaParaJuntar(comprasRecords, safraOrigem);
-    const nomeOrigem = safraOrigem || "(sem safra)";
-    const linhas = [`Juntar a pasta "${nomeOrigem}" com a safra atual "${safraAtiva}"?`, ""];
-    if (mover.length) linhas.push(`• ${mover.length} compra(s) passam para "${safraAtiva}".`);
-    if (repetidas.length) linhas.push(`• ${repetidas.length} compra(s) já existem iguais em "${safraAtiva}" (mesmo produto, quantidade e valor) e saem da pasta antiga, pra não contar duas vezes.`);
-    linhas.push("", "Fica um ponto de retorno salvo antes.");
-    if (!window.confirm(linhas.join("\n"))) return;
-    salvarSnapshot(`Juntar pasta de compras "${nomeOrigem}" com "${safraAtiva}"`, { compras: comprasRecords });
+    return [...porRotulo.entries()].map(([rotulo, recs]) => ({ rotulo, recs,
+      total: recs.reduce((t,r)=>t+(Number(r.valorTotal)||0),0) }));
+  }, [comprasRecords, safraAtiva, safrasArquivadas]);
+  // Corrige só o rótulo da safra dessas compras — não mexe na Programação nem em nenhum valor.
+  // A que já existe igual na safra atual (mesmo produto, categoria, quantidade e valor) fica
+  // guardada com o rótulo antigo, fora da vista, pra não contar duas vezes; nada é apagado.
+  function corrigirSafraDasCompras(rotulo) {
+    const iguaisNaAtual = rs => new Set(rs.filter(r=>r.safra===safraAtiva).map(compraConteudoSemSafra));
+    const ja = iguaisNaAtual(comprasRecords);
+    const recs = comprasRecords.filter(r => (r.safra||"")===rotulo && !ja.has(compraConteudoSemSafra(r)));
+    const msg = [`${recs.length} compra(s) estão gravadas como "${rotulo||"(sem safra)"}" e não aparecem na safra atual.`,
+      ``, `Passar para "${safraAtiva}"?`, ``,
+      `Só muda o nome da safra gravado na compra — a Programação e os valores não são tocados. Fica um ponto de retorno salvo antes.`].join("\n");
+    if (!window.confirm(msg)) return;
+    salvarSnapshot(`Corrigir safra de ${recs.length} compra(s) ("${rotulo}" → "${safraAtiva}")`, { compras: comprasRecords });
     setComprasRecords(rs => {
-      const { repetidas: rep } = separarPastaParaJuntar(rs, safraOrigem);
-      const sai = new Set(rep);
-      return rs.filter(r => !sai.has(r)).map(r => r.safra===safraOrigem ? { ...r, safra:safraAtiva } : r);
+      const jaAgora = iguaisNaAtual(rs);
+      return rs.map(r => (r.safra||"")===rotulo && !jaAgora.has(compraConteudoSemSafra(r)) ? { ...r, safra:safraAtiva } : r);
     });
   }
   function recuperarComprasMarcadas() {
@@ -4926,10 +4930,10 @@ function App() {
     return { total, totalSafraAtiva, porSafra: Object.values(porSafra) };
   }, [comprasRecords, safraAtiva]);
 
+  // A tela de Compras mostra só a safra atual. Compras de safras anteriores continuam
+  // guardadas (e vão pro arquivo quando a safra é encerrada), mas não aparecem aqui.
   const comprasSafrasList = useMemo(() => {
-    const safras = new Set(comprasRecords.map(r=>r.safra));
-    safras.add(safraAtiva);
-    return Array.from(safras).map(safra => {
+    return [safraAtiva].map(safra => {
       const recs = comprasRecords.filter(r=>r.safra===safra);
       return { safra, total: recs.reduce((s,r)=>s+r.valorTotal,0), count: recs.length };
     }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : String(b.safra||"").localeCompare(String(a.safra||"")));
@@ -9269,10 +9273,6 @@ function App() {
         <div style={{padding:"16px"}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
             <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <div style={{fontSize:11,color:"#888"}}>Total comprado (histórico)</div>
-              <div style={{fontSize:18,fontWeight:800,color:"#00695c"}}>{fmt(comprasTotais.total)}</div>
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
               <div style={{fontSize:11,color:"#888"}}>Total nesta safra ({safraAtiva})</div>
               <div style={{fontSize:18,fontWeight:800,color:"#00695c"}}>{fmt(comprasTotais.totalSafraAtiva)}</div>
             </div>
@@ -9298,33 +9298,29 @@ function App() {
 
           {/* NÍVEL 0: pastas de safra */}
           {!comprasSafraSel && (<>
+            {comprasComSafraErrada.map(g => (
+              <div key={g.rotulo} data-safra-errada="1" style={{background:"#fff8e1",border:"1px solid #ffcc80",borderRadius:10,padding:"12px 14px",marginBottom:12,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:220,fontSize:12,color:"#6d4c00"}}>
+                  ⚠ <b>{g.recs.length} compra(s)</b> ({fmt(g.total)}) estão gravadas com a safra <b>"{g.rotulo||"(sem safra)"}"</b> e por isso não aparecem aqui.
+                  Se são desta safra, corrija o nome:
+                </div>
+                <button onClick={()=>corrigirSafraDasCompras(g.rotulo)}
+                  style={{padding:"7px 12px",fontSize:12,background:"#ef6c00",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontWeight:700}}>
+                  Corrigir para {safraAtiva}
+                </button>
+              </div>
+            ))}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:16}}>
               {comprasSafrasList.map(s=>(
                 <div key={s.safra} onClick={()=>setComprasSafraSel(s.safra)}
                   style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #00695c":"1px solid transparent"}}>
                   <div style={{fontSize:26}}>📁</div>
                   <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras</div>
-                  <div data-pasta-safra="1" style={{fontSize:11,fontWeight:600,color:s.safra===safraAtiva?"#00695c":"#b26a00",marginTop:2}}>
-                    {s.safra || "(sem safra)"}{s.safra===safraAtiva ? " · safra atual" : " · outra safra"}
-                  </div>
+                  <div data-pasta-safra="1" style={{fontSize:11,fontWeight:600,color:"#00695c",marginTop:2}}>{s.safra}</div>
                   <div style={{fontSize:11,color:"#888",marginTop:4}}>{s.count} lançamento{s.count===1?"":"s"}</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(s.total)}</div>
-                  {s.safra!==safraAtiva && s.count>0 && (
-                    <button data-juntar-pasta="1" onClick={e=>{e.stopPropagation();juntarPastaCompras(s.safra);}}
-                      title={`Passa estas compras para a safra atual (${safraAtiva}), sem duplicar as que já existem lá`}
-                      style={{marginTop:8,padding:"5px 10px",fontSize:11,background:"#fff3e0",color:"#b26a00",border:"1px solid #ffcc80",borderRadius:6,cursor:"pointer",fontWeight:700}}>
-                      ↪ Juntar com {safraAtiva}
-                    </button>
-                  )}
                 </div>
               ))}
-            </div>
-            <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",display:"flex",gap:8,alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
-              <input placeholder="Nome da nova safra (ex: Verão 26/27)" value={novaPastaNome} onChange={e=>setNovaPastaNome(e.target.value)}
-                style={{flex:1,padding:"7px 10px",fontSize:12,border:"1px solid #ccc",borderRadius:6}}/>
-              <button onClick={()=>{if(novaPastaNome.trim()){setComprasSafraSel(novaPastaNome.trim());setNovaPastaNome("");}}}
-                disabled={!novaPastaNome.trim()}
-                style={{padding:"7px 14px",background:"#00695c",color:"#fff",border:"none",borderRadius:6,fontSize:12,cursor:"pointer",opacity:novaPastaNome.trim()?1:0.5}}>+ Nova pasta de safra</button>
             </div>
           </>)}
 
