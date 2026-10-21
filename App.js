@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 1";
+const VERSAO_APP = "21/10 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -852,6 +852,18 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
 // quebrar nela transformaria um ingrediente em dois e faria produtos diferentes parecerem iguais.
 function conjuntoIngredientes(txt) {
   return (txt||"").split(/[+\/]/).map(s => normalizarNome(s)).filter(Boolean).sort().join("|");
+}
+// Nome comercial pra gravar na Programação quando o produto planejado era só o ingrediente ativo.
+// Tira do nome comprado o parêntese que apenas repete o ingrediente ("Blow Out (diquat)" vira
+// "Blow Out"), porque o ingrediente continua guardado no campo próprio dele e repetir no nome só
+// deixa a tabela mais larga. Parêntese com qualquer outra coisa dentro fica como está.
+function nomeComercialDaCompra(nomeComprado, ingredienteAtivo) {
+  const nome = String(nomeComprado||"").trim();
+  const m = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(nome);
+  if (!m) return nome;
+  const fora = m[1].trim();
+  if (!fora) return nome;
+  return conjuntoIngredientes(m[2]) === conjuntoIngredientes(ingredienteAtivo) ? fora : nome;
 }
 // Traduz a unidade da Programação (kg/Lt/Tn/bag/sc/doses) pro vocabulário de cada tela de
 // Cotação — cada uma só aceita um conjunto próprio de unidades (ver unitOptions):
@@ -4406,7 +4418,14 @@ function App() {
         const nome = (p.produto||"").trim();
         if (!nome) return;
         const chave = chaveProduto(nome);
-        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo), unidade:"", culturas:[] });
+        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo),
+          // Nome que É o próprio ingrediente ativo ("Diquat" com I.A. "Diquat") não é marca: é um
+          // lugar guardado no planejamento pra um produto que ainda não foi escolhido. Como tem
+          // muito genérico, o nome comercial de verdade só se sabe depois da compra — então esse
+          // é o único caso em que a importação pode renomear o produto na Programação.
+          placeholderIA: !!conjuntoIngredientes(p.ingrediente_ativo)
+                      && conjuntoIngredientes(nome) === conjuntoIngredientes(p.ingrediente_ativo),
+          unidade:"", culturas:[] });
         const alvo = porChave.get(chave);
         if (!alvo.culturas.includes(cultura)) alvo.culturas.push(cultura);
         // A unidade sai daqui já no vocabulário de Compras (a Programação escreve "Lt"/"Tn", Compras
@@ -4434,10 +4453,13 @@ function App() {
     const porProduto = new Map();
     registros.forEach(r => {
       if (!r.vinculoChave || !r.quantidade) return;
-      if (!porProduto.has(r.vinculoChave)) porProduto.set(r.vinculoChave, { totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set() });
+      if (!porProduto.has(r.vinculoChave)) porProduto.set(r.vinculoChave, { totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set(), renomearPara:"" });
       const g = porProduto.get(r.vinculoChave);
       g.totalPago += r.valorTotal||0;
       g.totalQtd += r.quantidade||0;
+      // Comprando duas marcas do mesmo ingrediente, fica a primeira como nome — renomear duas
+      // vezes só deixaria o último arquivo lido mandar, sem ser mais certo que o outro.
+      if (!g.renomearPara && r.renomearPara) g.renomearPara = r.renomearPara;
       if ((r.fornecedor||"").trim()) g.fornecedores.add(r.fornecedor.trim());
       if ((r.obs||"").trim()) g.vencimentos.add(r.obs.trim());
     });
@@ -4462,6 +4484,13 @@ function App() {
           // Arredonda: dividir em ponto flutuante devolve 244,99999999999997 pra R$ 245 redondos,
           // e esse número é o que alimenta todo o custo da safra daí pra frente.
           p.preco_compra = Math.round((g.totalPago/g.totalQtd)*1e6)/1e6;
+          // Produto planejado só pelo ingrediente ativo passa a ter o nome comercial comprado.
+          // O ingrediente ativo continua guardado no campo dele — é o que permite, no ano que vem,
+          // reconhecer que este produto é o mesmo ainda que a marca mude de novo.
+          if (g.renomearPara) {
+            if (!(p.ingrediente_ativo||"").trim()) p.ingrediente_ativo = p.produto;
+            p.produto = g.renomearPara;
+          }
           if (g.fornecedores.size) p.revenda = [...g.fornecedores].join(" + ");
           if (g.vencimentos.size) p.vencimento = [...g.vencimentos].join(" + ");
           // Marca com o fornecedor de verdade (não "Compra manual"): é o que faz o lançamento
@@ -9326,10 +9355,18 @@ function App() {
                             // grupo de compras — puxa da Programação em vez de cair no padrão
                             // "TN" e deixar defensivo líquido lançado como tonelada.
                             const unidadePlanilha = String(mapeadas[i].unidade||"").trim();
-                            const daProgramacao = achado && (candidatosImportCompra.find(c=>c.chave===achado.chave)||{}).unidade;
+                            const cand = achado && candidatosImportCompra.find(c=>c.chave===achado.chave);
+                            const daProgramacao = cand && cand.unidade;
+                            // Produto planejado só pelo ingrediente ativo ganha agora o nome
+                            // comercial que foi realmente comprado — é a única renomeação que a
+                            // importação faz, e só porque ali o nome era um lugar guardado.
+                            const renomearPara = cand && cand.placeholderIA
+                              ? nomeComercialDaCompra(r.produto, mapeadas[i].ingredienteAtivo || cand.nome)
+                              : "";
                             return { ...r,
                               unidade: unidadePlanilha || daProgramacao || r.unidade,
                               unidadePlanilha,
+                              renomearPara: renomearPara && chaveProduto(renomearPara) !== achado.chave ? renomearPara : "",
                               // Só o "igual" já entra vinculado. "sugestao" fica escolhido também,
                               // mas a linha aparece destacada pra ser conferida — nada é aplicado
                               // sem passar pelos olhos.
@@ -9374,8 +9411,11 @@ function App() {
                                     // menos quando a própria planilha declarou uma, que continua
                                     // valendo por descrever a compra como ela foi.
                                     const alvo = candidatosImportCompra.find(c=>c.chave===e.target.value);
+                                    const novoNome = alvo && alvo.placeholderIA
+                                      ? nomeComercialDaCompra(x.produto, alvo.nome) : "";
                                     return {...x, vinculoChave:e.target.value,
                                       unidade: x.unidadePlanilha || (alvo && alvo.unidade) || x.unidade,
+                                      renomearPara: novoNome && chaveProduto(novoNome) !== e.target.value ? novoNome : "",
                                       vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
                                   }))}
                                   style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
@@ -9390,6 +9430,12 @@ function App() {
                                     : r.vinculoChave ? "✓ "+(r.vinculoMotivo||"vinculado")
                                     : "não achei na Programação"}
                                 </div>
+                                {r.renomearPara && (
+                                  <div title="Na Programação esse produto estava com o nome do ingrediente ativo, porque o genérico ainda não tinha sido escolhido. Importando, ele passa a ter o nome comercial comprado."
+                                    style={{fontSize:9,marginTop:2,color:"#1565C0",fontWeight:700}}>
+                                    ✎ renomeia na Programação para “{r.renomearPara}”
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );})}
@@ -9408,7 +9454,7 @@ function App() {
                         // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
                         // isso, a marca de "não está na Programação" acusaria errado justamente
                         // os casos de nome diferente que você acabou de confirmar.
-                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, ...r}) => r);
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, ...r}) => r);
                         setComprasRecords(rs => [...rs, ...limpos]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
