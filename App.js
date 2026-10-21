@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 2";
+const VERSAO_APP = "21/10 · 3";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -839,7 +839,16 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
   if (parecido) return { chave: parecido.chave, nivel: "sugestao", motivo: "nome parecido" };
   const ia = conjuntoIngredientes(iaComprado);
   const porIA = ia && candidatos.find(c => c.ia && c.ia === ia);
-  if (porIA) return { chave: porIA.chave, nivel: "sugestao", motivo: "mesmo ingrediente ativo" };
+  // Bateu o ingrediente ativo e o produto planejado era só o ingrediente ("Diquat" com I.A.
+  // "Diquat")? Então não há o que confirmar: aquele nome era um lugar guardado esperando o genérico
+  // que fosse comprado, e qualquer produto desse ingrediente é o que estava planejado ali. Casa
+  // sozinho, pra a Programação já ficar com o nome que vai na nota fiscal e na recomendação.
+  // Já quando o planejado tem marca de verdade ("Roundup Original" x "Tecnup"), a confirmação
+  // continua: aí são dois produtos distintos do mesmo ingrediente, e trocar um pelo outro muda a
+  // dose se a concentração for diferente.
+  if (porIA) return { chave: porIA.chave,
+    nivel: porIA.placeholderIA ? "igual" : "sugestao",
+    motivo: porIA.placeholderIA ? "planejado pelo ingrediente ativo" : "mesmo ingrediente ativo" };
   return null;
 }
 // O conjunto de ingredientes ativos de um produto, num texto comparável. Produto com dois, três
