@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 8";
+const VERSAO_APP = "21/10 · 9";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -1533,6 +1533,30 @@ function compraConteudoChave(r) {
 // Mesma chave sem a safra: a compra é a mesma mesmo que a safra tenha sido renomeada depois.
 function compraConteudoSemSafra(r) {
   return compraConteudoChave({ ...r, safra:"" });
+}
+// Correção única (21/10/2026): as compras da safra atual tinham ficado gravadas com o nome da
+// safra anterior — a que foi encerrada pra abrir a atual —, e a tela, que mostra só a safra
+// atual, deixava elas de fora. Passa pra safra atual tudo que está com o nome da última safra
+// encerrada ou com um nome que não é de safra nenhuma. Safras encerradas mais antigas ficam
+// como estão. Cópia de compra que já está na safra atual fica guardada com o nome antigo, pra
+// não somar duas vezes. Nada é apagado.
+const MARCA_MIGRACAO_COMPRAS = "comprasParaSafraAtual_2110";
+function migrarComprasParaSafraAtual(compras, ativa, arquivadas) {
+  const lista = Array.isArray(compras) ? compras : Object.values(compras||{});
+  const nomesArq = (Array.isArray(arquivadas) ? arquivadas : Object.values(arquivadas||{}))
+    .map(a => a && a.nome).filter(Boolean);
+  const ultimaEncerrada = nomesArq[nomesArq.length-1];
+  const encerradasAntigas = new Set(nomesArq.filter(n => n!==ultimaEncerrada && n!==ativa));
+  const naAtual = new Set(lista.filter(r => r && r.safra===ativa).map(compraConteudoSemSafra));
+  let movidas = 0;
+  const nova = lista.map(r => {
+    if (!r || r.safra===ativa || encerradasAntigas.has(r.safra)) return r;
+    const k = compraConteudoSemSafra(r);
+    if (naAtual.has(k)) return r;
+    naAtual.add(k); movidas++;
+    return { ...r, safra: ativa };
+  });
+  return { lista: nova, movidas };
 }
 function comprasSumidas(atuais, fontes) {
   const lista = x => Array.isArray(x) ? x : Object.values(x||{});
@@ -3318,6 +3342,38 @@ function App() {
   // Compras gravadas com um nome de safra que não é o atual nem o de uma safra já encerrada
   // (arquivada). Aconteceu com compras lançadas antes de a safra ser renomeada, ou recuperadas de
   // um ponto de retorno antigo: são desta safra, mas com o rótulo velho, e não apareciam na tela.
+  // Roda uma vez só (marca no servidor e no aparelho). Lê compras, safra atual e arquivo direto
+  // do servidor pra não trabalhar em cima de dado velho do aparelho antes da sincronização.
+  useEffect(() => {
+    const marcaLocal = "gcagro_migracao_" + MARCA_MIGRACAO_COMPRAS;
+    try { if (localStorage.getItem(marcaLocal)) return; } catch(e) {}
+    let cancelado = false;
+    const aplicar = (compras, ativa, arquivadas) => {
+      if (cancelado || !ativa) return null;
+      const { lista, movidas } = migrarComprasParaSafraAtual(compras, ativa, arquivadas);
+      if (movidas) {
+        salvarSnapshot(`Corrigir safra de ${movidas} compra(s) para "${ativa}"`, { compras: compras });
+        setComprasRecords(lista);
+      }
+      try { localStorage.setItem(marcaLocal, "1"); } catch(e) {}
+      return lista;
+    };
+    if (!fbDb) { aplicar(comprasRecords, safraAtiva, safrasArquivadas); return; }
+    const ler = p => fbDb.ref(p).once("value").then(sn => sn.exists() ? sn.val() : null);
+    ler("gcagro/migracoes/" + MARCA_MIGRACAO_COMPRAS).then(feita => {
+      if (feita) { try { localStorage.setItem(marcaLocal, "1"); } catch(e) {} return; }
+      return Promise.all([ler("gcagro/compras"), ler("gcagro/safras/ativa"), ler("gcagro/safras/arquivo")])
+        .then(([compras, ativa, arq]) => {
+          if (compras == null) return;   // servidor ainda sem compras: não marca, tenta de novo depois
+          const lista = aplicar(compras, ativa || safraAtiva, arq || []);
+          if (!lista) return;
+          return fbDb.ref("gcagro/compras").set(lista)
+            .then(() => fbDb.ref("gcagro/migracoes/" + MARCA_MIGRACAO_COMPRAS).set(new Date().toISOString()));
+        });
+    }).catch(err => console.error("Correção de safra das compras falhou:", err));
+    return () => { cancelado = true; };
+    // eslint-disable-next-line
+  }, []);
   const comprasComSafraErrada = useMemo(() => {
     const encerradas = new Set((safrasArquivadas||[]).map(a => a && a.nome).filter(Boolean));
     // Cópia de compra que já está na safra atual (mesmo produto, categoria, quantidade e valor)
