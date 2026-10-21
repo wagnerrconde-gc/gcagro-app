@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 3";
+const VERSAO_APP = "21/10 · 4";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -1519,6 +1519,35 @@ const ALIASES_COMPRAS = {
 function unidadePadraoCompra(categoria) {
   const c = String(categoria||"");
   return c.startsWith("Adubação") ? "TN" : c.startsWith("Sementes") ? "bag" : "L";
+}
+// Compras que existiam numa cópia antiga (ponto de retorno ou cópia automática do servidor) e não
+// existem mais na lista atual. Serve pra recuperar só o que sumiu, sem trocar a lista inteira pela
+// cópia — restaurar a lista inteira apagaria tudo o que foi lançado depois que a cópia foi feita.
+// Fica de fora o que já está na lista de outro jeito: mesmo id; lançamento automático da
+// Programação cuja origem já foi relançada; ou mesma compra relançada à mão (mesma safra, pasta,
+// produto, quantidade e valor). Quando a mesma compra está em várias cópias, vale a mais recente.
+function compraConteudoChave(r) {
+  return [r.safra, r.categoria, normalizarNome(r.produto),
+    Math.round((Number(r.quantidade)||0)*1000), Math.round((Number(r.valorTotal)||0)*100)].join("|");
+}
+function comprasSumidas(atuais, fontes) {
+  const lista = x => Array.isArray(x) ? x : Object.values(x||{});
+  const atuaisArr = lista(atuais).filter(Boolean);
+  const ids = new Set(atuaisArr.map(r => r.id).filter(Boolean));
+  const origens = new Set(atuaisArr.map(r => r.origemProg).filter(Boolean));
+  const conteudos = new Set(atuaisArr.map(compraConteudoChave));
+  const achadas = new Map();
+  [...fontes].sort((a,b) => String(b.quando).localeCompare(String(a.quando))).forEach(f => {
+    lista(f.compras).forEach(r => {
+      if (!r || typeof r !== "object" || !String(r.produto||"").trim()) return;
+      const chave = r.id || ("sem-id|" + compraConteudoChave(r));
+      if (achadas.has(chave) || ids.has(r.id)) return;
+      if (r.origemProg && origens.has(r.origemProg)) return;
+      if (conteudos.has(compraConteudoChave(r))) return;
+      achadas.set(chave, { chave, rec: r, fonte: f.rotulo, quando: f.quando });
+    });
+  });
+  return [...achadas.values()];
 }
 function buildCompraRecord(m, categoria, safra) {
   const produto = String(m.produto||"").trim();
@@ -3220,8 +3249,17 @@ function App() {
   function restaurarSnapshot(id) {
     const snap = snapshots.find(s => s.id === id);
     if (!snap) return;
-    if (!window.confirm(`Voltar ao estado de antes de "${snap.descricao}"?\n\nSó o que aquela operação mexeu é restaurado; o resto do app fica como está.`)) return;
     const f = snap.fatias || {};
+    // Restaurar Compras troca a lista INTEIRA pela da cópia: tudo o que foi lançado depois da
+    // cópia some — e some em todos os aparelhos, porque a lista é sincronizada. Isso precisa
+    // estar escrito no aviso com o número de compras que vão sumir, não "o resto fica como está".
+    let avisoCompras = "";
+    if (f.compras) {
+      const naCopia = new Set((Array.isArray(f.compras) ? f.compras : Object.values(f.compras)).map(r => r && r.id));
+      const vaoSumir = comprasRecords.filter(r => !naCopia.has(r.id)).length;
+      if (vaoSumir) avisoCompras = `\n\n⚠ ATENÇÃO: a lista inteira de Compras volta a como estava em ${new Date(snap.quando).toLocaleString("pt-BR")}. ${vaoSumir} compra(s) lançada(s) depois disso vão SUMIR, em todos os aparelhos.\nPra trazer de volta só o que sumiu, sem apagar nada, use "Recuperar compras que sumiram".`;
+    }
+    if (!window.confirm(`Voltar ao estado de antes de "${snap.descricao}"?\n\nSó o que aquela operação mexeu é restaurado; o resto do app fica como está.${avisoCompras}`)) return;
     if (f.prog_verao) setDataVerao(f.prog_verao);
     if (f.prog_inv) setDataInverno(f.prog_inv);
     if (f.compras) setComprasRecords(f.compras);
@@ -3234,6 +3272,44 @@ function App() {
     }
     setBackupMsg({ ok:true, texto:`✓ Restaurado o estado de antes de "${snap.descricao}".` });
     setTimeout(()=>setBackupMsg(null), 6000);
+  }
+  // Recuperar compras que sumiram: junta os pontos de retorno deste aparelho e as cópias
+  // automáticas do servidor (que antes eram gravadas mas não tinham como ser lidas), e mostra só
+  // as compras que existiam lá e não existem mais aqui. Recuperar só ACRESCENTA à lista atual.
+  const [recuperacao, setRecuperacao] = useState(null);
+  async function procurarComprasSumidas() {
+    setRecuperacao({ carregando:true });
+    const fontes = [];
+    snapshots.forEach(s => {
+      if (s.fatias && s.fatias.compras) fontes.push({ rotulo:`Ponto de retorno — ${s.descricao}`, quando:s.quando, compras:s.fatias.compras, tipo:"local" });
+    });
+    let erroServidor = "";
+    if (fbDb) {
+      try {
+        const snap = await fbDb.ref("gcagro/backups").once("value");
+        Object.entries(snap.val()||{}).forEach(([data, payload]) => {
+          if (payload && payload.comprasRecords) fontes.push({ rotulo:`Cópia do servidor de ${data.split("-").reverse().join("/")}`,
+            quando: payload.gravadoEm || data, compras: payload.comprasRecords, tipo:"servidor" });
+        });
+      } catch (e) { erroServidor = "Não consegui ler as cópias do servidor: " + e.message; }
+    }
+    const itens = comprasSumidas(comprasRecords, fontes);
+    setRecuperacao({ carregando:false, itens, marcados:new Set(itens.map(i=>i.chave)), erroServidor,
+      fontesLocais: fontes.filter(f=>f.tipo==="local").length, fontesServidor: fontes.filter(f=>f.tipo==="servidor").length });
+  }
+  function recuperarComprasMarcadas() {
+    if (!recuperacao || !recuperacao.itens) return;
+    const escolhidas = recuperacao.itens.filter(i => recuperacao.marcados.has(i.chave)).map(i => i.rec);
+    if (!escolhidas.length) return;
+    if (!window.confirm(`Trazer de volta ${escolhidas.length} compra(s)?\n\nNada do que está na lista hoje é apagado ou alterado — só acrescenta. Fica um ponto de retorno salvo antes.`)) return;
+    salvarSnapshot(`Recuperar ${escolhidas.length} compra(s) que sumiram`, { compras: comprasRecords });
+    setComprasRecords(rs => {
+      const ids = new Set(rs.map(r => r.id));
+      return [...rs, ...escolhidas.filter(r => !r.id || !ids.has(r.id)).map(r => r.id ? r : { ...r, id:newId() })];
+    });
+    setRecuperacao(null);
+    setBackupMsg({ ok:true, texto:`✓ ${escolhidas.length} compra(s) recuperada(s).` });
+    setTimeout(()=>setBackupMsg(null), 8000);
   }
   // Fatia da Programação que a operação vai mexer, já no formato do snapshot.
   function fatiaProgAtual() {
@@ -9749,6 +9825,94 @@ function App() {
               </div>
             );
           })()}
+
+          {/* Recuperar compras que sumiram — só acrescenta, nunca troca a lista inteira */}
+          <div data-recuperar-compras="1" style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14,border:"1px solid #c5cae9"}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>🔎 Recuperar compras que sumiram</div>
+            <div style={{fontSize:12,color:"#666",marginBottom:10,lineHeight:1.5}}>
+              Compara a lista de compras de agora com os pontos de retorno deste aparelho e com as cópias automáticas do servidor,
+              e mostra só as compras que existiam lá e não existem mais aqui. <b>Recuperar só acrescenta</b> — nada do que está
+              na lista hoje é apagado ou alterado.
+            </div>
+            {(()=>{
+              // Como a lista está hoje, por safra e pasta — pra ver na hora se a compra "sumida" na
+              // verdade só está em outra pasta de safra.
+              const grupos = {};
+              comprasRecords.forEach(r => {
+                const k = (r.safra||"(sem safra)") + " · " + (r.categoria||"(sem pasta)");
+                if (!grupos[k]) grupos[k] = { n:0, total:0 };
+                grupos[k].n++; grupos[k].total += r.valorTotal||0;
+              });
+              const linhas = Object.entries(grupos).sort((a,b)=>a[0].localeCompare(b[0]));
+              return (
+                <div style={{fontSize:11,color:"#555",background:"#f5f5f5",borderRadius:6,padding:"8px 10px",marginBottom:10}}>
+                  <b>Hoje a lista tem {comprasRecords.length} compra(s):</b>
+                  {linhas.length===0 ? " nenhuma." : linhas.map(([k,g])=>(
+                    <div key={k}>{k}: {g.n} · {fmt(g.total)}</div>
+                  ))}
+                </div>
+              );
+            })()}
+            {!recuperacao && (
+              <button onClick={procurarComprasSumidas}
+                style={{padding:"8px 16px",background:"#3949ab",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔎 Procurar compras sumidas</button>
+            )}
+            {recuperacao && recuperacao.carregando && <div style={{fontSize:12,color:"#3949ab"}}>Procurando nas cópias…</div>}
+            {recuperacao && !recuperacao.carregando && (()=>{
+              const { itens, marcados } = recuperacao;
+              const alternar = chaves => setRecuperacao(r => {
+                const m = new Set(r.marcados);
+                const todosMarcados = chaves.every(c => m.has(c));
+                chaves.forEach(c => todosMarcados ? m.delete(c) : m.add(c));
+                return { ...r, marcados:m };
+              });
+              const grupos = {};
+              itens.forEach(i => {
+                const k = (i.rec.safra||"(sem safra)") + " · " + (i.rec.categoria||"(sem pasta)");
+                (grupos[k] = grupos[k] || []).push(i);
+              });
+              const nMarcados = itens.filter(i=>marcados.has(i.chave)).length;
+              return (
+                <div>
+                  <div style={{fontSize:11,color:"#888",marginBottom:8}}>
+                    Fontes lidas: {recuperacao.fontesLocais} ponto(s) de retorno deste aparelho · {recuperacao.fontesServidor} cópia(s) do servidor
+                    {recuperacao.erroServidor && <div style={{color:"#c62828"}}>{recuperacao.erroServidor}</div>}
+                  </div>
+                  {itens.length===0 ? (
+                    <div style={{fontSize:12,color:"#2e7d32",fontWeight:600,marginBottom:8}}>Nenhuma compra sumida encontrada nessas cópias.</div>
+                  ) : Object.entries(grupos).sort((a,b)=>a[0].localeCompare(b[0])).map(([k, lista]) => {
+                    const chaves = lista.map(i=>i.chave);
+                    const tudo = chaves.every(c=>marcados.has(c));
+                    return (
+                      <div key={k} style={{border:"1px solid #e0e0e0",borderRadius:8,marginBottom:8,overflow:"hidden"}}>
+                        <label style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#e8eaf6",fontSize:12,fontWeight:700,color:"#283593",cursor:"pointer"}}>
+                          <input type="checkbox" checked={tudo} onChange={()=>alternar(chaves)}/>
+                          {k} — {lista.length} compra(s) · {fmt(lista.reduce((s,i)=>s+(i.rec.valorTotal||0),0))}
+                        </label>
+                        {lista.map(i=>(
+                          <label key={i.chave} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 10px",fontSize:11,borderTop:"1px solid #f0f0f0",cursor:"pointer"}}>
+                            <input type="checkbox" checked={marcados.has(i.chave)} onChange={()=>alternar([i.chave])} style={{marginTop:2}}/>
+                            <span style={{flex:1}}>
+                              <b>{i.rec.produto}</b> — {fmtQtd(i.rec.quantidade||0)} {i.rec.unidade} · {fmt(i.rec.valorTotal||0)}{i.rec.fornecedor?` · ${i.rec.fornecedor}`:""}
+                              <span style={{display:"block",color:"#999",fontSize:10}}>encontrada em: {i.fonte}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
+                    {itens.length>0 && (
+                      <button onClick={recuperarComprasMarcadas} disabled={!nMarcados}
+                        style={{padding:"8px 16px",background:"#2e7d32",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:nMarcados?"pointer":"default",opacity:nMarcados?1:0.5}}>✓ Recuperar {nMarcados} compra(s)</button>
+                    )}
+                    <button onClick={()=>setRecuperacao(null)}
+                      style={{padding:"8px 14px",background:"#eee",border:"none",borderRadius:6,fontSize:12,cursor:"pointer"}}>Fechar</button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
 
           {/* Desfazer uma operação em massa */}
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 2px 8px rgba(0,0,0,0.08)",marginBottom:14}}>
