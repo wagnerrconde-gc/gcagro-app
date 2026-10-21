@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 5";
+const VERSAO_APP = "21/10 · 6";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -1530,12 +1530,16 @@ function compraConteudoChave(r) {
   return [r.safra, r.categoria, normalizarNome(r.produto),
     Math.round((Number(r.quantidade)||0)*1000), Math.round((Number(r.valorTotal)||0)*100)].join("|");
 }
+// Mesma chave sem a safra: a compra é a mesma mesmo que a safra tenha sido renomeada depois.
+function compraConteudoSemSafra(r) {
+  return compraConteudoChave({ ...r, safra:"" });
+}
 function comprasSumidas(atuais, fontes) {
   const lista = x => Array.isArray(x) ? x : Object.values(x||{});
   const atuaisArr = lista(atuais).filter(Boolean);
   const ids = new Set(atuaisArr.map(r => r.id).filter(Boolean));
   const origens = new Set(atuaisArr.map(r => r.origemProg).filter(Boolean));
-  const conteudos = new Set(atuaisArr.map(compraConteudoChave));
+  const conteudos = new Set(atuaisArr.map(compraConteudoSemSafra));
   const achadas = new Map();
   [...fontes].sort((a,b) => String(b.quando).localeCompare(String(a.quando))).forEach(f => {
     lista(f.compras).forEach(r => {
@@ -1543,7 +1547,7 @@ function comprasSumidas(atuais, fontes) {
       const chave = r.id || ("sem-id|" + compraConteudoChave(r));
       if (achadas.has(chave) || ids.has(r.id)) return;
       if (r.origemProg && origens.has(r.origemProg)) return;
-      if (conteudos.has(compraConteudoChave(r))) return;
+      if (conteudos.has(compraConteudoSemSafra(r))) return;
       achadas.set(chave, { chave, rec: r, fonte: f.rotulo, quando: f.quando });
     });
   });
@@ -3297,6 +3301,37 @@ function App() {
     setRecuperacao({ carregando:false, itens, marcados:new Set(itens.map(i=>i.chave)), erroServidor,
       fontesLocais: fontes.filter(f=>f.tipo==="local").length, fontesServidor: fontes.filter(f=>f.tipo==="servidor").length });
   }
+  // Junta uma pasta de Compras de outra safra (ex: nome antigo antes de renomear, ou compras
+  // recuperadas de um ponto de retorno antigo) na safra atual. Compras que já existem iguais
+  // na safra atual (mesmo produto, categoria, quantidade e valor) não são duplicadas.
+  function separarPastaParaJuntar(rs, safraOrigem) {
+    const destino = rs.filter(r => r.safra===safraAtiva);
+    const ids = new Set(destino.map(r => r.id).filter(Boolean));
+    const origens = new Set(destino.map(r => r.origemProg).filter(Boolean));
+    const conteudos = new Set(destino.map(compraConteudoSemSafra));
+    const mover = [], repetidas = [];
+    rs.filter(r => r.safra===safraOrigem).forEach(r => {
+      const igual = (r.id && ids.has(r.id)) || (r.origemProg && origens.has(r.origemProg)) || conteudos.has(compraConteudoSemSafra(r));
+      (igual ? repetidas : mover).push(r);
+    });
+    return { mover, repetidas };
+  }
+  function juntarPastaCompras(safraOrigem) {
+    if (safraOrigem===safraAtiva) return;
+    const { mover, repetidas } = separarPastaParaJuntar(comprasRecords, safraOrigem);
+    const nomeOrigem = safraOrigem || "(sem safra)";
+    const linhas = [`Juntar a pasta "${nomeOrigem}" com a safra atual "${safraAtiva}"?`, ""];
+    if (mover.length) linhas.push(`• ${mover.length} compra(s) passam para "${safraAtiva}".`);
+    if (repetidas.length) linhas.push(`• ${repetidas.length} compra(s) já existem iguais em "${safraAtiva}" (mesmo produto, quantidade e valor) e saem da pasta antiga, pra não contar duas vezes.`);
+    linhas.push("", "Fica um ponto de retorno salvo antes.");
+    if (!window.confirm(linhas.join("\n"))) return;
+    salvarSnapshot(`Juntar pasta de compras "${nomeOrigem}" com "${safraAtiva}"`, { compras: comprasRecords });
+    setComprasRecords(rs => {
+      const { repetidas: rep } = separarPastaParaJuntar(rs, safraOrigem);
+      const sai = new Set(rep);
+      return rs.filter(r => !sai.has(r)).map(r => r.safra===safraOrigem ? { ...r, safra:safraAtiva } : r);
+    });
+  }
   function recuperarComprasMarcadas() {
     if (!recuperacao || !recuperacao.itens) return;
     const escolhidas = recuperacao.itens.filter(i => recuperacao.marcados.has(i.chave)).map(i => i.rec);
@@ -4883,7 +4918,7 @@ function App() {
     return Array.from(safras).map(safra => {
       const recs = comprasRecords.filter(r=>r.safra===safra);
       return { safra, total: recs.reduce((s,r)=>s+r.valorTotal,0), count: recs.length };
-    }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : b.safra.localeCompare(a.safra));
+    }).sort((a,b)=> a.safra===safraAtiva ? -1 : b.safra===safraAtiva ? 1 : String(b.safra||"").localeCompare(String(a.safra||"")));
   }, [comprasRecords, safraAtiva]);
 
   const comprasCategoriasList = useMemo(() => {
@@ -9255,8 +9290,18 @@ function App() {
                   style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer",border:s.safra===safraAtiva?"2px solid #00695c":"1px solid transparent"}}>
                   <div style={{fontSize:26}}>📁</div>
                   <div style={{fontWeight:700,fontSize:14,marginTop:6,color:"#1a3a1a"}}>Compras</div>
+                  <div data-pasta-safra="1" style={{fontSize:11,fontWeight:600,color:s.safra===safraAtiva?"#00695c":"#b26a00",marginTop:2}}>
+                    {s.safra || "(sem safra)"}{s.safra===safraAtiva ? " · safra atual" : " · outra safra"}
+                  </div>
                   <div style={{fontSize:11,color:"#888",marginTop:4}}>{s.count} lançamento{s.count===1?"":"s"}</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#00695c",marginTop:2}}>{fmt(s.total)}</div>
+                  {s.safra!==safraAtiva && s.count>0 && (
+                    <button data-juntar-pasta="1" onClick={e=>{e.stopPropagation();juntarPastaCompras(s.safra);}}
+                      title={`Passa estas compras para a safra atual (${safraAtiva}), sem duplicar as que já existem lá`}
+                      style={{marginTop:8,padding:"5px 10px",fontSize:11,background:"#fff3e0",color:"#b26a00",border:"1px solid #ffcc80",borderRadius:6,cursor:"pointer",fontWeight:700}}>
+                      ↪ Juntar com {safraAtiva}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
