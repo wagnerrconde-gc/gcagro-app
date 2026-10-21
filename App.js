@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 6";
+const VERSAO_APP = "21/10 · 7";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2146,7 +2146,12 @@ function computarGruposTS(dProg, plano) {
       return solta && pareceVariedade(solta, conhecidas) ? [solta] : null;
     };
     const obsMap = new Map();
-    const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
+    // Com o Plano de Campo preenchido pra essa cultura, só vira linha a variedade que está
+    // plantada nesta safra. Uma observação que ficou de outro ano ("exceto B 5830 CE", "só TMG
+    // 7062") não cria mais linha de variedade que nem está no campo.
+    const plantadasKeys = [...plantadas.keys()];
+    const plantada = v => !plantadasKeys.length || pareceVariedade(v, plantadasKeys);
+    const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k) && plantada(v)) obsMap.set(k, v); };
     [[prodsTS,false],[prodsKS,true]].forEach(([lista, ehKitSulco]) => lista.forEach(p => {
       const v = variedadeDoProduto(p, ehKitSulco);
       if (v) v.forEach(registrar);
@@ -3002,8 +3007,16 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
               elas foram removidas que o usuário precisa refazer. */}
           <button onClick={()=>{
               const auto = data.filter(r=>r.origemKey).length;
-              if (!window.confirm(`Apagar ${auto} linha(s) que vieram da Programação e montar de novo, do jeito que a Programação está hoje?\n\nServe pra limpar variedade que sobrou de antes e não existe mais.\n\nLinha criada à mão aqui não é tocada. Fica um ponto de retorno salvo antes.`)) return;
-              onRefazer();
+              const manuais = data.filter(r=>!r.origemKey);
+              if (!window.confirm(`Apagar ${auto} linha(s) que vieram da Programação e montar de novo, do jeito que a Programação está hoje?\n\nServe pra limpar variedade que sobrou de antes e não existe mais.\n\nFica um ponto de retorno salvo antes.`)) return;
+              // Linha sem 🔗 (criada à mão, ou de antes de o TS ser automático) o Refazer não
+              // reconhece como da Programação — é o que deixava variedade do ano passado na tela.
+              let apagarManuais = false;
+              if (manuais.length) {
+                const nomes = manuais.map(r => `• ${r.cultura||"?"} — ${r.variedade||"(sem variedade)"}`).join("\n");
+                apagarManuais = window.confirm(`Há ${manuais.length} linha(s) SEM 🔗 auto (criadas à mão, ou de safra anterior):\n\n${nomes}\n\nApagar estas também?\n\nOK = apagar · Cancelar = manter estas`);
+              }
+              onRefazer(apagarManuais);
             }}
             title="Apaga as linhas marcadas com 🔗 auto e remonta a partir da Programação. Linha criada à mão nesta tela não é afetada."
             style={{padding:"7px 14px",background:"#fff3e0",border:"1px solid #ffb74d",borderRadius:6,color:"#e65100",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Refazer da Programação</button>
@@ -3041,6 +3054,7 @@ function TSKitSulcoView({data, setData, titulo, cor, cultureColors, dProg, onRef
                   <div style={{fontSize:10,color:"#888",marginBottom:3,textTransform:"uppercase",display:"flex",alignItems:"center",gap:6}}>
                     Variedade/Híbrido
                     {row.origemKey && <span title="Dose por 100kg e Kit Sulco vêm automáticos da Programação" style={{background:"#e0f2f1",color:"#00695c",borderRadius:8,padding:"1px 7px",fontSize:9,textTransform:"none",fontWeight:700}}>🔗 auto</span>}
+                    {!row.origemKey && <span data-ts-manual="1" title="Linha criada à mão (ou de safra anterior): não acompanha a Programação. O 🔄 Refazer pergunta se apaga." style={{background:"#fff3e0",color:"#b26a00",borderRadius:8,padding:"1px 7px",fontSize:9,textTransform:"none",fontWeight:700}}>✋ à mão</span>}
                   </div>
                   <input value={row.variedade||""} onChange={e=>upd(row.id,"variedade",e.target.value)}
                     style={{width:"100%",padding:"6px 8px",border:"1px solid #ddd",borderRadius:5,fontSize:12,boxSizing:"border-box"}}/>
@@ -6500,11 +6514,11 @@ function App() {
       {appView==="plan_verao" && <PlanejamentoTable data={planVerao} setData={setPlanVerao} tipo="verao" cultureColors={CULTURE_COLORS_VERAO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsVerao} setObs={setPlanObsVerao} obs2={planObsVerao2} setObs2={setPlanObsVerao2}/>}
       {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO} dProg={dataVerao}
-        onRefazer={()=>{ salvarSnapshot("Refazer TS / Kit Sulco Verão da Programação", { ts_verao: tsVerao });
-                         setTsVerao(rs => refazerGruposTS(rs, computarGruposTS(dataVerao, planVerao))); }}/>}
+        onRefazer={apagarManuais=>{ salvarSnapshot("Refazer TS / Kit Sulco Verão da Programação", { ts_verao: tsVerao });
+                         setTsVerao(rs => refazerGruposTS(apagarManuais ? [] : rs, computarGruposTS(dataVerao, planVerao))); }}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO} dProg={dataInverno}
-        onRefazer={()=>{ salvarSnapshot("Refazer TS / Kit Sulco Inverno da Programação", { ts_safrinha: tsSafrinha });
-                         setTsSafrinha(rs => refazerGruposTS(rs, computarGruposTS(dataInverno, planSafrinha))); }}/>}
+        onRefazer={apagarManuais=>{ salvarSnapshot("Refazer TS / Kit Sulco Inverno da Programação", { ts_safrinha: tsSafrinha });
+                         setTsSafrinha(rs => refazerGruposTS(apagarManuais ? [] : rs, computarGruposTS(dataInverno, planSafrinha))); }}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
