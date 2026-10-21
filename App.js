@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "13/10 · 1";
+const VERSAO_APP = "21/10 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -1491,6 +1491,14 @@ const ALIASES_COMPRAS = {
   obs:           ["obs","observacao","observacoes"],
   tratamento:    ["tratamento"],
 };
+// Unidade de uma compra quando a planilha não traz a coluna e não dá pra puxar da Programação.
+// Sai da pasta em que a compra está entrando: Químicos é quase tudo líquido, Adubação vai em
+// tonelada, Semente em bag. Antes o padrão era "TN" pra qualquer pasta, o que lançava defensivo
+// líquido como tonelada.
+function unidadePadraoCompra(categoria) {
+  const c = String(categoria||"");
+  return c.startsWith("Adubação") ? "TN" : c.startsWith("Sementes") ? "bag" : "L";
+}
 function buildCompraRecord(m, categoria, safra) {
   const produto = String(m.produto||"").trim();
   if (!produto) return null;
@@ -1499,7 +1507,7 @@ function buildCompraRecord(m, categoria, safra) {
   const valorTotalInformado = toNum(m.valorTotal);
   if (!precoUnitario && valorTotalInformado && quantidade) precoUnitario = valorTotalInformado/quantidade;
   return { id:newId(), safra, categoria, produto,
-    unidade: String(m.unidade||"TN").trim(), quantidade,
+    unidade: String(m.unidade||"").trim() || unidadePadraoCompra(categoria), quantidade,
     precoUnitario, valorTotal: valorTotalInformado || precoUnitario*quantidade,
     fornecedor: String(m.fornecedor||"").trim(), data: String(m.data||"").trim(),
     obs: String(m.vencimento||m.obs||"").trim(), tratamento: String(m.tratamento||"").trim() };
@@ -4398,9 +4406,14 @@ function App() {
         const nome = (p.produto||"").trim();
         if (!nome) return;
         const chave = chaveProduto(nome);
-        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo), culturas:[] });
+        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo), unidade:"", culturas:[] });
         const alvo = porChave.get(chave);
         if (!alvo.culturas.includes(cultura)) alvo.culturas.push(cultura);
+        // A unidade sai daqui já no vocabulário de Compras (a Programação escreve "Lt"/"Tn", Compras
+        // usa "L"/"TN"). Serve pra importação não precisar adivinhar quilo ou litro quando a
+        // planilha do grupo de compras vem sem coluna de unidade — que é o normal.
+        // Fica a primeira encontrada: o mesmo produto em culturas diferentes usa a mesma unidade.
+        if (!alvo.unidade && (p.unidade||"").trim()) alvo.unidade = unidadeCompraDaProgramacao(p.unidade);
         // Fica o nome mais completo como rótulo, igual às outras telas fazem.
         if (nome.length > alvo.nome.length) alvo.nome = nome;
       });
@@ -9308,7 +9321,15 @@ function App() {
                             // Casa com a Programação já na leitura, pra prévia mostrar o que casou
                             // sozinho e o que precisa de confirmação antes de aplicar qualquer coisa.
                             const achado = casarCompraNaProgramacao(r.produto, mapeadas[i].ingredienteAtivo||"", candidatosImportCompra);
+                            // Unidade: o que a planilha declarou manda, porque descreve a compra
+                            // que realmente aconteceu. Vindo em branco — o normal nas planilhas do
+                            // grupo de compras — puxa da Programação em vez de cair no padrão
+                            // "TN" e deixar defensivo líquido lançado como tonelada.
+                            const unidadePlanilha = String(mapeadas[i].unidade||"").trim();
+                            const daProgramacao = achado && (candidatosImportCompra.find(c=>c.chave===achado.chave)||{}).unidade;
                             return { ...r,
+                              unidade: unidadePlanilha || daProgramacao || r.unidade,
+                              unidadePlanilha,
                               // Só o "igual" já entra vinculado. "sugestao" fica escolhido também,
                               // mas a linha aparece destacada pra ser conferida — nada é aplicado
                               // sem passar pelos olhos.
@@ -9347,9 +9368,16 @@ function App() {
                               <td style={{padding:"5px 7px",color:"#888"}}>{r.obs||"—"}</td>
                               <td style={{padding:"5px 7px",whiteSpace:"nowrap"}}>
                                 <select value={r.vinculoChave||""}
-                                  onChange={e=>setImportCompraPreview(ls => ls.map(x => x.id===r.id
-                                    ? {...x, vinculoChave:e.target.value, vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"}
-                                    : x))}
+                                  onChange={e=>setImportCompraPreview(ls => ls.map(x => {
+                                    if (x.id !== r.id) return x;
+                                    // Trocar o vínculo à mão traz a unidade do produto escolhido —
+                                    // menos quando a própria planilha declarou uma, que continua
+                                    // valendo por descrever a compra como ela foi.
+                                    const alvo = candidatosImportCompra.find(c=>c.chave===e.target.value);
+                                    return {...x, vinculoChave:e.target.value,
+                                      unidade: x.unidadePlanilha || (alvo && alvo.unidade) || x.unidade,
+                                      vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
+                                  }))}
                                   style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
                                     border:"1px solid "+(confirmar?"#ffb74d":"#ccc")}}>
                                   <option value="">— não vincular (só compra) —</option>
@@ -9380,7 +9408,7 @@ function App() {
                         // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
                         // isso, a marca de "não está na Programação" acusaria errado justamente
                         // os casos de nome diferente que você acabou de confirmar.
-                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, ...r}) => r);
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, ...r}) => r);
                         setComprasRecords(rs => [...rs, ...limpos]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
