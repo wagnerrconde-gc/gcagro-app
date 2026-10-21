@@ -212,7 +212,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 4";
+const VERSAO_APP = "21/10 · 5";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4740,6 +4740,10 @@ function App() {
       planVerao, planSafrinha, colheitaRecords, comprasRecords, vendasRecords, financeiroRecords,
       comissaoAdiant, comissaoRecords, gerenteNome, chuvaRecords, pecasRecords, insumosEstoqueRecords,
       areasRecords, ciclosRecords, notasFiscaisRecords, aplicacoesRecords, movimentacoesEstoqueRecords,
+      // TS / Kit Sulco e as observações do Plano de Campo ficavam de fora — do arquivo baixado e das
+      // cópias automáticas do servidor. O TS tem linhas e textos editados à mão que não dá pra
+      // remontar da Programação; sem estar aqui, não havia de onde recuperar.
+      tsVerao, tsSafrinha, planObsVerao, planObsVerao2, planObsSafrinha, planObsSafrinha2,
     };
   }
   function exportarBackup() {
@@ -4828,6 +4832,12 @@ function App() {
         if (b.notasFiscaisRecords) setNotasFiscaisRecords(b.notasFiscaisRecords);
         if (b.aplicacoesRecords) setAplicacoesRecords(b.aplicacoesRecords);
         if (b.movimentacoesEstoqueRecords) setMovimentacoesEstoqueRecords(b.movimentacoesEstoqueRecords);
+        if (b.tsVerao) setTsVerao(b.tsVerao);
+        if (b.tsSafrinha) setTsSafrinha(b.tsSafrinha);
+        if (b.planObsVerao != null) setPlanObsVerao(b.planObsVerao);
+        if (b.planObsVerao2 != null) setPlanObsVerao2(b.planObsVerao2);
+        if (b.planObsSafrinha != null) setPlanObsSafrinha(b.planObsSafrinha);
+        if (b.planObsSafrinha2 != null) setPlanObsSafrinha2(b.planObsSafrinha2);
         setBackupMsg({ok:true, texto:"✅ Backup restaurado com sucesso!"});
       } catch {
         setBackupMsg({ok:false, texto:"❌ Arquivo inválido."});
