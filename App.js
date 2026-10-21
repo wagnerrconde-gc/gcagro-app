@@ -28,9 +28,44 @@ try {
 // Programação desapareciam de vez em quando (e, pior, a memória de "já lançada" subia normal,
 // num nó separado, então o lançamento automático nunca recriava a compra perdida).
 // Comparando o conteúdo, eco do próprio envio não sobe de novo, mas alteração local sempre sobe.
-function useFirebaseSync(path, value, setValue) {
+// Junta três versões de uma lista de registros (cada um com id): a última que este aparelho
+// recebeu do servidor (base), a deste aparelho agora (local) e a que está no servidor (remoto).
+// Só o que ESTE aparelho mudou desde a base é aplicado por cima do servidor: registro que outro
+// aparelho criou continua, registro que este apagou sai, registro que só o outro mexeu fica com
+// a versão do outro. Sem isso, um aparelho com a lista velha (celular que ficou sem sinal na
+// fazenda, aba esquecida aberta) gravava a lista inteira por cima e as compras novas sumiam.
+function chaveRegistroSync(r) { return r && (r.id || ("sem-id|" + JSON.stringify(r))); }
+function mesclarListaPorId(base, local, remoto) {
+  const lista = x => (Array.isArray(x) ? x : Object.values(x||{})).filter(Boolean);
+  const mapa = x => new Map(lista(x).map(r => [chaveRegistroSync(r), r]));
+  const B = mapa(base), L = mapa(local), R = mapa(remoto);
+  const igual = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  const out = [];
+  const vistos = new Set();
+  lista(remoto).forEach(r => {
+    const k = chaveRegistroSync(r); vistos.add(k);
+    if (L.has(k)) {
+      const l = L.get(k);
+      // este aparelho não mexeu nele desde a base -> vale a versão do servidor
+      out.push(B.has(k) && igual(l, B.get(k)) ? r : l);
+    } else if (!B.has(k)) {
+      out.push(r);                     // criado em outro aparelho: fica
+    }                                  // estava na base e sumiu daqui: apagado aqui, sai
+  });
+  lista(local).forEach(l => {
+    const k = chaveRegistroSync(l);
+    if (vistos.has(k)) return;
+    // não está no servidor: novo deste aparelho fica; se já estava na base e não mudou,
+    // foi apagado em outro aparelho e sai junto
+    if (!B.has(k) || !igual(l, B.get(k))) out.push(l);
+  });
+  return out;
+}
+function useFirebaseSync(path, value, setValue, opcoes) {
+  const mesclar = !!(opcoes && opcoes.mesclarPorId);
   const ready = useRef(false);
   const ultimoSincronizado = useRef(undefined);
+  const base = useRef(undefined);
   useEffect(() => {
     if (!fbDb || !path) return;
     const ref = fbDb.ref(path);
@@ -38,6 +73,7 @@ function useFirebaseSync(path, value, setValue) {
       if (snap.exists()) {
         const remoto = snap.val();
         ultimoSincronizado.current = JSON.stringify(remoto);
+        base.current = remoto;
         setValue(remoto);
       } else if (!ready.current) {
         ultimoSincronizado.current = JSON.stringify(value);
@@ -53,7 +89,16 @@ function useFirebaseSync(path, value, setValue) {
     const atual = JSON.stringify(value);
     if (atual === ultimoSincronizado.current) return;
     ultimoSincronizado.current = atual;
-    fbDb.ref(path).set(value).catch(err => console.error("Firebase set falhou:", err));
+    const ref = fbDb.ref(path);
+    if (mesclar && typeof ref.transaction === "function") {
+      const baseAgora = base.current;
+      // A transação roda de novo sozinha com o valor real do servidor se o que este aparelho
+      // tinha em cache estiver velho — é isso que protege contra a gravação atrasada.
+      ref.transaction(remoto => remoto == null ? value : mesclarListaPorId(baseAgora, value, remoto))
+        .catch(err => console.error("Firebase transação falhou:", err));
+      return;
+    }
+    ref.set(value).catch(err => console.error("Firebase set falhou:", err));
     // eslint-disable-next-line
   }, [value, path]);
 }
@@ -212,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 9";
+const VERSAO_APP = "21/10 · 10";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -3414,7 +3459,9 @@ function App() {
     salvarSnapshot(`Recuperar ${escolhidas.length} compra(s) que sumiram`, { compras: comprasRecords });
     setComprasRecords(rs => {
       const ids = new Set(rs.map(r => r.id));
-      return [...rs, ...escolhidas.filter(r => !r.id || !ids.has(r.id)).map(r => r.id ? r : { ...r, id:newId() })];
+      const encerradas = new Set((safrasArquivadas||[]).map(a => a && a.nome).filter(Boolean));
+      const naSafraCerta = r => (r.safra===safraAtiva || encerradas.has(r.safra)) ? r : { ...r, safra:safraAtiva };
+      return [...rs, ...escolhidas.filter(r => !r.id || !ids.has(r.id)).map(r => naSafraCerta(r.id ? r : { ...r, id:newId() }))];
     });
     setRecuperacao(null);
     setBackupMsg({ ok:true, texto:`✓ ${escolhidas.length} compra(s) recuperada(s).` });
@@ -3616,7 +3663,7 @@ function App() {
   // Compras, Vendas, Colheita, Safras), pra tudo ficar igual entre PC e celular ──
   useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
   useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
-  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords);
+  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords, { mesclarPorId:true });
   useFirebaseSync("gcagro/compras_prog_lancadas", comprasProgLancadas, setComprasProgLancadas);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
