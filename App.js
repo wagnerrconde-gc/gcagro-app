@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "22/10 · 4";
+const VERSAO_APP = "22/10 · 5";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4784,7 +4784,7 @@ function App() {
       g.totalQtd += r.quantidade||0;
       // Comprando duas marcas do mesmo ingrediente, fica a primeira como nome — renomear duas
       // vezes só deixaria o último arquivo lido mandar, sem ser mais certo que o outro.
-      if (!g.renomearPara && r.renomearPara) g.renomearPara = r.renomearPara;
+      if (!g.renomearPara && r.renomearPara && !r.manterNome) g.renomearPara = r.renomearPara;
       if (!g.doseFator && r.doseFator) g.doseFator = r.doseFator;
       if ((r.fornecedor||"").trim()) g.fornecedores.add(r.fornecedor.trim());
       if ((r.obs||"").trim()) g.vencimentos.add(r.obs.trim());
@@ -9704,7 +9704,9 @@ function App() {
                             // comercial que foi realmente comprado — é a única renomeação que a
                             // importação faz, e só porque ali o nome era um lugar guardado.
                             const guardado = cand && (cand.placeholderIA || achado.porIA);
-                            const renomearPara = guardado
+                            // Sugestão (amarela) também troca o nome se você deixar o vínculo: a
+                            // Programação passa a mostrar o produto que veio ("Flex" → "Fomesafen").
+                            const renomearPara = guardado || (cand && achado.nivel === "sugestao")
                               ? nomeComercialDaCompra(r.produto, mapeadas[i].ingredienteAtivo || cand.iaBruto || cand.nome)
                               : "";
                             // Concentração diferente da planejada ("Lufenuron 100" x "lufenuron 50"):
@@ -9714,7 +9716,13 @@ function App() {
                             // Inoculante comprado em doses → litros (tamanho da dose no Obs da Programação).
                             const bruto = { quantidade: r.quantidade, precoUnitario: r.precoUnitario, valorTotal: r.valorTotal, unidadePlanilha };
                             const conv = converterCompraEmDoses(bruto, cand);
-                            return { ...r,
+                            // Mesma compra já lançada (planilha puxada de novo): não entra outra vez —
+                            // só atualiza o vínculo (e a conversão de doses, se for o caso).
+                            const mesmaLinha = (x, q, pr) => Math.abs((x.quantidade||0)-q) < 0.001 && Math.abs((x.precoUnitario||0)-pr) < 0.005;
+                            const ja = comprasRecords.find(x => x.safra===comprasSafraSel && x.categoria===comprasCatSel
+                              && chaveProduto(x.produto)===chaveProduto(r.produto) && normalizarNome(x.fornecedor)===normalizarNome(r.fornecedor)
+                              && (mesmaLinha(x, r.quantidade, r.precoUnitario) || (conv && mesmaLinha(x, conv.quantidade, conv.precoUnitario))));
+                            return { ...r, ...(ja ? { jaImportadaId: ja.id } : {}),
                               unidade: unidadePlanilha || daProgramacao || r.unidade,
                               bruto, ...(conv || {}),
                               unidadePlanilha,
@@ -9749,6 +9757,7 @@ function App() {
                             return (
                             <tr key={r.id} style={{background:confirmar?"#fffde7":(i%2===0?"#fff":"#fafafa")}}>
                               <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}
+                                {r.jaImportadaId && <div style={{fontSize:9,color:"#1565C0",fontWeight:600}}>já está em Compras — não duplica, só atualiza o vínculo</div>}
                                 {r.conversaoDose && <div style={{fontSize:9,color:"#6a1b9a",fontWeight:600}}>🧪 {fmtQtd(r.conversaoDose.doses)} doses × {r.conversaoDose.tamanho} → {fmt(r.conversaoDose.precoDose)}/dose = {fmt(r.precoUnitario)}/{r.unidade}</div>}
                                 {(()=>{ const c = r.vinculoChave && candidatosImportCompra.find(x=>x.chave===r.vinculoChave);
                                   return c && c.doseConflito ? <div style={{fontSize:9,color:"#c62828",fontWeight:600}}>⚠ tamanho da dose diferente no Obs da Programação ({c.doseConflito}) — não converti pra litros; acerte o Obs e importe de novo</div> : null; })()}</td>
@@ -9767,8 +9776,9 @@ function App() {
                                     // menos quando a própria planilha declarou uma, que continua
                                     // valendo por descrever a compra como ela foi.
                                     const alvo = candidatosImportCompra.find(c=>c.chave===e.target.value);
-                                    const novoNome = alvo && alvo.placeholderIA
-                                      ? nomeComercialDaCompra(x.produto, alvo.nome) : "";
+                                    // Escolhido à mão: a Programação passa a ter o nome comprado
+                                    // ("Flex" → "Fomesafen"), a menos que marque "manter".
+                                    const novoNome = alvo ? nomeComercialDaCompra(x.produto, alvo.iaBruto || alvo.nome) : "";
                                     const b = x.bruto || { quantidade:x.quantidade, precoUnitario:x.precoUnitario, valorTotal:x.valorTotal, unidadePlanilha:x.unidadePlanilha };
                                     const conv = converterCompraEmDoses(b, alvo);
                                     const { conversaoDose, ...semConv } = x;
@@ -9777,7 +9787,7 @@ function App() {
                                       unidade: x.unidadePlanilha || (alvo && alvo.unidade) || x.unidade,
                                       ...(conv || {}),
                                       renomearPara: novoNome && chaveProduto(novoNome) !== e.target.value ? novoNome : "",
-                                      doseFator: null,
+                                      doseFator: null, manterNome: false,
                                       vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
                                   }))}
                                   style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
@@ -9792,11 +9802,17 @@ function App() {
                                     : r.vinculoChave ? "✓ "+(r.vinculoMotivo||"vinculado")
                                     : "não achei na Programação"}
                                 </div>
-                                {r.renomearPara && (
-                                  <div title="Na Programação esse produto estava com o nome do ingrediente ativo, porque o genérico ainda não tinha sido escolhido. Importando, ele passa a ter o nome comercial comprado."
+                                {r.renomearPara && !r.manterNome && (
+                                  <div title="A Programação passa a mostrar o nome do produto que foi comprado, em todas as culturas. O ingrediente ativo fica guardado."
                                     style={{fontSize:9,marginTop:2,color:"#1565C0",fontWeight:700}}>
                                     ✎ renomeia na Programação para “{r.renomearPara}”
+                                    <label style={{marginLeft:6,fontWeight:400,color:"#555",cursor:"pointer"}}>
+                                      <input type="checkbox" checked={false} onChange={()=>setImportCompraPreview(ls=>ls.map(x=>x.id===r.id?{...x,manterNome:true}:x))} style={{verticalAlign:"middle",margin:"0 2px"}}/>manter o nome atual
+                                    </label>
                                   </div>
+                                )}
+                                {r.renomearPara && r.manterNome && (
+                                  <div style={{fontSize:9,marginTop:2,color:"#555"}}>mantém o nome da Programação · <span onClick={()=>setImportCompraPreview(ls=>ls.map(x=>x.id===r.id?{...x,manterNome:false}:x))} style={{color:"#1565C0",cursor:"pointer",textDecoration:"underline"}}>usar “{r.renomearPara}”</span></div>
                                 )}
                                 {r.doseFator && (
                                   <div style={{fontSize:9,marginTop:2,color:"#c62828",fontWeight:700}}>
@@ -9821,8 +9837,12 @@ function App() {
                         // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
                         // isso, a marca de "não está na Programação" acusaria errado justamente
                         // os casos de nome diferente que você acabou de confirmar.
-                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, doseFator, bruto, conversaoDose, ...r}) => r);
-                        setComprasRecords(rs => [...rs, ...limpos]);
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, doseFator, bruto, conversaoDose, manterNome, ...r}) => r);
+                        const repetidas = new Map(limpos.filter(r => r.jaImportadaId).map(r => [r.jaImportadaId, r]));
+                        setComprasRecords(rs => [
+                          ...rs.map(x => { const n = repetidas.get(x.id); return n ? { ...x, vinculoChave: n.vinculoChave, quantidade: n.quantidade, precoUnitario: n.precoUnitario, unidade: n.unidade } : x; }),
+                          ...limpos.filter(r => !r.jaImportadaId).map(({jaImportadaId, ...r}) => r),
+                        ]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
                         setShowImportCompra(false); setImportCompraPreview(null); setImportCompraErro("");
