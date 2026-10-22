@@ -2134,7 +2134,8 @@ function extrairExcecoesObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "exceto" && primeira !== "menos") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(semAnotacaoVariedade).filter(Boolean);
+  // "exceto A e B" separa igual a "exceto A / B"
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*|\s+e\s+/i).map(semAnotacaoVariedade).filter(Boolean);
   return nomes.length ? nomes : null;
 }
 // "todas as variedades", "todos os híbridos" e afins: o produto vale pra todas, igual à observação
@@ -2163,7 +2164,8 @@ function extrairSomenteObs(raw) {
   const t = (raw||"").trim();
   const primeira = normalizarNome(t.split(/\s+/)[0]||"");
   if (primeira !== "so" && primeira !== "somente" && primeira !== "apenas") return null;
-  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*/).map(semAnotacaoVariedade).filter(Boolean);
+  // "exceto A e B" separa igual a "exceto A / B"
+  const nomes = t.replace(/^\S+\s*/, "").split(/\s*[,;\/]\s*|\s+e\s+/i).map(semAnotacaoVariedade).filter(Boolean);
   return nomes.length ? nomes : null;
 }
 // Bate um texto solto contra as variedades conhecidas: vale como variedade quando a PRIMEIRA
@@ -2260,7 +2262,13 @@ function computarGruposTS(dProg, plano) {
     // Havendo variedade nomeada, entra também o grupo das que não foram citadas — "Demais
     // variedades" — com o que vale pra todo mundo. Sem ele o tratamento padrão da lavoura não
     // apareceria em lugar nenhum assim que uma variedade ganhasse tratamento próprio.
-    const entradas = obsMap.size ? [...obsMap.entries(), ["", "Demais variedades"]] : [["", ""]];
+    // O nome da linha das demais é o das variedades plantadas no Plano de Campo que não ganharam
+    // linha própria ("NS 89 VIP 3 e FS 695 PWURR"). Muitas (mais de 4) ou nenhuma: "Demais variedades".
+    const nomeadas = [...obsMap.keys()];
+    const cobertaPor = (k, n) => k === n || k.startsWith(n + " ") || n.startsWith(k + " ");
+    const restantes = [...plantadas.entries()].filter(([k]) => !nomeadas.some(n => cobertaPor(k, n))).map(([,v]) => v);
+    const nomeDemais = restantes.length && restantes.length <= 4 ? juntarNomesPt(restantes) : "Demais variedades";
+    const entradas = obsMap.size ? [...obsMap.entries(), ["", nomeDemais]] : [["", ""]];
     const daCultura = entradas.map(([key, display]) => {
       const pertence = ehKitSulco => p => {
         const excecoes = extrairExcecoesObs(p.obs);
@@ -2371,8 +2379,12 @@ function campoEditadoAMao(row, campo) {
 // automáticas órfãs — as que nasceram de uma regra de leitura da observação que não vale mais
 // ("850 hectares" virando variedade, por exemplo): elas não correspondem a nenhum grupo atual,
 // então somem na limpeza e não voltam. Linha criada à mão não tem origemKey e não é tocada.
-function refazerGruposTS(atual, grupos) {
-  return mesclarGruposTS(atual.filter(r => !r.origemKey), grupos);
+// A observação digitada na linha (ex: "semente veio sem tratamento") não vem da Programação,
+// então é mantida na linha refeita do mesmo grupo. apagarManuais tira também as linhas sem 🔗.
+function refazerGruposTS(atual, grupos, apagarManuais) {
+  const obsPorOrigem = new Map(atual.filter(r => r.origemKey && (r.obs||"").trim()).map(r => [r.origemKey, r.obs]));
+  const refeito = mesclarGruposTS(atual.filter(r => !r.origemKey && !apagarManuais), grupos);
+  return refeito.map(r => r.origemKey && !r.obs && obsPorOrigem.has(r.origemKey) ? { ...r, obs: obsPorOrigem.get(r.origemKey) } : r);
 }
 
 const TS_VERAO_INICIAL = [
@@ -6659,10 +6671,10 @@ function App() {
       {appView==="plan_inv" && <PlanejamentoTable data={planSafrinha} setData={setPlanSafrinha} tipo="inv" cultureColors={CULTURE_COLORS_INVERNO} onGerarCotacao={gerarCotacaoSementesDoPlano} onGerarCotacaoAdub={gerarCotacaoAdubacaoDoPlano} onEnviarMedias={enviarMediasParaProgramacao} obs={planObsSafrinha} setObs={setPlanObsSafrinha} obs2={planObsSafrinha2} setObs2={setPlanObsSafrinha2}/>}
       {appView==="ts_verao" && <TSKitSulcoView data={tsVerao} setData={setTsVerao} titulo="TS / Kit Sulco — Safra Verão" cor="#1a5c2e" cultureColors={CULTURE_COLORS_VERAO} dProg={dataVerao}
         onRefazer={apagarManuais=>{ salvarSnapshot("Refazer TS / Kit Sulco Verão da Programação", { ts_verao: tsVerao });
-                         setTsVerao(rs => refazerGruposTS(apagarManuais ? [] : rs, computarGruposTS(dataVerao, planVerao))); }}/>}
+                         setTsVerao(rs => refazerGruposTS(rs, computarGruposTS(dataVerao, planVerao), apagarManuais)); }}/>}
       {appView==="ts_inv" && <TSKitSulcoView data={tsSafrinha} setData={setTsSafrinha} titulo="TS / Kit Sulco — Safrinha/Inverno" cor="#5c4a00" cultureColors={CULTURE_COLORS_INVERNO} dProg={dataInverno}
         onRefazer={apagarManuais=>{ salvarSnapshot("Refazer TS / Kit Sulco Inverno da Programação", { ts_safrinha: tsSafrinha });
-                         setTsSafrinha(rs => refazerGruposTS(apagarManuais ? [] : rs, computarGruposTS(dataInverno, planSafrinha))); }}/>}
+                         setTsSafrinha(rs => refazerGruposTS(rs, computarGruposTS(dataInverno, planSafrinha), apagarManuais)); }}/>}
 
       {/* ══════════════════════════════════════════════════════
           COLHEITA / PRODUTIVIDADE
