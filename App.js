@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "22/10 · 2";
+const VERSAO_APP = "22/10 · 3";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -2265,7 +2265,11 @@ function computarGruposTS(dProg, plano) {
     // O nome da linha das demais é o das variedades plantadas no Plano de Campo que não ganharam
     // linha própria ("NS 89 VIP 3 e FS 695 PWURR"). Muitas (mais de 4) ou nenhuma: "Demais variedades".
     const nomeadas = [...obsMap.keys()];
-    const cobertaPor = (k, n) => k === n || k.startsWith(n + " ") || n.startsWith(k + " ");
+    // Compara sem espaço e aceitando um nome como começo do outro: o Plano escreve "P 39209 PWU"
+    // e a observação "P39209PW" — é a mesma variedade.
+    const compacto = t => String(t).replace(/[^a-z0-9]/g, "");
+    const cobertaPor = (k, n) => { const a = compacto(k), b = compacto(n);
+      return !!a && !!b && Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)); };
     const restantes = [...plantadas.entries()].filter(([k]) => !nomeadas.some(n => cobertaPor(k, n))).map(([,v]) => v);
     const nomeDemais = restantes.length && restantes.length <= 4 ? juntarNomesPt(restantes) : "Demais variedades";
     const entradas = obsMap.size ? [...obsMap.entries(), ["", nomeDemais]] : [["", ""]];
