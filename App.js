@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "22/10 · 1";
+const VERSAO_APP = "22/10 · 2";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4764,13 +4764,10 @@ function App() {
             if (!(p.ingrediente_ativo||"").trim()) p.ingrediente_ativo = p.produto;
             p.produto = g.renomearPara;
           }
-          // Concentração comprada diferente da planejada: corrige a dose (e anota o porquê).
+          // Concentração comprada diferente da planejada: corrige a dose (a quantidade acompanha).
           if (g.doseFator && p.dose > 0) {
-            const antes = p.dose;
             p.dose = Math.round(p.dose * g.doseFator.fator * 10000) / 10000;
             p.ingrediente_ativo = g.doseFator.ia || p.ingrediente_ativo;
-            const nota = `Dose ajustada de ${String(antes).replace(".", ",")} p/ ${String(p.dose).replace(".", ",")} (concentração ${g.doseFator.de} → ${g.doseFator.para})`;
-            p.obs = (p.obs||"").trim() ? `${p.obs.trim()} · ${nota}` : nota;
           }
           if (g.fornecedores.size) p.revenda = [...g.fornecedores].join(" + ");
           if (g.vencimentos.size) p.vencimento = [...g.vencimentos].join(" + ");
