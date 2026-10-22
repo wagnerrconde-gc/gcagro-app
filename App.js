@@ -2246,12 +2246,11 @@ function computarGruposTS(dProg, plano) {
       return solta && pareceVariedade(solta, conhecidas) ? [solta] : null;
     };
     const obsMap = new Map();
-    // Com o Plano de Campo preenchido pra essa cultura, só vira linha a variedade que está
-    // plantada nesta safra. Uma observação que ficou de outro ano ("exceto B 5830 CE", "só TMG
-    // 7062") não cria mais linha de variedade que nem está no campo.
-    const plantadasKeys = [...plantadas.keys()];
-    const plantada = v => !plantadasKeys.length || pareceVariedade(v, plantadasKeys);
-    const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k) && plantada(v)) obsMap.set(k, v); };
+    // Variedade citada de forma explícita na observação ("exceto X", "só X") sempre vira linha,
+    // mesmo que não esteja no Plano de Campo: a observação é quem manda. Filtrar pelo Plano
+    // derrubava linhas de verdade, como "Campo semente", e exceções escritas com nome diferente
+    // do Plano ("Neo 700" x "NEO 700 I2X").
+    const registrar = v => { const k = normalizarNome(v); if (k && !obsMap.has(k)) obsMap.set(k, v); };
     [[prodsTS,false],[prodsKS,true]].forEach(([lista, ehKitSulco]) => lista.forEach(p => {
       const v = variedadeDoProduto(p, ehKitSulco);
       if (v) v.forEach(registrar);
