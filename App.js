@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "21/10 · 10";
+const VERSAO_APP = "22/10 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -882,7 +882,14 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
   const parecido = candidatos.find(c => nomeComecaComOOutro(c.chave, chave)
                                      || similaridadeNomes(c.chave, chave) >= LIMIAR_MESMA_IA);
   if (parecido) return { chave: parecido.chave, nivel: "sugestao", motivo: "nome parecido" };
-  const ia = conjuntoIngredientes(iaComprado);
+  // Ingrediente da compra: a coluna da planilha; sem ela, o parêntese do nome ("Tagger (lufenuron 50)").
+  const parentese = /\(([^)]+)\)\s*$/.exec(String(nomeComprado||""));
+  const iaTexto = (iaComprado||"").trim() || (parentese ? parentese[1] : "");
+  const ia = conjuntoIngredientes(iaTexto);
+  // Produto com o I.A. em branco mas com o NOME sendo o ingrediente ("Acetamiprid") também é
+  // lugar guardado.
+  const guardado = ia && candidatos.find(c => !c.ia && conjuntoIngredientes(c.nome) === ia);
+  if (guardado) return { chave: guardado.chave, nivel: "igual", motivo: "planejado pelo ingrediente ativo", porIA: true, iaTexto };
   const porIA = ia && candidatos.find(c => c.ia && c.ia === ia);
   // Bateu o ingrediente ativo e o produto planejado era só o ingrediente ("Diquat" com I.A.
   // "Diquat")? Então não há o que confirmar: aquele nome era um lugar guardado esperando o genérico
@@ -891,7 +898,7 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
   // Já quando o planejado tem marca de verdade ("Roundup Original" x "Tecnup"), a confirmação
   // continua: aí são dois produtos distintos do mesmo ingrediente, e trocar um pelo outro muda a
   // dose se a concentração for diferente.
-  if (porIA) return { chave: porIA.chave,
+  if (porIA) return { chave: porIA.chave, porIA: porIA.placeholderIA, iaTexto,
     nivel: porIA.placeholderIA ? "igual" : "sugestao",
     motivo: porIA.placeholderIA ? "planejado pelo ingrediente ativo" : "mesmo ingrediente ativo" };
   return null;
@@ -904,8 +911,32 @@ function casarCompraNaProgramacao(nomeComprado, iaComprado, candidatos) {
 // escritos não conte ("Piraclostrobina + Fluxapiroxade" = "Fluxapiroxade + Piraclostrobina").
 // NÃO separa por vírgula de propósito: ingrediente de verdade leva vírgula no nome ("2,4-D"), e
 // quebrar nela transformaria um ingrediente em dois e faria produtos diferentes parecerem iguais.
+// Concentração não conta ("Lufenuron 100" = "lufenuron 50 g/L" = "Lufenuron"): é o mesmo
+// ingrediente — a diferença de concentração vira ajuste de dose (fatorDoseConcentracao).
 function conjuntoIngredientes(txt) {
-  return (txt||"").split(/[+\/]/).map(s => normalizarNome(s)).filter(Boolean).sort().join("|");
+  const semUnidade = String(txt||"").replace(/\d+(?:[.,]\d+)?\s*(?:g|mg|ml|kg|l|%)\s*\/\s*(?:l|kg|ha)\b/gi, " ");
+  const semNumeroSolto = t => t.split(" ").filter(w => !/^\d+(?:[.,]\d+)?(?:%|g|ml|l|kg)?$/.test(w)).join(" ").trim();
+  return semUnidade.split(/[+\/]/).map(s => semNumeroSolto(normalizarNome(s))).filter(Boolean).sort().join("|");
+}
+// Concentração escrita junto de UM ingrediente só ("Lufenuron 100", "lufenuron 50 g/L",
+// "Acetamiprid 20%"). { valor, unidade } (unidade "" = número solto) ou null quando não dá pra
+// saber: mistura de ingredientes, nenhum número ou mais de um.
+function concentracaoIA(texto) {
+  const t = String(texto||"").trim();
+  if (!t || /[+\/]/.test(t.replace(/\d+(?:[.,]\d+)?\s*(?:g|mg|ml|kg|l)\s*\/\s*(?:l|kg)\b/gi, ""))) return null;
+  const nums = [...t.matchAll(/(\d+(?:[.,]\d+)?)\s*(%|(?:g|mg|ml)\s*\/\s*(?:l|kg)\b)?/gi)];
+  if (nums.length !== 1) return null;
+  const valor = Number(nums[0][1].replace(",", "."));
+  if (!(valor > 0)) return null;
+  return { valor, unidade: (nums[0][2]||"").replace(/\s+/g, "").toLowerCase() };
+}
+// Planejado "Lufenuron 100" e comprado "lufenuron 50" → a dose da Programação dobra (fator 2).
+// Número solto vale junto de g/L; % só conversa com %. Sem as duas concentrações → null.
+function fatorDoseConcentracao(planejado, comprado) {
+  const a = concentracaoIA(planejado), b = concentracaoIA(comprado);
+  if (!a || !b || a.valor === b.valor) return null;
+  const compativel = a.unidade === b.unidade || (!a.unidade && b.unidade !== "%") || (!b.unidade && a.unidade !== "%");
+  return compativel ? { fator: a.valor / b.valor, de: a.valor, para: b.valor } : null;
 }
 // Nome comercial pra gravar na Programação quando o produto planejado era só o ingrediente ativo.
 // Tira do nome comprado o parêntese que apenas repete o ingrediente ("Blow Out (diquat)" vira
@@ -4464,7 +4495,8 @@ function App() {
             const nomeMatch = mesmoProdutoQuaseIgual(chaveProduto(p.produto), chaveProduto(prodKey));
             const iaMatch = !nomeMatch && iaKey && (p.ingrediente_ativo||"").trim().toLowerCase() === iaKey;
             if (nomeMatch || iaMatch) {
-              p.preco_unit = precoMedio;
+              // Só o preço de COMPRA: o de referência (preco_unit) é o do ano anterior e fica
+              // intacto, pra comparar se comprei mais caro ou mais barato.
               p.preco_compra = precoMedio;
               p.fornecedor_compra = fornecedorLabel;
               p.revenda = fornecedorLabel;
@@ -4659,7 +4691,7 @@ function App() {
         const nome = (p.produto||"").trim();
         if (!nome) return;
         const chave = chaveProduto(nome);
-        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo),
+        if (!porChave.has(chave)) porChave.set(chave, { chave, nome, ia:conjuntoIngredientes(p.ingrediente_ativo), iaBruto:(p.ingrediente_ativo||"").trim(),
           // Nome que É o próprio ingrediente ativo ("Diquat" com I.A. "Diquat") não é marca: é um
           // lugar guardado no planejamento pra um produto que ainda não foi escolhido. Como tem
           // muito genérico, o nome comercial de verdade só se sabe depois da compra — então esse
@@ -4694,13 +4726,14 @@ function App() {
     const porProduto = new Map();
     registros.forEach(r => {
       if (!r.vinculoChave || !r.quantidade) return;
-      if (!porProduto.has(r.vinculoChave)) porProduto.set(r.vinculoChave, { totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set(), renomearPara:"" });
+      if (!porProduto.has(r.vinculoChave)) porProduto.set(r.vinculoChave, { totalPago:0, totalQtd:0, fornecedores:new Set(), vencimentos:new Set(), renomearPara:"", doseFator:null });
       const g = porProduto.get(r.vinculoChave);
       g.totalPago += r.valorTotal||0;
       g.totalQtd += r.quantidade||0;
       // Comprando duas marcas do mesmo ingrediente, fica a primeira como nome — renomear duas
       // vezes só deixaria o último arquivo lido mandar, sem ser mais certo que o outro.
       if (!g.renomearPara && r.renomearPara) g.renomearPara = r.renomearPara;
+      if (!g.doseFator && r.doseFator) g.doseFator = r.doseFator;
       if ((r.fornecedor||"").trim()) g.fornecedores.add(r.fornecedor.trim());
       if ((r.obs||"").trim()) g.vencimentos.add(r.obs.trim());
     });
@@ -4731,6 +4764,14 @@ function App() {
           if (g.renomearPara) {
             if (!(p.ingrediente_ativo||"").trim()) p.ingrediente_ativo = p.produto;
             p.produto = g.renomearPara;
+          }
+          // Concentração comprada diferente da planejada: corrige a dose (e anota o porquê).
+          if (g.doseFator && p.dose > 0) {
+            const antes = p.dose;
+            p.dose = Math.round(p.dose * g.doseFator.fator * 10000) / 10000;
+            p.ingrediente_ativo = g.doseFator.ia || p.ingrediente_ativo;
+            const nota = `Dose ajustada de ${String(antes).replace(".", ",")} p/ ${String(p.dose).replace(".", ",")} (concentração ${g.doseFator.de} → ${g.doseFator.para})`;
+            p.obs = (p.obs||"").trim() ? `${p.obs.trim()} · ${nota}` : nota;
           }
           if (g.fornecedores.size) p.revenda = [...g.fornecedores].join(" + ");
           if (g.vencimentos.size) p.vencimento = [...g.vencimentos].join(" + ");
@@ -9613,13 +9654,19 @@ function App() {
                             // Produto planejado só pelo ingrediente ativo ganha agora o nome
                             // comercial que foi realmente comprado — é a única renomeação que a
                             // importação faz, e só porque ali o nome era um lugar guardado.
-                            const renomearPara = cand && cand.placeholderIA
-                              ? nomeComercialDaCompra(r.produto, mapeadas[i].ingredienteAtivo || cand.nome)
+                            const guardado = cand && (cand.placeholderIA || achado.porIA);
+                            const renomearPara = guardado
+                              ? nomeComercialDaCompra(r.produto, mapeadas[i].ingredienteAtivo || cand.iaBruto || cand.nome)
                               : "";
+                            // Concentração diferente da planejada ("Lufenuron 100" x "lufenuron 50"):
+                            // a dose da Programação muda na mesma proporção (aqui, dobra).
+                            const conc = guardado && achado.iaTexto
+                              ? (fatorDoseConcentracao(cand.nome, achado.iaTexto) || fatorDoseConcentracao(cand.iaBruto, achado.iaTexto)) : null;
                             return { ...r,
                               unidade: unidadePlanilha || daProgramacao || r.unidade,
                               unidadePlanilha,
                               renomearPara: renomearPara && chaveProduto(renomearPara) !== achado.chave ? renomearPara : "",
+                              doseFator: conc ? { ...conc, ia: achado.iaTexto } : null,
                               // Só o "igual" já entra vinculado. "sugestao" fica escolhido também,
                               // mas a linha aparece destacada pra ser conferida — nada é aplicado
                               // sem passar pelos olhos.
@@ -9669,6 +9716,7 @@ function App() {
                                     return {...x, vinculoChave:e.target.value,
                                       unidade: x.unidadePlanilha || (alvo && alvo.unidade) || x.unidade,
                                       renomearPara: novoNome && chaveProduto(novoNome) !== e.target.value ? novoNome : "",
+                                      doseFator: null,
                                       vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
                                   }))}
                                   style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
@@ -9689,6 +9737,11 @@ function App() {
                                     ✎ renomeia na Programação para “{r.renomearPara}”
                                   </div>
                                 )}
+                                {r.doseFator && (
+                                  <div style={{fontSize:9,marginTop:2,color:"#c62828",fontWeight:700}}>
+                                    ⚖ concentração {r.doseFator.de} → {r.doseFator.para}: dose na Programação ×{String(Math.round(r.doseFator.fator*100)/100).replace(".", ",")}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           );})}
@@ -9707,7 +9760,7 @@ function App() {
                         // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
                         // isso, a marca de "não está na Programação" acusaria errado justamente
                         // os casos de nome diferente que você acabou de confirmar.
-                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, ...r}) => r);
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, doseFator, ...r}) => r);
                         setComprasRecords(rs => [...rs, ...limpos]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
