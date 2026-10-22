@@ -683,6 +683,37 @@ const PREFIXO_ORIGEM_PROG = "v3";
 // Sem traduzir, o <select> de Compras não achava a opção "Lt" e caía na primeira da lista — por
 // isso tudo aparecia como tonelada — e o mesmo produto com "Lt" numa cultura e sem unidade em
 // outra virava dois lançamentos em vez de um.
+// Tamanho de UMA dose escrito no Obs da Programação ("50 ml", "dose de 100 mL", "60 g").
+// { qtd, unidade, texto } já na unidade de compra (ml → L, g → kg) ou null. L/kg só valem com a
+// palavra "dose" junto; taxa por hectare ("2 L/ha") e Obs de estoque ("980 l em estoque") não contam.
+function tamanhoDaDose(obs) {
+  const texto = String(obs||"");
+  if (/estoque/i.test(texto)) return null;
+  const m = /(\d+(?:[.,]\d+)?)\s*(ml|l|lt|litros?|g|kg)\b(?!\s*\/)/i.exec(texto);
+  if (!m) return null;
+  if (!/^(ml|g)$/i.test(m[2]) && !/dose/i.test(texto)) return null;
+  const n = Number(m[1].replace(",", "."));
+  if (!(n > 0)) return null;
+  const u = m[2].toLowerCase();
+  if (u === "ml") return { qtd: n/1000, unidade: "L", texto: m[0].trim() };
+  if (u === "g") return { qtd: n/1000, unidade: "kg", texto: m[0].trim() };
+  return { qtd: n, unidade: u === "kg" ? "kg" : "L", texto: m[0].trim() };
+}
+// Inoculante comprado em DOSES (nota com quantidade e preço por dose) de um produto planejado em
+// L/kg com o tamanho da dose no Obs: converte pra unidade da Programação. 23.600 doses × 50 ml =
+// 1.180 L; R$ 1,20/dose ÷ 0,05 = R$ 24,00/L. O total pago não muda. Só quando a planilha não
+// declarou outra unidade (ou declarou dose).
+function converterCompraEmDoses(bruto, cand) {
+  const t = cand && cand.tamanhoDose;
+  if (!t || !bruto || (bruto.unidadePlanilha && !/^doses?$/i.test(bruto.unidadePlanilha))) return null;
+  if (cand.unidade && cand.unidade !== t.unidade) return null;
+  return {
+    quantidade: Math.round(bruto.quantidade * t.qtd * 1000) / 1000,
+    precoUnitario: Math.round(bruto.precoUnitario / t.qtd * 100) / 100,
+    unidade: t.unidade,
+    conversaoDose: { doses: bruto.quantidade, precoDose: bruto.precoUnitario, tamanho: t.texto },
+  };
+}
 function unidadeCompraDaProgramacao(u) {
   const map = { lt:"L", l:"L", tn:"TN", t:"TN", kg:"kg", bag:"bag", sc:"sc", doses:"doses" };
   return map[String(u||"").trim().toLowerCase()] || "L";
@@ -4721,6 +4752,7 @@ function App() {
         // planilha do grupo de compras vem sem coluna de unidade — que é o normal.
         // Fica a primeira encontrada: o mesmo produto em culturas diferentes usa a mesma unidade.
         if (!alvo.unidade && (p.unidade||"").trim()) alvo.unidade = unidadeCompraDaProgramacao(p.unidade);
+        if (alvo.tamanhoDose == null) { const t = tamanhoDaDose(p.obs); if (t) alvo.tamanhoDose = t; }
         // Fica o nome mais completo como rótulo, igual às outras telas fazem.
         if (nome.length > alvo.nome.length) alvo.nome = nome;
       });
@@ -9674,8 +9706,12 @@ function App() {
                             // a dose da Programação muda na mesma proporção (aqui, dobra).
                             const conc = guardado && achado.iaTexto
                               ? (fatorDoseConcentracao(cand.nome, achado.iaTexto) || fatorDoseConcentracao(cand.iaBruto, achado.iaTexto)) : null;
+                            // Inoculante comprado em doses → litros (tamanho da dose no Obs da Programação).
+                            const bruto = { quantidade: r.quantidade, precoUnitario: r.precoUnitario, valorTotal: r.valorTotal, unidadePlanilha };
+                            const conv = converterCompraEmDoses(bruto, cand);
                             return { ...r,
                               unidade: unidadePlanilha || daProgramacao || r.unidade,
+                              bruto, ...(conv || {}),
                               unidadePlanilha,
                               renomearPara: renomearPara && chaveProduto(renomearPara) !== achado.chave ? renomearPara : "",
                               doseFator: conc ? { ...conc, ia: achado.iaTexto } : null,
@@ -9707,7 +9743,8 @@ function App() {
                             const confirmar = r.vinculoNivel === "sugestao";
                             return (
                             <tr key={r.id} style={{background:confirmar?"#fffde7":(i%2===0?"#fff":"#fafafa")}}>
-                              <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}</td>
+                              <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}
+                                {r.conversaoDose && <div style={{fontSize:9,color:"#6a1b9a",fontWeight:600}}>🧪 {fmtQtd(r.conversaoDose.doses)} doses × {r.conversaoDose.tamanho} → {fmt(r.conversaoDose.precoDose)}/dose = {fmt(r.precoUnitario)}/{r.unidade}</div>}</td>
                               <td style={{padding:"5px 7px"}}>{r.unidade}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtQtd(r.quantidade)}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmt(r.precoUnitario)}</td>
@@ -9725,8 +9762,13 @@ function App() {
                                     const alvo = candidatosImportCompra.find(c=>c.chave===e.target.value);
                                     const novoNome = alvo && alvo.placeholderIA
                                       ? nomeComercialDaCompra(x.produto, alvo.nome) : "";
-                                    return {...x, vinculoChave:e.target.value,
+                                    const b = x.bruto || { quantidade:x.quantidade, precoUnitario:x.precoUnitario, valorTotal:x.valorTotal, unidadePlanilha:x.unidadePlanilha };
+                                    const conv = converterCompraEmDoses(b, alvo);
+                                    const { conversaoDose, ...semConv } = x;
+                                    return {...semConv, vinculoChave:e.target.value,
+                                      quantidade:b.quantidade, precoUnitario:b.precoUnitario, valorTotal:b.valorTotal,
                                       unidade: x.unidadePlanilha || (alvo && alvo.unidade) || x.unidade,
+                                      ...(conv || {}),
                                       renomearPara: novoNome && chaveProduto(novoNome) !== e.target.value ? novoNome : "",
                                       doseFator: null,
                                       vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
@@ -9772,7 +9814,7 @@ function App() {
                         // produto da Programação, mesmo tendo sido comprada com outro nome. Sem
                         // isso, a marca de "não está na Programação" acusaria errado justamente
                         // os casos de nome diferente que você acabou de confirmar.
-                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, doseFator, ...r}) => r);
+                        const limpos = importCompraPreview.map(({vinculoNivel, vinculoMotivo, unidadePlanilha, renomearPara, doseFator, bruto, conversaoDose, ...r}) => r);
                         setComprasRecords(rs => [...rs, ...limpos]);
                         const tocados = levarComprasImportadasPraProgramacao(importCompraPreview, comprasCatSel);
                         const vinculadas = importCompraPreview.filter(r=>r.vinculoChave).length;
