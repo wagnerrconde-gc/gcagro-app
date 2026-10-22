@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "22/10 · 3";
+const VERSAO_APP = "22/10 · 4";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -4752,7 +4752,12 @@ function App() {
         // planilha do grupo de compras vem sem coluna de unidade — que é o normal.
         // Fica a primeira encontrada: o mesmo produto em culturas diferentes usa a mesma unidade.
         if (!alvo.unidade && (p.unidade||"").trim()) alvo.unidade = unidadeCompraDaProgramacao(p.unidade);
-        if (alvo.tamanhoDose == null) { const t = tamanhoDaDose(p.obs); if (t) alvo.tamanhoDose = t; }
+        // Tamanhos diferentes no mesmo produto (50 ml num lugar, 100 ml noutro): não converte — avisa.
+        { const t = tamanhoDaDose(p.obs);
+          if (t && !alvo.doseConflito) {
+            if (!alvo.tamanhoDose) alvo.tamanhoDose = t;
+            else if (alvo.tamanhoDose.qtd !== t.qtd || alvo.tamanhoDose.unidade !== t.unidade) { alvo.doseConflito = `${alvo.tamanhoDose.texto} e ${t.texto}`; alvo.tamanhoDose = null; }
+          } }
         // Fica o nome mais completo como rótulo, igual às outras telas fazem.
         if (nome.length > alvo.nome.length) alvo.nome = nome;
       });
@@ -9744,7 +9749,9 @@ function App() {
                             return (
                             <tr key={r.id} style={{background:confirmar?"#fffde7":(i%2===0?"#fff":"#fafafa")}}>
                               <td style={{padding:"5px 7px",fontWeight:600}}>{r.produto}
-                                {r.conversaoDose && <div style={{fontSize:9,color:"#6a1b9a",fontWeight:600}}>🧪 {fmtQtd(r.conversaoDose.doses)} doses × {r.conversaoDose.tamanho} → {fmt(r.conversaoDose.precoDose)}/dose = {fmt(r.precoUnitario)}/{r.unidade}</div>}</td>
+                                {r.conversaoDose && <div style={{fontSize:9,color:"#6a1b9a",fontWeight:600}}>🧪 {fmtQtd(r.conversaoDose.doses)} doses × {r.conversaoDose.tamanho} → {fmt(r.conversaoDose.precoDose)}/dose = {fmt(r.precoUnitario)}/{r.unidade}</div>}
+                                {(()=>{ const c = r.vinculoChave && candidatosImportCompra.find(x=>x.chave===r.vinculoChave);
+                                  return c && c.doseConflito ? <div style={{fontSize:9,color:"#c62828",fontWeight:600}}>⚠ tamanho da dose diferente no Obs da Programação ({c.doseConflito}) — não converti pra litros; acerte o Obs e importe de novo</div> : null; })()}</td>
                               <td style={{padding:"5px 7px"}}>{r.unidade}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmtQtd(r.quantidade)}</td>
                               <td style={{padding:"5px 7px",textAlign:"right"}}>{fmt(r.precoUnitario)}</td>
