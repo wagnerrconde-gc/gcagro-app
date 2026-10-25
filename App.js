@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 2";
+const VERSAO_APP = "25/10 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -694,7 +694,9 @@ function tamanhoDaDose(obs) {
   if (/estoque/i.test(texto)) return null;
   const m = /(\d+(?:[.,]\d+)?)\s*(ml|l|lt|litros?|g|kg)\b(?!\s*\/)/i.exec(texto);
   if (!m) return null;
-  if (!/^(ml|g)$/i.test(m[2]) && !/dose/i.test(texto)) return null;
+  // Só com a palavra "dose" no Obs: um "200 g" solto num foliar é a dose por hectare, e converter
+  // ali multiplicava o preço (R$ 205 → R$ 1.025).
+  if (!/dose/i.test(texto)) return null;
   const n = Number(m[1].replace(",", "."));
   if (!(n > 0)) return null;
   const u = m[2].toLowerCase();
