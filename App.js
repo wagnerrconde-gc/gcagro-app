@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 1";
+const VERSAO_APP = "25/10 · 2";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -4772,7 +4772,8 @@ function App() {
         // Fica a primeira encontrada: o mesmo produto em culturas diferentes usa a mesma unidade.
         if (!alvo.unidade && (p.unidade||"").trim()) alvo.unidade = unidadeCompraDaProgramacao(p.unidade);
         // Tamanhos diferentes no mesmo produto (50 ml num lugar, 100 ml noutro): não converte — avisa.
-        { const t = tamanhoDaDose(p.obs);
+        // Só no Kit Sulco (inoculantes): nos outros produtos o Obs não é tamanho de dose.
+        { const t = cat.name === "Kit Sulco" ? tamanhoDaDose(p.obs) : null;
           if (t && !alvo.doseConflito) {
             if (!alvo.tamanhoDose) alvo.tamanhoDose = t;
             else if (alvo.tamanhoDose.qtd !== t.qtd || alvo.tamanhoDose.unidade !== t.unidade) { alvo.doseConflito = `${alvo.tamanhoDose.texto} e ${t.texto}`; alvo.tamanhoDose = null; }
