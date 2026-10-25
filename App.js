@@ -67,6 +67,13 @@ function mesclarListaPorId(base, local, remoto) {
 // uma vez é recusada — a não ser que venha de uma ação em que eu confirmei apagar em massa
 // (restaurar ponto de retorno, Relançar, importar backup), que liberam a trava por uns segundos.
 const LIMITE_APAGAR_COMPRAS = 2;
+// Lugar das compras no servidor. Mudou de "gcagro/compras" pra "gcagro/compras_v2" em 25/10/2026:
+// uma janela aberta desde antes das correções, ainda rodando o código velho, continuava gravando
+// a lista velha dela por cima em "gcagro/compras" — e o código velho não tem as travas novas.
+// Trocando o lugar, essa janela grava num canto que ninguém mais lê. O lugar antigo vira só mais
+// uma fonte pra "Procurar compras sumidas".
+const PATH_COMPRAS = "gcagro/compras_v2";
+const PATH_COMPRAS_ANTIGO = "gcagro/compras";
 let liberaApagarComprasAte = 0;
 function liberarApagarCompras() { liberaApagarComprasAte = Date.now() + 20000; }
 // Decide o que a transação grava: a lista juntada, ou nada (undefined) se ela tiraria do
@@ -94,6 +101,19 @@ function useFirebaseSync(path, value, setValue, opcoes) {
         base.current = remoto;
         setValue(remoto);
       } else if (!ready.current) {
+        const juntarCom = opcoes && opcoes.criarJuntandoCom;
+        if (juntarCom) {
+          // Lugar novo ainda vazio: nasce com a lista do lugar antigo JUNTO com a deste aparelho
+          // (por id, sem perder nenhuma), e não só com a deste aparelho.
+          fbDb.ref(juntarCom).once("value").then(antigo => {
+            const lista = x => (Array.isArray(x) ? x : Object.values(x||{})).filter(Boolean);
+            const porId = new Map(lista(antigo.val()).map(r => [chaveRegistroSync(r), r]));
+            lista(value).forEach(r => porId.set(chaveRegistroSync(r), r));
+            const junto = [...porId.values()];
+            return ref.transaction(atual => atual == null ? junto : undefined);
+          }).catch(err => console.error("Firebase seed falhou:", err));
+          return;   // ready fica pra quando o valor criado chegar pelo próprio listener
+        }
         ultimoSincronizado.current = JSON.stringify(value);
         ref.set(value).catch(err => console.error("Firebase seed falhou:", err));
       }
@@ -169,6 +189,32 @@ const KEY_CATALOGO_IA = "gcagro_catalogo_ia_v1";
 // todos os aparelhos na hora e o único caminho de volta seria um backup manual antigo. Guarda só
 // as fatias que a operação mexe (não o app inteiro), pra caber no armazenamento do navegador.
 const KEY_SNAPSHOTS = "gcagro_snapshots_v1";
+// Ao abrir esta versão, antes de qualquer sincronização, cada aparelho/navegador manda uma cópia
+// das compras que ele tinha guardadas (e dos pontos de retorno com compras) pra um canto separado
+// do servidor (gcagro/recuperacao). Não mexe nos dados vivos: só vira mais uma fonte pro
+// "Procurar compras sumidas". Serve pra resgatar compras que só ficaram guardadas num celular ou
+// num outro navegador — que, ao sincronizar, teriam essa cópia trocada pela do servidor.
+// Uma vez por aparelho.
+(function enviarCopiaLocalDasCompras() {
+  const marca = "gcagro_copia_recuperacao_enviada_2510";
+  try {
+    if (!fbDb || localStorage.getItem(marca)) return;
+    const ler = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (e) { return null; } };
+    const compras = ler(KEY_COMPRAS);
+    const pontos = (ler(KEY_SNAPSHOTS) || []).filter(x => x && x.fatias && x.fatias.compras)
+      .map(x => ({ descricao: x.descricao || "", quando: x.quando || "", compras: x.fatias.compras }));
+    const tem = Array.isArray(compras) ? compras.length : (compras && Object.keys(compras).length);
+    if (!tem && !pontos.length) { localStorage.setItem(marca, "1"); return; }
+    const ua = navigator.userAgent || "";
+    const aparelho = (/iPhone|iPad/.test(ua) ? "iPhone/iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : "aparelho")
+      + " · " + (/Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "navegador")
+      + (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches ? " (app instalado)" : "");
+    const id = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14) + "_" + Math.random().toString(36).slice(2, 7);
+    fbDb.ref("gcagro/recuperacao/" + id).set({ aparelho, enviadoEm: new Date().toISOString(), compras: compras || [], pontos })
+      .then(() => { try { localStorage.setItem(marca, "1"); } catch (e) {} })
+      .catch(err => console.error("Cópia de recuperação não foi enviada:", err));
+  } catch (e) { console.error("Cópia de recuperação falhou:", e); }
+})();
 const MAX_SNAPSHOTS = 12;
 // Quando foi a última vez que levei uma cópia pra fora do app (o arquivo .json baixado) e a última
 // cópia automática gravada no servidor. Uma protege contra erro meu, a outra contra perder o
@@ -291,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 3";
+const VERSAO_APP = "25/10 · 4";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -1703,6 +1749,24 @@ function migrarComprasParaSafraAtual(compras, ativa, arquivadas) {
     return { ...r, safra: ativa };
   });
   return { lista: nova, movidas };
+}
+// O app começa na safra atual: compra com nome de safra que não é a atual nem uma safra
+// encerrada (arquivada) é desta safra e passa pra ela sozinha. Se já existe uma igual na safra
+// atual (mesma pasta, produto, quantidade e valor), é cópia e sai — era o que fazia o total dobrar.
+function acertarSafraDasCompras(compras, ativa, encerradas) {
+  const lista = (Array.isArray(compras) ? compras : Object.values(compras||{})).filter(Boolean);
+  const fechadas = new Set(encerradas || []);
+  const naAtual = new Set(lista.filter(r => r.safra===ativa).map(compraConteudoSemSafra));
+  let movidas = 0, removidas = 0;
+  const nova = [];
+  lista.forEach(r => {
+    if (r.safra===ativa || fechadas.has(r.safra)) { nova.push(r); return; }
+    const k = compraConteudoSemSafra(r);
+    if (naAtual.has(k)) { removidas++; return; }
+    naAtual.add(k); movidas++;
+    nova.push({ ...r, safra: ativa });
+  });
+  return { lista: nova, movidas, removidas };
 }
 function comprasSumidas(atuais, fontes) {
   const lista = x => Array.isArray(x) ? x : Object.values(x||{});
@@ -3480,6 +3544,25 @@ function App() {
   // automáticas do servidor (que antes eram gravadas mas não tinham como ser lidas), e mostra só
   // as compras que existiam lá e não existem mais aqui. Recuperar só ACRESCENTA à lista atual.
   const [recuperacao, setRecuperacao] = useState(null);
+  // Arquivo de backup baixado (.json) como mais uma fonte pra recuperar compras — só lê as compras
+  // dele, não restaura nada do resto.
+  const [arquivosRecuperacao, setArquivosRecuperacao] = useState([]);
+  function lerBackupPraRecuperar(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const b = JSON.parse(ev.target.result);
+        if (!b || !b.comprasRecords) { window.alert("Esse arquivo não tem lista de compras."); return; }
+        setArquivosRecuperacao(a => [...a, { rotulo:`Arquivo ${file.name}`, quando: b.dataExportacao||"", compras: b.comprasRecords, tipo:"local" }]);
+        setRecuperacao(null);
+        window.alert(`Arquivo lido: ${(Array.isArray(b.comprasRecords)?b.comprasRecords:Object.values(b.comprasRecords)).length} compra(s). Agora clique em "Procurar compras sumidas".`);
+      } catch (err) { window.alert("Não consegui ler o arquivo: " + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
   async function procurarComprasSumidas() {
     setRecuperacao({ carregando:true });
     const fontes = [];
@@ -3496,6 +3579,21 @@ function App() {
         });
       } catch (e) { erroServidor = "Não consegui ler as cópias do servidor: " + e.message; }
     }
+    if (fbDb) {
+      try {
+        // Lista que ficou no lugar antigo das compras (é onde janela com código velho grava).
+        const antigo = await fbDb.ref(PATH_COMPRAS_ANTIGO).once("value");
+        if (antigo.exists()) fontes.push({ rotulo:"Lista no lugar antigo do servidor", quando:"", compras:antigo.val(), tipo:"servidor" });
+        // Cópias mandadas pela página de recuperação (lista guardada em cada navegador/celular).
+        const enviadas = await fbDb.ref("gcagro/recuperacao").once("value");
+        Object.entries(enviadas.val()||{}).forEach(([k, v]) => {
+          if (v && v.compras) fontes.push({ rotulo:`Cópia guardada em ${v.aparelho||"outro aparelho"} (enviada ${new Date(v.enviadoEm||0).toLocaleString("pt-BR")})`,
+            quando: v.enviadoEm||"", compras: v.compras, tipo:"servidor" });
+          (v && v.pontos || []).forEach(pt => { if (pt && pt.compras) fontes.push({ rotulo:`Ponto de retorno em ${v.aparelho||"outro aparelho"} — ${pt.descricao||""}`, quando: pt.quando||"", compras: pt.compras, tipo:"servidor" }); });
+        });
+      } catch (e) { erroServidor = erroServidor || ("Não consegui ler as cópias do servidor: " + e.message); }
+    }
+    (arquivosRecuperacao||[]).forEach(f => fontes.push(f));
     const itens = comprasSumidas(comprasRecords, fontes);
     setRecuperacao({ carregando:false, itens, marcados:new Set(itens.map(i=>i.chave)), erroServidor,
       fontesLocais: fontes.filter(f=>f.tipo==="local").length, fontesServidor: fontes.filter(f=>f.tipo==="servidor").length });
@@ -3523,18 +3621,29 @@ function App() {
     const ler = p => fbDb.ref(p).once("value").then(sn => sn.exists() ? sn.val() : null);
     ler("gcagro/migracoes/" + MARCA_MIGRACAO_COMPRAS).then(feita => {
       if (feita) { try { localStorage.setItem(marcaLocal, "1"); } catch(e) {} return; }
-      return Promise.all([ler("gcagro/compras"), ler("gcagro/safras/ativa"), ler("gcagro/safras/arquivo")])
+      return Promise.all([ler(PATH_COMPRAS), ler("gcagro/safras/ativa"), ler("gcagro/safras/arquivo")])
         .then(([compras, ativa, arq]) => {
           if (compras == null) return;   // servidor ainda sem compras: não marca, tenta de novo depois
           const lista = aplicar(compras, ativa || safraAtiva, arq || []);
           if (!lista) return;
-          return fbDb.ref("gcagro/compras").set(lista)
+          return fbDb.ref(PATH_COMPRAS).set(lista)
             .then(() => fbDb.ref("gcagro/migracoes/" + MARCA_MIGRACAO_COMPRAS).set(new Date().toISOString()));
         });
     }).catch(err => console.error("Correção de safra das compras falhou:", err));
     return () => { cancelado = true; };
     // eslint-disable-next-line
   }, []);
+  useEffect(() => {
+    if (!safraAtiva) return;
+    const encerradas = (safrasArquivadas||[]).map(a => a && a.nome).filter(Boolean);
+    const { movidas, removidas } = acertarSafraDasCompras(comprasRecords, safraAtiva, encerradas);
+    if (!movidas && !removidas) return;
+    // Sem ponto de retorno aqui de propósito: só tira cópia repetida, e cada ponto ocuparia uma das
+    // 12 vagas — empurrando pra fora pontos antigos que podem ser a única cópia de compras sumidas.
+    if (removidas) liberarApagarCompras();
+    setComprasRecords(rs => acertarSafraDasCompras(rs, safraAtiva, encerradas).lista);
+    // eslint-disable-next-line
+  }, [comprasRecords, safraAtiva, safrasArquivadas]);
   const comprasComSafraErrada = useMemo(() => {
     const encerradas = new Set((safrasArquivadas||[]).map(a => a && a.nome).filter(Boolean));
     // Cópia de compra que já está na safra atual (mesmo produto, categoria, quantidade e valor)
@@ -3779,7 +3888,7 @@ function App() {
   // Compras, Vendas, Colheita, Safras), pra tudo ficar igual entre PC e celular ──
   useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
   useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
-  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords, { mesclarPorId:true, limiteApagar:LIMITE_APAGAR_COMPRAS });
+  useFirebaseSync(PATH_COMPRAS, comprasRecords, setComprasRecords, { mesclarPorId:true, limiteApagar:LIMITE_APAGAR_COMPRAS, criarJuntandoCom:PATH_COMPRAS_ANTIGO });
   useFirebaseSync("gcagro/compras_prog_lancadas", comprasProgLancadas, setComprasProgLancadas);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
@@ -5079,7 +5188,7 @@ function App() {
       const chave = agora.toISOString().slice(0,10);
       // As compras vão como estão NO SERVIDOR, não como estão neste aparelho: ao abrir, a lista
       // do aparelho pode ser a velha guardada, e a cópia sairia com compras faltando.
-      return db.ref("gcagro/compras").once("value").then(sc => {
+      return db.ref(PATH_COMPRAS).once("value").then(sc => {
         const payload = montarPayloadBackup();
         if (sc.exists()) payload.comprasRecords = sc.val();
         return db.ref("gcagro/backups/"+chave).set({ ...payload, gravadoEm: agora.toISOString() });
@@ -10220,8 +10329,15 @@ function App() {
               );
             })()}
             {!recuperacao && (
-              <button onClick={procurarComprasSumidas}
-                style={{padding:"8px 16px",background:"#3949ab",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔎 Procurar compras sumidas</button>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <button onClick={procurarComprasSumidas}
+                  style={{padding:"8px 16px",background:"#3949ab",border:"none",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔎 Procurar compras sumidas</button>
+                <label style={{padding:"7px 14px",background:"#e8eaf6",borderRadius:6,color:"#3949ab",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  📂 Usar também um arquivo de backup baixado
+                  <input type="file" accept=".json,application/json" onChange={lerBackupPraRecuperar} style={{display:"none"}}/>
+                </label>
+                {arquivosRecuperacao.length>0 && <span style={{fontSize:11,color:"#3949ab"}}>{arquivosRecuperacao.length} arquivo(s) carregado(s)</span>}
+              </div>
             )}
             {recuperacao && recuperacao.carregando && <div style={{fontSize:12,color:"#3949ab"}}>Procurando nas cópias…</div>}
             {recuperacao && !recuperacao.carregando && (()=>{
