@@ -61,6 +61,24 @@ function mesclarListaPorId(base, local, remoto) {
   });
   return out;
 }
+// Trava contra apagar compras em massa por engano. Uma janela ou navegador com a lista velha
+// guardada (ex: aberta dias atrás) podia gravar essa lista por cima e sumir com dezenas de
+// compras. Agora uma gravação que tiraria mais de LIMITE_APAGAR_COMPRAS compras do servidor de
+// uma vez é recusada — a não ser que venha de uma ação em que eu confirmei apagar em massa
+// (restaurar ponto de retorno, Relançar, importar backup), que liberam a trava por uns segundos.
+const LIMITE_APAGAR_COMPRAS = 2;
+let liberaApagarComprasAte = 0;
+function liberarApagarCompras() { liberaApagarComprasAte = Date.now() + 20000; }
+// Decide o que a transação grava: a lista juntada, ou nada (undefined) se ela tiraria do
+// servidor mais registros que o limite de uma vez só, fora de uma ação liberada.
+function decidirGravacaoLista(base, local, remoto, limite, liberado) {
+  if (remoto == null) return { valor: local, saem: 0 };
+  const junto = mesclarListaPorId(base, local, remoto);
+  if (limite == null || liberado) return { valor: junto, saem: 0 };
+  const ficam = new Set(junto.map(chaveRegistroSync));
+  const saem = (Array.isArray(remoto) ? remoto : Object.values(remoto)).filter(r => r && !ficam.has(chaveRegistroSync(r))).length;
+  return saem > limite ? { valor: undefined, saem } : { valor: junto, saem: 0 };
+}
 function useFirebaseSync(path, value, setValue, opcoes) {
   const mesclar = !!(opcoes && opcoes.mesclarPorId);
   const ready = useRef(false);
@@ -94,8 +112,24 @@ function useFirebaseSync(path, value, setValue, opcoes) {
       const baseAgora = base.current;
       // A transação roda de novo sozinha com o valor real do servidor se o que este aparelho
       // tinha em cache estiver velho — é isso que protege contra a gravação atrasada.
-      ref.transaction(remoto => remoto == null ? value : mesclarListaPorId(baseAgora, value, remoto))
-        .catch(err => console.error("Firebase transação falhou:", err));
+      const limite = opcoes && opcoes.limiteApagar;
+      let bloqueou = 0;
+      ref.transaction(remoto => {
+        const d = decidirGravacaoLista(baseAgora, value, remoto, limite, Date.now() <= liberaApagarComprasAte);
+        bloqueou = d.saem;
+        return d.valor;   // undefined = cancela a gravação
+      }).then(res => {
+        if (!bloqueou || !res || res.committed) return;
+        // Este aparelho estava com a lista velha: não grava nada e volta a mostrar a do servidor.
+        const doServidor = res.snapshot && res.snapshot.val();
+        if (doServidor != null) {
+          ultimoSincronizado.current = JSON.stringify(doServidor);
+          base.current = doServidor;
+          setValue(doServidor);
+        }
+        console.warn(`Gravação de ${path} recusada: tiraria ${bloqueou} registro(s) do servidor de uma vez.`);
+        try { window.alert(`Esta janela do GC Agro estava com uma lista de compras desatualizada e ia apagar ${bloqueou} compra(s) do servidor.\n\nNada foi apagado — a lista certa foi recarregada do servidor.`); } catch(e) {}
+      }).catch(err => console.error("Firebase transação falhou:", err));
       return;
     }
     ref.set(value).catch(err => console.error("Firebase set falhou:", err));
@@ -257,7 +291,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 2";
+const VERSAO_APP = "25/10 · 3";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -3429,7 +3463,7 @@ function App() {
     if (!window.confirm(`Voltar ao estado de antes de "${snap.descricao}"?\n\nSó o que aquela operação mexeu é restaurado; o resto do app fica como está.${avisoCompras}`)) return;
     if (f.prog_verao) setDataVerao(f.prog_verao);
     if (f.prog_inv) setDataInverno(f.prog_inv);
-    if (f.compras) setComprasRecords(f.compras);
+    if (f.compras) { liberarApagarCompras(); setComprasRecords(f.compras); }
     if (f.ts_verao) setTsVerao(f.ts_verao);
     if (f.ts_safrinha) setTsSafrinha(f.ts_safrinha);
     if (f.cot) {
@@ -3743,7 +3777,7 @@ function App() {
   // Compras, Vendas, Colheita, Safras), pra tudo ficar igual entre PC e celular ──
   useFirebaseSync("gcagro/prog/verao", dataVerao, setDataVerao);
   useFirebaseSync("gcagro/prog/inverno", dataInverno, setDataInverno);
-  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords, { mesclarPorId:true });
+  useFirebaseSync("gcagro/compras", comprasRecords, setComprasRecords, { mesclarPorId:true, limiteApagar:LIMITE_APAGAR_COMPRAS });
   useFirebaseSync("gcagro/compras_prog_lancadas", comprasProgLancadas, setComprasProgLancadas);
   useFirebaseSync("gcagro/vendas", vendasRecords, setVendasRecords);
   useFirebaseSync("gcagro/financeiro", financeiroRecords, setFinanceiroRecords);
@@ -3829,6 +3863,7 @@ function App() {
     const antigos = comprasRecords.filter(r => r.origemProg && !r.origemProg.startsWith(PREFIXO_ORIGEM_PROG+"|"));
     if (antigos.length) {
       salvarSnapshot(`Juntar ${antigos.length} lançamento(s) da Programação por produto`, { compras: comprasRecords });
+      liberarApagarCompras();
       setComprasRecords(rs => rs.filter(r => !r.origemProg || r.origemProg.startsWith(PREFIXO_ORIGEM_PROG+"|")));
       return;
     }
@@ -5039,8 +5074,13 @@ function App() {
       if (maisRecente && diasDesde(maisRecente) < DIAS_COPIA_AUTOMATICA) return null;
       const agora = new Date();
       const chave = agora.toISOString().slice(0,10);
-      return db.ref("gcagro/backups/"+chave)
-        .set({ ...montarPayloadBackup(), gravadoEm: agora.toISOString() })
+      // As compras vão como estão NO SERVIDOR, não como estão neste aparelho: ao abrir, a lista
+      // do aparelho pode ser a velha guardada, e a cópia sairia com compras faltando.
+      return db.ref("gcagro/compras").once("value").then(sc => {
+        const payload = montarPayloadBackup();
+        if (sc.exists()) payload.comprasRecords = sc.val();
+        return db.ref("gcagro/backups/"+chave).set({ ...payload, gravadoEm: agora.toISOString() });
+      })
         .then(() => {
           saveLS(KEY_ULTIMA_COPIA_FB, agora.toISOString());
           // Mantém só as últimas cópias, pra não crescer sem fim.
@@ -5081,7 +5121,7 @@ function App() {
         if (b.planVerao) setPlanVerao(b.planVerao);
         if (b.planSafrinha) setPlanSafrinha(b.planSafrinha);
         if (b.colheitaRecords) setColheitaRecords(b.colheitaRecords);
-        if (b.comprasRecords) setComprasRecords(b.comprasRecords);
+        if (b.comprasRecords) { liberarApagarCompras(); setComprasRecords(b.comprasRecords); }
         if (b.vendasRecords) setVendasRecords(b.vendasRecords);
         if (b.financeiroRecords) setFinanceiroRecords(b.financeiroRecords);
         if (b.comissaoAdiant) setComissaoAdiant(b.comissaoAdiant);
@@ -9616,6 +9656,7 @@ function App() {
                           : `Lançar de novo, a partir da Programação, as compras de químicos desta safra?\n\nUse isto quando os lançamentos foram removidos e você quer que voltem.`;
                         if (!window.confirm(`${msg}\n\nLançamento digitado à mão ou importado de planilha não é tocado. Fica um ponto de retorno salvo antes.`)) return;
                         salvarSnapshot(`Relançar compras da Programação`, { compras: comprasRecords });
+                        liberarApagarCompras();
                         setComprasRecords(rs => rs.filter(r => !r.origemProg));
                         setComprasProgLancadas([]);
                       }}
