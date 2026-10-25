@@ -257,7 +257,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "22/10 · 5";
+const VERSAO_APP = "25/10 · 1";
 function normalizarNome(str) {
   return (str||"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
@@ -9676,7 +9676,10 @@ function App() {
 
             {showImportCompra && (
               <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
-                <div style={{background:"#fff",borderRadius:10,padding:20,maxWidth:680,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+                {/* Com a prévia aberta a janela ocupa quase a tela toda: são 9 colunas e o menu de
+                    vínculo com a Programação, e numa janela estreita era preciso rolar de lado
+                    pra comparar o produto da planilha com o da Programação. */}
+                <div data-import-compra="1" style={{background:"#fff",borderRadius:10,padding:20,maxWidth:importCompraPreview?1500:680,width:"100%",maxHeight:"92vh",overflowY:"auto"}}>
                   <div style={{fontWeight:700,fontSize:14,color:"#00695c",marginBottom:10}}>📥 Importar compras (planilha)</div>
                   <div style={{fontSize:12,color:"#666",marginBottom:12}}>
                     Arquivo .xlsx, .xls ou .csv com colunas: <b>Produto</b>, <b>Unidade</b>, <b>Quantidade</b>, <b>Preço Fechado</b> (ou Valor Total), <b>Fornecedor</b>, <b>Vencimento</b>/<b>Obs</b> (opcional). Todas as linhas entram na safra <b>{comprasSafraSel}</b>, categoria <b>{comprasCatSel}</b> — a mesma pasta onde você está agora.
@@ -9790,7 +9793,7 @@ function App() {
                                       doseFator: null, manterNome: false,
                                       vinculoNivel:e.target.value?"confirmado":null, vinculoMotivo:"escolhido à mão"};
                                   }))}
-                                  style={{maxWidth:190,padding:"3px 5px",fontSize:11,borderRadius:4,
+                                  style={{maxWidth:340,padding:"3px 5px",fontSize:11,borderRadius:4,
                                     border:"1px solid "+(confirmar?"#ffb74d":"#ccc")}}>
                                   <option value="">— não vincular (só compra) —</option>
                                   {candidatosImportCompra.map(c=>(
