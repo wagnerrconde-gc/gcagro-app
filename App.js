@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 4";
+const VERSAO_APP = "25/10 · 5";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -1797,7 +1797,9 @@ function buildCompraRecord(m, categoria, safra) {
   return { id:newId(), safra, categoria, produto,
     unidade: String(m.unidade||"").trim() || unidadePadraoCompra(categoria), quantidade,
     precoUnitario, valorTotal: valorTotalInformado || precoUnitario*quantidade,
-    fornecedor: String(m.fornecedor||"").trim(), data: String(m.data||"").trim(),
+    // Data da compra: a da planilha, quando ela traz; senão o dia da importação. Não confundir com
+    // o Vencimento (data de pagamento), que continua vindo da planilha.
+    fornecedor: String(m.fornecedor||"").trim(), data: String(m.data||"").trim() || new Date().toLocaleDateString("pt-BR"),
     obs: String(m.vencimento||m.obs||"").trim(), tratamento: String(m.tratamento||"").trim() };
 }
 function addRecord(setRecords, rec) { setRecords(rs => [...rs, { id:newId(), ...rec }]); }
@@ -3675,6 +3677,23 @@ function App() {
       const jaAgora = iguaisNaAtual(rs);
       return rs.map(r => (r.safra||"")===rotulo && !jaAgora.has(compraConteudoSemSafra(r)) ? { ...r, safra:safraAtiva } : r);
     });
+  }
+  // Apaga todos os lançamentos da pasta aberta, só na safra atual — pra reimportar a planilha limpa.
+  // As outras pastas (Adubação, Sementes...) não são tocadas. Pede pra digitar APAGAR e guarda um
+  // ponto de retorno antes (Backup → desfazer).
+  function apagarTodosDaPasta(categoria) {
+    const recs = comprasRecords.filter(r => r.safra===safraAtiva && r.categoria===categoria);
+    if (!recs.length) { window.alert("Esta pasta não tem lançamentos nesta safra."); return; }
+    const total = recs.reduce((t,r) => t + (Number(r.valorTotal)||0), 0);
+    const resp = window.prompt(`Apagar TODOS os ${recs.length} lançamento(s) da pasta "${categoria}" da safra ${safraAtiva}, somando ${fmt(total)}?\n\nSó esta pasta: as outras (Adubação, Sementes...) não são tocadas. Fica um ponto de retorno salvo antes, pra desfazer em Backup.\n\nPra confirmar, digite APAGAR:`);
+    if (resp == null || resp.trim().toUpperCase() !== "APAGAR") {
+      if (resp != null) window.alert("Não apaguei nada — precisa digitar APAGAR.");
+      return;
+    }
+    salvarSnapshot(`Apagar todos da pasta ${categoria} (${recs.length} lançamento(s), ${fmt(total)})`, { compras: comprasRecords });
+    liberarApagarCompras();
+    const ids = new Set(recs.map(r => r.id));
+    setComprasRecords(rs => rs.filter(r => !ids.has(r.id)));
   }
   function recuperarComprasMarcadas() {
     if (!recuperacao || !recuperacao.itens) return;
@@ -9756,6 +9775,11 @@ function App() {
                         setTimeout(()=>setCustoCompraMsg(null), 8000);
                       }}
                       style={{padding:"6px 14px",background:"#1565C0",border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>💰 Atualizar Custo na Programação</button>
+                  )}
+                  {comprasSafraSel===safraAtiva && (
+                    <button data-apagar-pasta="1" onClick={()=>apagarTodosDaPasta(comprasCatSel)} disabled={!comprasRecordsFiltrados.length}
+                      title="Apaga todos os lançamentos desta pasta na safra atual, pra reimportar a planilha limpa. Pede pra digitar APAGAR e guarda um ponto de retorno antes."
+                      style={{padding:"6px 14px",background:"#fff",border:"1px solid #e57373",borderRadius:6,color:"#c62828",fontSize:11,fontWeight:700,cursor:comprasRecordsFiltrados.length?"pointer":"default",opacity:comprasRecordsFiltrados.length?1:0.5}}>🗑 Apagar todos desta pasta</button>
                   )}
                   {/* Aparece mesmo sem nenhum lançamento automático na tela: é justamente quando
                       todos foram removidos que o usuário precisa refazer, e esconder o botão aí
