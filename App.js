@@ -257,9 +257,12 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 1";
+const VERSAO_APP = "25/10 · 2";
+// O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
+// colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
+// jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
 function normalizarNome(str) {
-  return (str||"").trim().toLowerCase()
+  return String(str||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()
     .replace(/[áàâãä]/g,"a").replace(/[éèêë]/g,"e").replace(/[íìîï]/g,"i")
     .replace(/[óòôõö]/g,"o").replace(/[úùûü]/g,"u").replace(/ç/g,"c").replace(/ñ/g,"n")
     .replace(/\s+/g," ");
@@ -3802,6 +3805,20 @@ function App() {
   // da Programação, o lançamento fica em Compras pra ser removido à mão, porque apagar registro
   // financeiro sozinho é perigoso demais.
   useEffect(() => {
+    // Chave antiga com acento "separado" (e + ´): desde que normalizarNome passou a tirar esse
+    // acento, a chave nova do mesmo produto sai sem ele. Atualiza as chaves guardadas antes de
+    // comparar, senão o automático acharia que é produto novo e lançaria a compra de novo.
+    // Só a parte do nome do produto (4ª da chave) é refeita; o resto ("Verão", safra) fica
+    // exatamente como a chave nova monta, com acento junto.
+    const semMarca = k => { const p = String(k).split("|");
+      if (p.length < 5) return k;
+      p[3] = normalizarNome(p[3]); return p.join("|"); };
+    const temMarca = k => typeof k === "string" && /[\u0300-\u036f]/.test(k) && semMarca(k) !== k;
+    if (comprasRecords.some(r => temMarca(r.origemProg)) || comprasProgLancadas.some(temMarca)) {
+      setComprasRecords(rs => rs.map(r => temMarca(r.origemProg) ? { ...r, origemProg: semMarca(r.origemProg) } : r));
+      setComprasProgLancadas(ls => [...new Set(ls.map(k => temMarca(k) ? semMarca(k) : k))]);
+      return;
+    }
     const desejados = [
       ...comprasDaProgramacao(dataVerao, "Verão", safraAtiva),
       ...comprasDaProgramacao(dataInverno, "Inverno", safraAtiva),
