@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "25/10 · 5";
+const VERSAO_APP = "27/10 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -509,7 +509,7 @@ const CAT_ICONS = {
 // verticalmente entre si (ex: "Venc." de Sementes numa posição, "Venc." de TS em outra).
 const PROG_COL_W = {
   "Produto":140,"I.A.":80,"Dose":45,"Kg semente/ha":100,"Área(ha)":65,"Qtd":45,"Unid.":48,
-  "Fase":115,"Obs":85,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":34,
+  "Fase":115,"Obs":85,"Ref.(R$)":72,"Compra(R$)":80,"Total":95,"R$/ha":70,"Revenda":95,"Venc.":85,"":58,
 };
 // Largura da tabela de produtos da Programação com TODAS as colunas possíveis (I.A., Dose e
 // Kg semente/ha juntas, mesmo que nenhuma categoria mostre as três ao mesmo tempo) — usada como
@@ -4628,6 +4628,35 @@ function App() {
       return nd;
     });
   }
+  // Muda a posição de um produto dentro da mesma categoria: depoisDe = índice do produto que vai
+  // ficar logo acima dele, ou -1 pra ir pro topo. Só muda a ordem — dose, preço e contas iguais.
+  function moverProduto(catIdx, de, depoisDe) {
+    setData(d => {
+      const nd = JSON.parse(JSON.stringify(d));
+      const lista = nd[activeCulture].categories[catIdx].products;
+      if (de < 0 || de >= lista.length || depoisDe === de) return d;
+      const [item] = lista.splice(de, 1);
+      const destino = depoisDe < de ? depoisDe + 1 : depoisDe;   // depois da remoção, quem estava abaixo sobe uma posição
+      lista.splice(destino, 0, item);
+      return nd;
+    });
+  }
+  // Menu "↕" de cada produto: escolher "depois de X" leva o produto direto pra lá.
+  function MenuMoverProduto({ catIdx, prodIdx, produtos, compacto }) {
+    if (!produtos || produtos.length < 2) return null;
+    return (
+      <select value="" data-mover-produto="1" title="Mudar a posição deste produto na lista"
+        onChange={e => { const v = e.target.value; if (v !== "") moverProduto(catIdx, prodIdx, Number(v)); }}
+        style={compacto
+          ? { width:24, height:22, padding:0, fontSize:13, border:"1px solid #ddd", borderRadius:4, background:"#fff", color:"#666", cursor:"pointer", textAlign:"center", textAlignLast:"center", appearance:"none", WebkitAppearance:"none", MozAppearance:"none" }
+          : { padding:"3px 6px", fontSize:12, border:"1px solid #ddd", borderRadius:4, background:"#fff", color:"#555", cursor:"pointer" }}>
+        <option value="">{compacto ? "↕" : "↕ Mover para…"}</option>
+        {prodIdx > 0 && <option value={-1}>↑ para o topo</option>}
+        {produtos.map((o, i) => (i === prodIdx || i === prodIdx - 1) ? null :
+          <option key={i} value={i}>depois de {o.produto || "(sem nome)"}</option>)}
+      </select>
+    );
+  }
   function deleteProduct(catIdx, prodIdx) {
     setData(d=>{ const nd=JSON.parse(JSON.stringify(d)); nd[activeCulture].categories[catIdx].products.splice(prodIdx,1); return nd; });
   }
@@ -6690,6 +6719,7 @@ function App() {
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 12px",background:"#fafafa",borderTop:"1px solid #eee"}}>
                             <button onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}}
                               style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:12,padding:0}}>🗑 Remover produto</button>
+                            {MenuMoverProduto({ catIdx, prodIdx, produtos: cat.products })}
                             <button onClick={()=>toggleProd(chaveProd)}
                               style={{background:"none",border:"none",cursor:"pointer",color:"#888",fontSize:12,padding:0}}>Fechar ▴</button>
                           </div>
@@ -6766,7 +6796,10 @@ function App() {
                               <td style={{padding:padCel,width:colW("Venc."),textAlign:"center",color:"#888",fontSize:10,whiteSpace:semQuebra}}><EditCell catIdx={catIdx} prodIdx={prodIdx} field="vencimento" type="text" value={p.vencimento}/></td>
                               <td style={{padding:"6px 4px",width:colW(""),textAlign:"center"}}>
                                 {/* tabIndex -1: o Tab anda pelos campos da linha, nunca parando num botão que apaga o produto. */}
-                                <button tabIndex={-1} onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                <div style={{display:"flex",gap:2,alignItems:"center",justifyContent:"center"}}>
+                                  {MenuMoverProduto({ catIdx, prodIdx, produtos: cat.products, compacto: true })}
+                                  <button tabIndex={-1} onClick={()=>{if(window.confirm(`Remover "${p.produto}"?`))deleteProduct(catIdx,prodIdx);}} style={{background:"none",border:"none",cursor:"pointer",color:"#e57373",fontSize:14}}>✕</button>
+                                </div>
                               </td>
                             </tr>
                           );
