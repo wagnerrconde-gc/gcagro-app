@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "28/10 · 1";
+const VERSAO_APP = "28/10 · 2";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -3879,6 +3879,132 @@ function App() {
           ["Total", "", "", "", "", "", fechadas.length ? fmt(fechadas.reduce((s, v) => s + v, 0)) : "-"], { 2:R, 3:R, 4:C, 5:C, 6:R });
       }
     }
+
+    // 5. Análises cruzadas — o esquema já fica montado desde o começo da safra. Cada quadro sai
+    // com números assim que existir o dado de que ele depende; até lá, diz o que falta lançar.
+    secao("Análises cruzadas", "Cruzamento entre Programação, Plano de Campo, Pluviometria, Colheita, Vendas e Operações financeiras.");
+    const falta = texto => {
+      novaPaginaSe(10);
+      doc.setFillColor(250,248,240); doc.setDrawColor(230,222,200); doc.roundedRect(m, y, W - 2*m, 8, 1.5, 1.5, "FD");
+      doc.setTextColor(140,120,70); doc.setFont("helvetica","italic"); doc.setFontSize(8.3);
+      doc.text("Ainda sem dados: " + texto, m + 3, y + 5.3);
+      y += 12;
+    };
+    // Cultura igual em telas diferentes: "Soja" = "SOJA"; "Milho Safrinha" casa com "Milho".
+    const chaveCult = s => normalizarNome(s || "").split(" ")[0];
+    const precoMedio = {};   // por cultura, só vendas em sacas
+    vendas.filter(v => /^sc|saca/i.test(v.unidade || "sc")).forEach(v => {
+      const k = chaveCult(v.cultura); precoMedio[k] = precoMedio[k] || { q:0, v:0 };
+      precoMedio[k].q += num(v.qtd); precoMedio[k].v += num(v.qtd) * num(v.preco);
+    });
+    const colhidoPor = tipo => {
+      const o = {};
+      colheita.filter(r => !tipo || (r.tipo || "verao") === tipo).forEach(r => {
+        const k = chaveCult(r.cultura); o[k] = o[k] || { a:0, s:0 }; o[k].a += num(r.areaHa); o[k].s += num(r.sacas);
+      });
+      return o;
+    };
+
+    // 5.1 Custo × produtividade, ponto de equilíbrio e margem
+    subtitulo("Custo × produtividade, ponto de equilíbrio e margem");
+    const linhasCusto = [];
+    temporadas.forEach(([nome, cs]) => {
+      const colh = colhidoPor(nome === "Verão" ? "verao" : "inv");
+      cs.forEach(c => {
+        const k = chaveCult(c.name), g = colh[k], pm = precoMedio[k];
+        const scHa = g && g.a > 0 ? g.s / g.a : null;
+        const preco = pm && pm.q > 0 ? pm.v / pm.q : null;
+        const custoHa = num(c.total);
+        linhasCusto.push([`${c.name} (${nome})`, fmt(custoHa),
+          scHa != null ? fmtN(scHa,1) : "-",
+          scHa ? fmt(custoHa / scHa) : "-",
+          preco != null ? fmt(preco) : "-",
+          preco ? fmtN(custoHa / preco,1) : "-",
+          scHa && preco ? fmt((scHa * preco - custoHa) * num(c.area)) : "-"]);
+      });
+    });
+    if (linhasCusto.length) {
+      tabela(["Cultura","Custo/ha","Colhido (sc/ha)","Custo por saca","Preço médio venda","Equilíbrio (sc/ha)","Resultado estimado"],
+        linhasCusto, null, { 1:R, 2:R, 3:R, 4:R, 5:R, 6:R });
+      doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.6);
+      doc.text("Equilíbrio = sacas por hectare que pagam o custo, ao preço médio das vendas. Resultado = (colhido × preço - custo) × área.", m, y - 3); y += 2;
+    }
+    if (!colheita.length) falta("custo por saca e resultado aparecem quando houver colheita lançada.");
+    if (!Object.keys(precoMedio).length) falta("preço médio e ponto de equilíbrio aparecem quando houver vendas em sacas.");
+
+    // 5.2 Chuva × produtividade por lote (pluviômetro "Lote 13" casa com "LOTE 13 PIVOT 01" pelo número)
+    subtitulo("Chuva × produtividade por lote");
+    const numLote = s => { const mm = /lote\s*(\d+)/i.exec(String(s || "")); return mm ? mm[1] : null; };
+    const pluvPorNum = {};
+    Object.entries(porPluv).forEach(([k, rs]) => { const n = numLote(k); if (n) pluvPorNum[n] = (pluvPorNum[n] || []).concat(rs); });
+    const lotesPlano = planos.flatMap(([nome, ls]) => ls.map(r => ({ ...r, temporada:nome })));
+    const linhasChuva = lotesPlano.map(r => {
+      const n = numLote(r.lote), rs = n ? pluvPorNum[n] : null;
+      const ini = parseDataBR(r.dataPlantio);
+      // Mesmo nome de lote existe no Verão e no Inverno: pelo nome, só vale a colheita da mesma temporada.
+      const tipoLote = r.temporada === "Verão" ? "verao" : "inv";
+      const colhs = colheita.filter(c => c.loteId ? c.loteId === r.id
+        : normalizarNome(c.lote) === normalizarNome(r.lote) && (c.tipo || "verao") === tipoLote);
+      const fimColh = colhs.map(c => parseDataBR(c.data)).filter(Boolean).sort((a, b) => b - a)[0];
+      const fim = fimColh || hoje;
+      const mm = rs && ini ? rs.filter(x => { const d = parseDataBR(x.data); return d && d >= ini && d <= fim; }).reduce((s, x) => s + num(x.mm), 0) : null;
+      const a = colhs.reduce((s, c) => s + num(c.areaHa), 0), sc = colhs.reduce((s, c) => s + num(c.sacas), 0);
+      return [r.lote || "", `${r.cultura || ""} (${r.temporada})`, r.dataPlantio || "-", mm != null ? fmtN(mm,1) : "-", a > 0 ? fmtN(sc / a,1) : "-"];
+    }).filter(l => l[3] !== "-" || l[4] !== "-");
+    if (linhasChuva.length) tabela(["Lote","Cultura","Plantio","Chuva desde o plantio (mm)","Colhido (sc/ha)"], linhasChuva, null, { 2:C, 3:R, 4:R });
+    else falta("precisa de data de plantio no Plano de Campo e chuva lançada no pluviômetro do lote (ex: pluviômetro \"Lote 13\" para o \"LOTE 13 ...\").");
+
+    // 5.3 Vendas × produção
+    subtitulo("Vendas × produção");
+    const culturasArea = {};
+    temporadas.forEach(([, cs]) => cs.forEach(c => { const k = chaveCult(c.name); culturasArea[k] = culturasArea[k] || { nome:c.name, a:0 }; culturasArea[k].a += num(c.area); }));
+    const colhTudo = colhidoPor(null);
+    const linhasVend = Object.entries(culturasArea).map(([k, g]) => {
+      const pm = precoMedio[k], ch = colhTudo[k];
+      const vend = pm ? pm.q : 0, colh = ch ? ch.s : 0;
+      return [g.nome, fmtN(g.a,1), vend ? `${fmtN(vend,0)} sc` : "-", vend && g.a ? fmtN(vend / g.a,1) : "-", colh ? `${fmtN(colh,0)} sc` : "-", colh && vend ? pct(vend, colh) : "-"];
+    }).filter(l => l[2] !== "-" || l[4] !== "-");
+    if (linhasVend.length) tabela(["Cultura","Área (ha)","Vendido","Vendido por ha (sc)","Colhido","% do colhido já vendido"], linhasVend, null, { 1:R, 2:R, 3:R, 4:R, 5:R });
+    else falta("aparece quando houver vendas ou colheita lançadas.");
+
+    // 5.4 Proteção (operações financeiras abertas) × vendas
+    subtitulo("Proteção com operações financeiras");
+    const abertas = ops.filter(o => !/encerr|liquid|fechad/i.test(o.status || ""));
+    if (ops.length) {
+      const porAtivo = {};
+      ops.forEach(o => {
+        const k = `${o.ativo || o.tipo || "-"}|${o.unidade || ""}`; porAtivo[k] = porAtivo[k] || { aberta:0, n:0, res:0, temRes:false };
+        porAtivo[k].n++;
+        if (abertas.includes(o)) porAtivo[k].aberta += num(o.quantidade);
+        const r = (o.resultado !== "" && o.resultado != null && !isNaN(Number(o.resultado))) ? Number(o.resultado) : (num(o.precoSaida) ? calcResultadoOperacao(o) : null);
+        if (r != null) { porAtivo[k].res += r; porAtivo[k].temRes = true; }
+      });
+      tabela(["Ativo","Operações","Quantidade em aberto","Resultado das encerradas"],
+        Object.entries(porAtivo).map(([k, g]) => { const [a, u] = k.split("|"); return [a, String(g.n), g.aberta ? `${fmtN(g.aberta,0)} ${u}` : "-", g.temRes ? fmt(g.res) : "-"]; }),
+        null, { 1:C, 2:R, 3:R });
+      const scProt = abertas.filter(o => /^sc|saca/i.test(o.unidade || "")).reduce((s, o) => s + num(o.quantidade), 0);
+      const totColh = Object.values(colhTudo).reduce((s, g) => s + g.s, 0), totVend = Object.values(precoMedio).reduce((s, g) => s + g.q, 0);
+      if (scProt && (totColh || totVend)) {
+        doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.8);
+        doc.text(`Sacas protegidas em operações abertas: ${fmtN(scProt,0)} sc` + (totColh ? ` · ${pct(scProt, totColh)} do colhido` : "") + (totVend ? ` · ${pct(scProt, totVend)} do já vendido` : ""), m, y - 2); y += 4;
+      }
+    } else falta("aparece quando houver operações lançadas em Operações Financeiras.");
+
+    // 5.5 Calendário de caixa: pagamentos de compras × recebimentos de vendas
+    subtitulo("Calendário de caixa (pagamentos × recebimentos)");
+    const caixa = {};
+    const chaveMes = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    compras.forEach(r => { const d = parseDataBR(r.obs); if (!d) return; const k = chaveMes(d); caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].pag += num(r.valorTotal); });
+    vendas.forEach(v => { const p = parseDataFlexivel(v.dataPagamento); if (!p) return; const k = `${p.y}-${String(p.m).padStart(2,"0")}`; caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].rec += num(v.qtd) * num(v.preco); });
+    const mesesCx = Object.keys(caixa).sort();
+    if (mesesCx.length) {
+      const MES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+      let acum = 0;
+      tabela(["Mês","Pagamentos (Compras)","Recebimentos (Vendas)","Saldo do mês","Saldo acumulado"],
+        mesesCx.map(k => { const g = caixa[k]; acum += g.rec - g.pag; return [`${MES[+k.slice(5)-1]}/${k.slice(0,4)}`, g.pag ? fmt(g.pag) : "-", g.rec ? fmt(g.rec) : "-", fmt(g.rec - g.pag), fmt(acum)]; }),
+        null, { 1:R, 2:R, 3:R, 4:R });
+      if (!vendas.some(v => parseDataFlexivel(v.dataPagamento))) falta("recebimentos aparecem quando as vendas tiverem Data de Pagamento.");
+    } else falta("aparece quando as compras tiverem vencimento e/ou as vendas tiverem data de pagamento.");
 
     // Rodapé com página
     const total = doc.internal.getNumberOfPages();
