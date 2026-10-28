@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "28/10 · 2";
+const VERSAO_APP = "28/10 · 3";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -5930,6 +5930,28 @@ function App() {
       return novo;
     }));
   }
+  // Fim de safra das comissões (normalmente setembro, depois da última comissão): a pasta atual
+  // fica guardada como está, e abre a próxima já com os mesmos produtos (Soja, Milho...) e o mesmo
+  // preço por saca, quantidade e total zerados — pra ir anotando adiantamentos e comissões.
+  function abrirProximaSafraComissao(safraAtual) {
+    const sugestao = String(safraAtual).replace(/(\d{2,4})\s*\/\s*(\d{2,4})/, (t, a, b) => `${+a + 1}/${String(+b + 1).padStart(b.length, "0")}`);
+    const itens = comissaoRecords.filter(c => c.safra === safraAtual);
+    const produtos = [...new Map(itens.filter(c => (c.produto||"").trim()).map(c => [normalizarNome(c.produto), c])).values()];
+    const nome = window.prompt(
+      `Abrir a próxima safra de comissões?\n\nA safra ${safraAtual} fica guardada como está (adiantamentos, comissões e saldo) — nada é apagado.\n\n` +
+      (produtos.length ? `A nova pasta já começa com os mesmos produtos (${produtos.map(c => c.produto).join(", ")}), com o mesmo preço por saca e quantidade zerada.\n\n` : "") +
+      `Nome da nova safra:`, sugestao === safraAtual ? "" : sugestao);
+    if (nome == null) return;
+    const novo = nome.trim();
+    if (!novo) return;
+    const jaExiste = comissaoRecords.some(c => c.safra === novo) || comissaoAdiant.some(a => a.safra === novo);
+    if (jaExiste) { window.alert(`Já existe a safra ${novo} em Comissões — abrindo ela.`); setComissaoSafraSel(novo); return; }
+    const linhas = produtos.length
+      ? produtos.map(c => ({ id:newId(), safra:novo, produto:c.produto, qtd:0, precoUnit:c.precoUnit||0, total:0, obs:"" }))
+      : [{ id:newId(), safra:novo, produto:"", qtd:0, precoUnit:0, total:0, obs:"" }];   // linha em branco: a pasta não some vazia
+    setComissaoRecords(rs => [...rs, ...linhas]);
+    setComissaoSafraSel(novo);
+  }
   function renomearGerente(novoNome) {
     const nome = novoNome.trim();
     if (!nome) return;
@@ -7719,6 +7741,9 @@ function App() {
               <span onClick={()=>setComissaoSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#8d6e63"}}>🤝 Comissões — {gerenteNome}</span>
               <span style={{color:"#bbb"}}>›</span>
               <span style={{fontWeight:800,color:"#8d6e63"}}>🗂️ Safra {comissaoSafraSel}</span>
+              <button data-proxima-safra-comissao="1" onClick={()=>abrirProximaSafraComissao(comissaoSafraSel)}
+                title="Fim de safra: guarda esta pasta como está e abre a próxima com os mesmos produtos, quantidades zeradas"
+                style={{marginLeft:"auto",padding:"6px 12px",background:"#8d6e63",color:"#fff",border:"none",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>➕ Abrir próxima safra</button>
             </div>
 
             <div style={{fontWeight:700,fontSize:13,color:"#5d4037",marginBottom:8,marginTop:4}}>Adiantamentos</div>
