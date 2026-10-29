@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "28/10 · 2";
+const VERSAO_APP = "29/10 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -5930,6 +5930,62 @@ function App() {
       return novo;
     }));
   }
+  // Fim de safra das comissões (normalmente setembro, depois da última comissão): a pasta atual
+  // fica guardada como está, e abre a próxima já com os mesmos produtos (Soja, Milho...) e o mesmo
+  // preço por saca, quantidade e total zerados — pra ir anotando adiantamentos e comissões.
+  function abrirProximaSafraComissao(safraAtual) {
+    const sugestao = String(safraAtual).replace(/(\d{2,4})\s*\/\s*(\d{2,4})/, (t, a, b) => `${+a + 1}/${String(+b + 1).padStart(b.length, "0")}`);
+    const itens = comissaoRecords.filter(c => c.safra === safraAtual);
+    const produtos = [...new Map(itens.filter(c => (c.produto||"").trim()).map(c => [normalizarNome(c.produto), c])).values()];
+    const nome = window.prompt(
+      `Abrir a próxima safra de comissões?\n\nA safra ${safraAtual} fica guardada (nada é apagado).\n\n` +
+      (produtos.length ? `A nova pasta já começa com os mesmos produtos (${produtos.map(c => c.produto).join(", ")}), com o mesmo preço por saca e quantidade zerada.\n\n` : "") +
+      `Nome da nova safra:`, sugestao === safraAtual ? "" : sugestao);
+    if (nome == null) return;
+    const novo = nome.trim();
+    if (!novo) return;
+    const jaExiste = comissaoRecords.some(c => c.safra === novo) || comissaoAdiant.some(a => a.safra === novo);
+    if (jaExiste) { window.alert(`Já existe a safra ${novo} em Comissões — abrindo ela.`); setComissaoSafraSel(novo); return; }
+
+    // Adiantamento feito a partir de outubro (a última comissão sai em setembro) já é da safra
+    // nova: o ano de corte é o primeiro ano do nome da nova safra (26/27 → 01/10/2026).
+    const anoNovo = (() => { const mm = /(\d{2,4})\s*\//.exec(novo); if (!mm) return null; const a = +mm[1]; return a < 100 ? 2000 + a : a; })();
+    const corte = anoNovo ? new Date(anoNovo, 9, 1) : null;
+    const dataAd = a => { const p = parseDataFlexivel(a.data); return p ? new Date(p.y, p.m - 1, p.d) : null; };
+    const adiantsVelhos = comissaoAdiant.filter(a => a.safra === safraAtual);
+    const candidatos = corte ? adiantsVelhos.filter(a => { const d = dataAd(a); return d && d >= corte; }) : [];
+    let moverIds = new Set();
+    if (candidatos.length) {
+      const lista = candidatos.map(a => `• ${a.data} — ${fmt(a.valor)}${a.obs ? " (" + a.obs + ")" : ""}`).join("\n");
+      if (window.confirm(`Estes adiantamentos são de ${corte.toLocaleDateString("pt-BR")} em diante — passar para a safra ${novo}?\n\n${lista}\n\nOK = passar para ${novo} · Cancelar = deixar em ${safraAtual}`))
+        moverIds = new Set(candidatos.map(a => a.id));
+    }
+
+    // Saldo da safra que fecha, já sem os adiantamentos que foram pra nova. Negativo = o gerente
+    // recebeu adiantado mais do que a comissão: esse débito vai junto pra safra nova, e a antiga
+    // fecha zerada com uma linha de "saldo transferido".
+    const comissaoVelha = itens.reduce((s, c) => s + (c.total || 0), 0);
+    const adiantadoVelho = adiantsVelhos.filter(a => !moverIds.has(a.id)).reduce((s, a) => s + (a.valor || 0), 0);
+    const saldoVelho = comissaoVelha - adiantadoVelho;
+    const debito = saldoVelho < -0.005 ? -saldoVelho : 0;
+    const hojeBR = new Date().toLocaleDateString("pt-BR");
+
+    const linhas = produtos.length
+      ? produtos.map(c => ({ id:newId(), safra:novo, produto:c.produto, qtd:0, precoUnit:c.precoUnit||0, total:0, obs:"" }))
+      : [{ id:newId(), safra:novo, produto:"", qtd:0, precoUnit:0, total:0, obs:"" }];   // linha em branco: a pasta não some vazia
+    if (debito) linhas.unshift({ id:newId(), safra:safraAtual, produto:`Saldo transferido para ${novo}`, qtd:0, precoUnit:0, total:debito, obs:`débito levado para ${novo} em ${hojeBR}` });
+    setComissaoRecords(rs => [...rs, ...linhas]);
+    setComissaoAdiant(as => [
+      ...as.map(a => moverIds.has(a.id) ? { ...a, safra:novo } : a),
+      ...(debito ? [{ id:newId(), safra:novo, data:hojeBR, valor:debito, obs:`Saldo devedor trazido da safra ${safraAtual}` }] : []),
+    ]);
+    setComissaoSafraSel(novo);
+    const resumo = [`Safra ${novo} aberta.`];
+    if (moverIds.size) resumo.push(`${moverIds.size} adiantamento(s) passaram para ${novo}.`);
+    if (debito) resumo.push(`Saldo negativo de ${fmt(debito)} da ${safraAtual} foi carregado para ${novo} (a ${safraAtual} fecha zerada).`);
+    else resumo.push(`A ${safraAtual} fechou com saldo de ${fmt(saldoVelho)} — não havia débito pra carregar.`);
+    window.alert(resumo.join("\n\n"));
+  }
   function renomearGerente(novoNome) {
     const nome = novoNome.trim();
     if (!nome) return;
@@ -7719,6 +7775,9 @@ function App() {
               <span onClick={()=>setComissaoSafraSel(null)} style={{cursor:"pointer",fontWeight:600,color:"#8d6e63"}}>🤝 Comissões — {gerenteNome}</span>
               <span style={{color:"#bbb"}}>›</span>
               <span style={{fontWeight:800,color:"#8d6e63"}}>🗂️ Safra {comissaoSafraSel}</span>
+              <button data-proxima-safra-comissao="1" onClick={()=>abrirProximaSafraComissao(comissaoSafraSel)}
+                title="Fim de safra: guarda esta pasta como está e abre a próxima com os mesmos produtos, quantidades zeradas"
+                style={{marginLeft:"auto",padding:"6px 12px",background:"#8d6e63",color:"#fff",border:"none",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>➕ Abrir próxima safra</button>
             </div>
 
             <div style={{fontWeight:700,fontSize:13,color:"#5d4037",marginBottom:8,marginTop:4}}>Adiantamentos</div>
