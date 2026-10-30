@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "30/10 · 3";
+const VERSAO_APP = "30/10 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -3695,9 +3695,10 @@ function App() {
     const pct = (a, b) => b > 0 ? fmtN(a / b * 100, 1) + "%" : "-";
 
     // ---------- números ----------
+    // Cultura zerada (sem área e sem insumo — ex.: inverno ainda não plantado) não entra.
     const culturasDa = summary => {
       const ativas = summary.filter(c => c.ativo);
-      return ativas.length ? ativas : summary.filter(c => num(c.area) > 0 && num(c.insumos) > 0);
+      return (ativas.length ? ativas : summary).filter(c => num(c.area) > 0 || num(c.insumos) > 0);
     };
     const temporadas = [["Verão", culturasDa(summaryVerao)], ["Inverno", culturasDa(summaryInverno)]]
       .filter(([, cs]) => cs.length);
@@ -3800,13 +3801,17 @@ function App() {
           cs.map(c => [c.name, fmtN(c.area,1), fmt(c.insumos), num(c.area) > 0 ? fmt(c.insumos / c.area) : "-", fmt(c.opTotal), fmt(c.total), fmt(num(c.total) * num(c.area))]),
           ["Total", fmtN(area,1), fmt(ins), area > 0 ? fmt(ins/area) : "-", "", area > 0 ? fmt(custo/area) : "-", fmt(custo)],
           { 1:R, 2:R, 3:R, 4:R, 5:R, 6:R });
-        const porCat = {};
-        cs.forEach(c => (c.cats || []).forEach(k => { porCat[k.name] = (porCat[k.name] || 0) + num(k.total); }));
-        const cats = Object.entries(porCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-        if (cats.length) {
-          tabela([`Categoria (${nome})`,"Total","R$/ha","% dos insumos"],
-            cats.map(([k, v]) => [k, fmt(v), area > 0 ? fmt(v/area) : "-", pct(v, ins)]), null, { 1:R, 2:R, 3:R });
-        }
+        // Por categoria, separado POR CULTURA: R$/ha sobre a área daquela cultura e % dos insumos dela.
+        cs.forEach(c => {
+          const porCat = {};
+          (c.cats || []).forEach(k => { porCat[k.name] = (porCat[k.name] || 0) + num(k.total); });
+          const cats = Object.entries(porCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+          if (!cats.length) return;
+          const insC = cats.reduce((s2, [, v]) => s2 + v, 0), areaC = num(c.area);
+          tabela([`Categoria — ${c.name}`,"Total","R$/ha","% dos insumos"],
+            cats.map(([k, v]) => [k, fmt(v), areaC > 0 ? fmt(v/areaC) : "-", pct(v, insC)]),
+            ["Total", fmt(insC), areaC > 0 ? fmt(insC/areaC) : "-", "100%"], { 1:R, 2:R, 3:R });
+        });
       });
     }
 
@@ -3843,7 +3848,7 @@ function App() {
     }
 
     // 3. Lavoura
-    const planos = [["Verão", planVerao], ["Inverno", planSafrinha]].map(([n, p]) => [n, (p || []).filter(r => r && (r.lote || r.cultura))]).filter(([, p]) => p.length);
+    const planos = [["Verão", planVerao], ["Inverno", planSafrinha]].map(([n, p]) => [n, (p || []).filter(r => r && (r.lote || r.cultura) && num(r.area) > 0)]).filter(([, p]) => p.length);
     if (planos.length || Object.keys(porPluv).length) {
       secao("Lavoura", "Do Plano de Campo e da Pluviometria.");
       planos.forEach(([nome, linhas]) => {
