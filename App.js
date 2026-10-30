@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "29/10 · 1";
+const VERSAO_APP = "30/10 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -5944,8 +5944,13 @@ function App() {
     if (nome == null) return;
     const novo = nome.trim();
     if (!novo) return;
+    // A pasta nova pode já existir (criada antes pelo "+ Nova pasta de safra"): aí não cria as
+    // linhas de produto de novo, mas ainda leva os adiantamentos de outubro e o saldo. Só não
+    // carrega duas vezes — se a safra antiga já tem a linha de "saldo transferido", para.
     const jaExiste = comissaoRecords.some(c => c.safra === novo) || comissaoAdiant.some(a => a.safra === novo);
-    if (jaExiste) { window.alert(`Já existe a safra ${novo} em Comissões — abrindo ela.`); setComissaoSafraSel(novo); return; }
+    const jaTransferiu = itens.some(c => /^saldo transferido para /i.test(c.produto||"") && normalizarNome(c.produto).endsWith(normalizarNome(novo)));
+    if (jaTransferiu) { window.alert(`O saldo da ${safraAtual} já foi levado para a ${novo} antes — não levo de novo. Abrindo a ${novo}.`); setComissaoSafraSel(novo); return; }
+    if (jaExiste && !window.confirm(`A safra ${novo} já existe em Comissões.\n\nLevar para ela o resultado final da ${safraAtual} (saldo negativo e adiantamentos de outubro em diante)?`)) { setComissaoSafraSel(novo); return; }
 
     // Adiantamento feito a partir de outubro (a última comissão sai em setembro) já é da safra
     // nova: o ano de corte é o primeiro ano do nome da nova safra (26/27 → 01/10/2026).
@@ -5970,7 +5975,7 @@ function App() {
     const debito = saldoVelho < -0.005 ? -saldoVelho : 0;
     const hojeBR = new Date().toLocaleDateString("pt-BR");
 
-    const linhas = produtos.length
+    const linhas = jaExiste ? [] : produtos.length
       ? produtos.map(c => ({ id:newId(), safra:novo, produto:c.produto, qtd:0, precoUnit:c.precoUnit||0, total:0, obs:"" }))
       : [{ id:newId(), safra:novo, produto:"", qtd:0, precoUnit:0, total:0, obs:"" }];   // linha em branco: a pasta não some vazia
     if (debito) linhas.unshift({ id:newId(), safra:safraAtual, produto:`Saldo transferido para ${novo}`, qtd:0, precoUnit:0, total:debito, obs:`débito levado para ${novo} em ${hojeBR}` });
@@ -5980,7 +5985,8 @@ function App() {
       ...(debito ? [{ id:newId(), safra:novo, data:hojeBR, valor:debito, obs:`Saldo devedor trazido da safra ${safraAtual}` }] : []),
     ]);
     setComissaoSafraSel(novo);
-    const resumo = [`Safra ${novo} aberta.`];
+    const resumo = [jaExiste ? `Safra ${novo} atualizada.` : `Safra ${novo} aberta.`];
+    resumo.push(`Resultado da ${safraAtual}: comissão ${fmt(comissaoVelha)} − adiantado ${fmt(adiantadoVelho)} = ${fmt(saldoVelho)}.`);
     if (moverIds.size) resumo.push(`${moverIds.size} adiantamento(s) passaram para ${novo}.`);
     if (debito) resumo.push(`Saldo negativo de ${fmt(debito)} da ${safraAtual} foi carregado para ${novo} (a ${safraAtual} fecha zerada).`);
     else resumo.push(`A ${safraAtual} fechou com saldo de ${fmt(saldoVelho)} — não havia débito pra carregar.`);
