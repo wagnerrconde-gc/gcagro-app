@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "30/10 · 1";
+const VERSAO_APP = "30/10 · 2";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -5933,12 +5933,19 @@ function App() {
   // Fim de safra das comissões (normalmente setembro, depois da última comissão): a pasta atual
   // fica guardada como está, e abre a próxima já com os mesmos produtos (Soja, Milho...) e o mesmo
   // preço por saca, quantidade e total zerados — pra ir anotando adiantamentos e comissões.
+  // Desfaz o "zerar" da versão de 29/10: a linha de comissão "Saldo transferido para X" (com a obs
+  // "débito levado para X em ...") foi criada só por aquela versão pra fechar a safra antiga em
+  // zero — mas o certo é a safra antiga continuar mostrando o saldo devedor. Sai sozinha.
+  useEffect(() => {
+    const ehLinhaDeZerar = c => /^saldo transferido para /i.test(c.produto||"") && /^débito levado para /i.test(c.obs||"");
+    if (comissaoRecords.some(ehLinhaDeZerar)) setComissaoRecords(rs => rs.filter(c => !ehLinhaDeZerar(c)));
+  }, [comissaoRecords]);
   function abrirProximaSafraComissao(safraAtual) {
     const sugestao = String(safraAtual).replace(/(\d{2,4})\s*\/\s*(\d{2,4})/, (t, a, b) => `${+a + 1}/${String(+b + 1).padStart(b.length, "0")}`);
     const itens = comissaoRecords.filter(c => c.safra === safraAtual);
     const produtos = [...new Map(itens.filter(c => (c.produto||"").trim()).map(c => [normalizarNome(c.produto), c])).values()];
     const nome = window.prompt(
-      `Abrir a próxima safra de comissões?\n\nA safra ${safraAtual} fica guardada (nada é apagado).\n\n` +
+      `Abrir a próxima safra de comissões?\n\nA safra ${safraAtual} fica guardada como está, com o saldo dela (nada é apagado).\n\n` +
       (produtos.length ? `A nova pasta já começa com os mesmos produtos (${produtos.map(c => c.produto).join(", ")}), com o mesmo preço por saca e quantidade zerada.\n\n` : "") +
       `Nome da nova safra:`, sugestao === safraAtual ? "" : sugestao);
     if (nome == null) return;
@@ -5948,7 +5955,10 @@ function App() {
     // linhas de produto de novo, mas ainda leva os adiantamentos de outubro e o saldo. Só não
     // carrega duas vezes — se a safra antiga já tem a linha de "saldo transferido", para.
     const jaExiste = comissaoRecords.some(c => c.safra === novo) || comissaoAdiant.some(a => a.safra === novo);
-    const jaTransferiu = itens.some(c => /^saldo transferido para /i.test(c.produto||"") && normalizarNome(c.produto).endsWith(normalizarNome(novo)));
+    // Já levado antes: a safra nova já tem o adiantamento "Saldo devedor trazido da safra <antiga>"
+    // (ou, da versão de 29/10, a antiga tem a linha "Saldo transferido para <nova>").
+    const jaTransferiu = comissaoAdiant.some(a => a.safra === novo && normalizarNome(a.obs).startsWith(normalizarNome(`Saldo devedor trazido da safra ${safraAtual}`)))
+      || itens.some(c => /^saldo transferido para /i.test(c.produto||"") && normalizarNome(c.produto).endsWith(normalizarNome(novo)));
     if (jaTransferiu) { window.alert(`O saldo da ${safraAtual} já foi levado para a ${novo} antes — não levo de novo. Abrindo a ${novo}.`); setComissaoSafraSel(novo); return; }
     if (jaExiste && !window.confirm(`A safra ${novo} já existe em Comissões.\n\nLevar para ela o resultado final da ${safraAtual} (saldo negativo e adiantamentos de outubro em diante)?`)) { setComissaoSafraSel(novo); return; }
 
@@ -5967,8 +5977,9 @@ function App() {
     }
 
     // Saldo da safra que fecha, já sem os adiantamentos que foram pra nova. Negativo = o gerente
-    // recebeu adiantado mais do que a comissão: esse débito vai junto pra safra nova, e a antiga
-    // fecha zerada com uma linha de "saldo transferido".
+    // recebeu adiantado mais do que a comissão: esse débito vai pra safra nova como adiantamento.
+    // A safra antiga CONTINUA mostrando o saldo devedor (é assim que as safras anteriores ficam
+    // registradas: 24/25 com −90.759,81, e o mesmo valor entrando como adiantamento na 25/26).
     const comissaoVelha = itens.reduce((s, c) => s + (c.total || 0), 0);
     const adiantadoVelho = adiantsVelhos.filter(a => !moverIds.has(a.id)).reduce((s, a) => s + (a.valor || 0), 0);
     const saldoVelho = comissaoVelha - adiantadoVelho;
@@ -5978,7 +5989,6 @@ function App() {
     const linhas = jaExiste ? [] : produtos.length
       ? produtos.map(c => ({ id:newId(), safra:novo, produto:c.produto, qtd:0, precoUnit:c.precoUnit||0, total:0, obs:"" }))
       : [{ id:newId(), safra:novo, produto:"", qtd:0, precoUnit:0, total:0, obs:"" }];   // linha em branco: a pasta não some vazia
-    if (debito) linhas.unshift({ id:newId(), safra:safraAtual, produto:`Saldo transferido para ${novo}`, qtd:0, precoUnit:0, total:debito, obs:`débito levado para ${novo} em ${hojeBR}` });
     setComissaoRecords(rs => [...rs, ...linhas]);
     setComissaoAdiant(as => [
       ...as.map(a => moverIds.has(a.id) ? { ...a, safra:novo } : a),
@@ -5988,7 +5998,7 @@ function App() {
     const resumo = [jaExiste ? `Safra ${novo} atualizada.` : `Safra ${novo} aberta.`];
     resumo.push(`Resultado da ${safraAtual}: comissão ${fmt(comissaoVelha)} − adiantado ${fmt(adiantadoVelho)} = ${fmt(saldoVelho)}.`);
     if (moverIds.size) resumo.push(`${moverIds.size} adiantamento(s) passaram para ${novo}.`);
-    if (debito) resumo.push(`Saldo negativo de ${fmt(debito)} da ${safraAtual} foi carregado para ${novo} (a ${safraAtual} fecha zerada).`);
+    if (debito) resumo.push(`Saldo devedor de ${fmt(debito)} da ${safraAtual} entrou como adiantamento na ${novo}. A ${safraAtual} continua mostrando o saldo devedor, como nas safras anteriores.`);
     else resumo.push(`A ${safraAtual} fechou com saldo de ${fmt(saldoVelho)} — não havia débito pra carregar.`);
     window.alert(resumo.join("\n\n"));
   }
@@ -7782,7 +7792,7 @@ function App() {
               <span style={{color:"#bbb"}}>›</span>
               <span style={{fontWeight:800,color:"#8d6e63"}}>🗂️ Safra {comissaoSafraSel}</span>
               <button data-proxima-safra-comissao="1" onClick={()=>abrirProximaSafraComissao(comissaoSafraSel)}
-                title="Fim de safra: guarda esta pasta como está e abre a próxima com os mesmos produtos, quantidades zeradas"
+                title="Fim de safra: abre a próxima com os mesmos produtos (quantidades zeradas) e leva o saldo devedor desta como adiantamento"
                 style={{marginLeft:"auto",padding:"6px 12px",background:"#8d6e63",color:"#fff",border:"none",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>➕ Abrir próxima safra</button>
             </div>
 
