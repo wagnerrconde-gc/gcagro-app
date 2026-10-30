@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "30/10 · 2";
+const VERSAO_APP = "30/10 · 3";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -3732,7 +3732,16 @@ function App() {
       if (sub) { doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(8.5); doc.text(sub, m, y); y += 4.5; }
     };
     const subtitulo = t => { novaPaginaSe(22); doc.setTextColor(...VERDE_ESC); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.text(t, m, y + 3); y += 5.5; };
-    const tabela = (head, body, foot, colunas) => {
+    const tabela = (head0, body0, foot0, colunas0) => {
+      // Relatório só com o que já tem informação: coluna inteira vazia ("-" ou em branco) não
+      // entra. A 1ª coluna (o nome da linha) fica sempre.
+      const vazio = v => v == null || v === "" || v === "-";
+      const manter = head0.map((h, ci) => ci === 0 || body0.some(r => !vazio(r[ci])));
+      const so = arr => arr.filter((_, ci) => manter[ci]);
+      const head = so(head0), body = body0.map(so), foot = foot0 ? so(foot0) : null;
+      const colunas = {};
+      let novo = 0;
+      head0.forEach((_, ci) => { if (!manter[ci]) return; if (colunas0 && colunas0[ci]) colunas[novo] = colunas0[ci]; novo++; });
       doc.autoTable({
         startY: y, margin:{ left:m, right:m }, head:[head], body, foot: foot ? [foot] : undefined, showFoot:"lastPage",
         theme:"grid",
@@ -3757,14 +3766,16 @@ function App() {
     y = 33;
 
     // Resumo em quadros
+    // Só os quadros que já têm número: zerado não aparece.
     const quadros = [
-      ["Área plantada", `${fmtN(areaTotal,1)} ha`],
-      ["Insumos já comprados", fmt(insumosTotal)],
-      ["Custo total da safra", fmt(custoTotal)],
-      ["Total em Compras", fmt(totalCompras)],
-      ["A pagar nos próximos 90 dias", fmt(aPagar90)],
-      sacasTotal > 0 ? ["Colhido", `${fmtN(sacasTotal,0)} sc`] : vendasTotal > 0 ? ["Vendido", fmt(vendasTotal)] : ["Custo por hectare", areaTotal > 0 ? fmt(custoTotal/areaTotal) : "-"],
-    ];
+      [areaTotal, "Área plantada", `${fmtN(areaTotal,1)} ha`],
+      [insumosTotal, "Insumos já comprados", fmt(insumosTotal)],
+      [custoTotal, "Custo total da safra", fmt(custoTotal)],
+      [totalCompras, "Total em Compras", fmt(totalCompras)],
+      [aPagar90, "A pagar nos próximos 90 dias", fmt(aPagar90)],
+      [sacasTotal, "Colhido", `${fmtN(sacasTotal,0)} sc`],
+      [vendasTotal, "Vendido", fmt(vendasTotal)],
+    ].filter(q => num(q[0]) > 0).map(q => [q[1], q[2]]);
     const qw = (W - 2*m - 2*4) / 3, qh = 17;
     quadros.forEach(([rot, val], i) => {
       const x = m + (i % 3) * (qw + 4), yy = y + Math.floor(i / 3) * (qh + 4);
@@ -3772,9 +3783,11 @@ function App() {
       doc.setTextColor(...CINZA); doc.setFont("helvetica","normal"); doc.setFontSize(7.8); doc.text(rot.toUpperCase(), x + 3, yy + 5.5);
       doc.setTextColor(...VERDE_ESC); doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.text(val, x + 3, yy + 13);
     });
-    y += 2 * (qh + 4) + 4;
-    doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.8);
-    doc.text("Custo total = insumos já comprados + custo operacional por hectare. Produto da Programação sem compra ainda não entra no custo.", m, y); y += 7;
+    y += Math.ceil(quadros.length / 3) * (qh + 4) + 4;
+    if (custoTotal > 0) {
+      doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.8);
+      doc.text("Custo total = insumos já comprados + custo operacional por hectare. Produto da Programação sem compra ainda não entra no custo.", m, y); y += 7;
+    }
 
     // 1. Áreas e custos
     if (temporadas.length) {
@@ -3882,13 +3895,11 @@ function App() {
 
     // 5. Análises cruzadas — o esquema já fica montado desde o começo da safra. Cada quadro sai
     // com números assim que existir o dado de que ele depende; até lá, diz o que falta lançar.
-    secao("Análises cruzadas", "Cruzamento entre Programação, Plano de Campo, Pluviometria, Colheita, Vendas e Operações financeiras.");
-    const falta = texto => {
-      novaPaginaSe(10);
-      doc.setFillColor(250,248,240); doc.setDrawColor(230,222,200); doc.roundedRect(m, y, W - 2*m, 8, 1.5, 1.5, "FD");
-      doc.setTextColor(140,120,70); doc.setFont("helvetica","italic"); doc.setFontSize(8.3);
-      doc.text("Ainda sem dados: " + texto, m + 3, y + 5.3);
-      y += 12;
+    // Cada quadro só entra quando já tem números de verdade; a seção só aparece se algum entrar.
+    let cruzadasAbertas = false;
+    const subCruzada = t => {
+      if (!cruzadasAbertas) { secao("Análises cruzadas", "Cruzamento entre Programação, Plano de Campo, Pluviometria, Colheita, Vendas e Operações financeiras."); cruzadasAbertas = true; }
+      subtitulo(t);
     };
     // Cultura igual em telas diferentes: "Soja" = "SOJA"; "Milho Safrinha" casa com "Milho".
     const chaveCult = s => normalizarNome(s || "").split(" ")[0];
@@ -3905,8 +3916,7 @@ function App() {
       return o;
     };
 
-    // 5.1 Custo × produtividade, ponto de equilíbrio e margem
-    subtitulo("Custo × produtividade, ponto de equilíbrio e margem");
+    // 5.1 Custo × produtividade, ponto de equilíbrio e margem — só culturas com colheita ou venda
     const linhasCusto = [];
     temporadas.forEach(([nome, cs]) => {
       const colh = colhidoPor(nome === "Verão" ? "verao" : "inv");
@@ -3915,6 +3925,7 @@ function App() {
         const scHa = g && g.a > 0 ? g.s / g.a : null;
         const preco = pm && pm.q > 0 ? pm.v / pm.q : null;
         const custoHa = num(c.total);
+        if (scHa == null && preco == null) return;
         linhasCusto.push([`${c.name} (${nome})`, fmt(custoHa),
           scHa != null ? fmtN(scHa,1) : "-",
           scHa ? fmt(custoHa / scHa) : "-",
@@ -3924,16 +3935,17 @@ function App() {
       });
     });
     if (linhasCusto.length) {
+      subCruzada("Custo × produtividade, ponto de equilíbrio e margem");
       tabela(["Cultura","Custo/ha","Colhido (sc/ha)","Custo por saca","Preço médio venda","Equilíbrio (sc/ha)","Resultado estimado"],
         linhasCusto, null, { 1:R, 2:R, 3:R, 4:R, 5:R, 6:R });
       doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.6);
-      doc.text("Equilíbrio = sacas por hectare que pagam o custo, ao preço médio das vendas. Resultado = (colhido × preço - custo) × área.", m, y - 3); y += 2;
+      const temEquilibrio = linhasCusto.some(l => l[5] !== "-"), temResultado = linhasCusto.some(l => l[6] !== "-");
+      const nota = [temEquilibrio && "Equilíbrio = sacas por hectare que pagam o custo, ao preço médio das vendas.",
+                    temResultado && "Resultado = (colhido × preço - custo) × área."].filter(Boolean).join(" ");
+      if (nota) { doc.text(nota, m, y - 3); y += 2; }
     }
-    if (!colheita.length) falta("custo por saca e resultado aparecem quando houver colheita lançada.");
-    if (!Object.keys(precoMedio).length) falta("preço médio e ponto de equilíbrio aparecem quando houver vendas em sacas.");
 
     // 5.2 Chuva × produtividade por lote (pluviômetro "Lote 13" casa com "LOTE 13 PIVOT 01" pelo número)
-    subtitulo("Chuva × produtividade por lote");
     const numLote = s => { const mm = /lote\s*(\d+)/i.exec(String(s || "")); return mm ? mm[1] : null; };
     const pluvPorNum = {};
     Object.entries(porPluv).forEach(([k, rs]) => { const n = numLote(k); if (n) pluvPorNum[n] = (pluvPorNum[n] || []).concat(rs); });
@@ -3951,11 +3963,10 @@ function App() {
       const a = colhs.reduce((s, c) => s + num(c.areaHa), 0), sc = colhs.reduce((s, c) => s + num(c.sacas), 0);
       return [r.lote || "", `${r.cultura || ""} (${r.temporada})`, r.dataPlantio || "-", mm != null ? fmtN(mm,1) : "-", a > 0 ? fmtN(sc / a,1) : "-"];
     }).filter(l => l[3] !== "-" || l[4] !== "-");
+    if (linhasChuva.length) subCruzada("Chuva × produtividade por lote");
     if (linhasChuva.length) tabela(["Lote","Cultura","Plantio","Chuva desde o plantio (mm)","Colhido (sc/ha)"], linhasChuva, null, { 2:C, 3:R, 4:R });
-    else falta("precisa de data de plantio no Plano de Campo e chuva lançada no pluviômetro do lote (ex: pluviômetro \"Lote 13\" para o \"LOTE 13 ...\").");
 
     // 5.3 Vendas × produção
-    subtitulo("Vendas × produção");
     const culturasArea = {};
     temporadas.forEach(([, cs]) => cs.forEach(c => { const k = chaveCult(c.name); culturasArea[k] = culturasArea[k] || { nome:c.name, a:0 }; culturasArea[k].a += num(c.area); }));
     const colhTudo = colhidoPor(null);
@@ -3964,13 +3975,13 @@ function App() {
       const vend = pm ? pm.q : 0, colh = ch ? ch.s : 0;
       return [g.nome, fmtN(g.a,1), vend ? `${fmtN(vend,0)} sc` : "-", vend && g.a ? fmtN(vend / g.a,1) : "-", colh ? `${fmtN(colh,0)} sc` : "-", colh && vend ? pct(vend, colh) : "-"];
     }).filter(l => l[2] !== "-" || l[4] !== "-");
+    if (linhasVend.length) subCruzada("Vendas × produção");
     if (linhasVend.length) tabela(["Cultura","Área (ha)","Vendido","Vendido por ha (sc)","Colhido","% do colhido já vendido"], linhasVend, null, { 1:R, 2:R, 3:R, 4:R, 5:R });
-    else falta("aparece quando houver vendas ou colheita lançadas.");
 
     // 5.4 Proteção (operações financeiras abertas) × vendas
-    subtitulo("Proteção com operações financeiras");
     const abertas = ops.filter(o => !/encerr|liquid|fechad/i.test(o.status || ""));
     if (ops.length) {
+      subCruzada("Proteção com operações financeiras");
       const porAtivo = {};
       ops.forEach(o => {
         const k = `${o.ativo || o.tipo || "-"}|${o.unidade || ""}`; porAtivo[k] = porAtivo[k] || { aberta:0, n:0, res:0, temRes:false };
@@ -3988,23 +3999,22 @@ function App() {
         doc.setTextColor(...CINZA); doc.setFont("helvetica","italic"); doc.setFontSize(7.8);
         doc.text(`Sacas protegidas em operações abertas: ${fmtN(scProt,0)} sc` + (totColh ? ` · ${pct(scProt, totColh)} do colhido` : "") + (totVend ? ` · ${pct(scProt, totVend)} do já vendido` : ""), m, y - 2); y += 4;
       }
-    } else falta("aparece quando houver operações lançadas em Operações Financeiras.");
+    }
 
     // 5.5 Calendário de caixa: pagamentos de compras × recebimentos de vendas
-    subtitulo("Calendário de caixa (pagamentos × recebimentos)");
     const caixa = {};
     const chaveMes = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
     compras.forEach(r => { const d = parseDataBR(r.obs); if (!d) return; const k = chaveMes(d); caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].pag += num(r.valorTotal); });
     vendas.forEach(v => { const p = parseDataFlexivel(v.dataPagamento); if (!p) return; const k = `${p.y}-${String(p.m).padStart(2,"0")}`; caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].rec += num(v.qtd) * num(v.preco); });
     const mesesCx = Object.keys(caixa).sort();
     if (mesesCx.length) {
+      subCruzada("Calendário de caixa (pagamentos × recebimentos)");
       const MES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
       let acum = 0;
       tabela(["Mês","Pagamentos (Compras)","Recebimentos (Vendas)","Saldo do mês","Saldo acumulado"],
         mesesCx.map(k => { const g = caixa[k]; acum += g.rec - g.pag; return [`${MES[+k.slice(5)-1]}/${k.slice(0,4)}`, g.pag ? fmt(g.pag) : "-", g.rec ? fmt(g.rec) : "-", fmt(g.rec - g.pag), fmt(acum)]; }),
         null, { 1:R, 2:R, 3:R, 4:R });
-      if (!vendas.some(v => parseDataFlexivel(v.dataPagamento))) falta("recebimentos aparecem quando as vendas tiverem Data de Pagamento.");
-    } else falta("aparece quando as compras tiverem vencimento e/ou as vendas tiverem data de pagamento.");
+    }
 
     // Rodapé com página
     const total = doc.internal.getNumberOfPages();
