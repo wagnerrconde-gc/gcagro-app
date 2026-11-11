@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "30/10 · 1";
+const VERSAO_APP = "11/11 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -3698,11 +3698,16 @@ function App() {
     // Cultura zerada (sem área e sem insumo — ex.: inverno ainda não plantado) não entra.
     const culturasDa = summary => {
       const ativas = summary.filter(c => c.ativo);
-      return (ativas.length ? ativas : summary).filter(c => num(c.area) > 0 || num(c.insumos) > 0);
+      // Só cultura com insumo já comprado: área planejada sem compra nenhuma (ex.: inverno ainda
+      // não começado) não é informação concreta de custo.
+      return (ativas.length ? ativas : summary).filter(c => num(c.insumos) > 0);
     };
     const temporadas = [["Verão", culturasDa(summaryVerao)], ["Inverno", culturasDa(summaryInverno)]]
       .filter(([, cs]) => cs.length);
-    const areaTotal = temporadas.reduce((s, [, cs]) => s + cs.reduce((a, c) => a + num(c.area), 0), 0);
+    // "Área plantada" = lotes do Plano de Campo que já têm data de plantio (até hoje), não a área
+    // planejada da Programação.
+    const plantado = r => { const d = parseDataBR(r && r.dataPlantio); return !!d && d <= hoje; };
+    const areaTotal = [...(planVerao || []), ...(planSafrinha || [])].filter(r => r && plantado(r)).reduce((s, r) => s + num(r.area), 0);
     const insumosTotal = temporadas.reduce((s, [, cs]) => s + cs.reduce((a, c) => a + num(c.insumos), 0), 0);
     const custoTotal = temporadas.reduce((s, [, cs]) => s + cs.reduce((a, c) => a + num(c.total) * num(c.area), 0), 0);
 
@@ -3849,13 +3854,17 @@ function App() {
 
     // 3. Lavoura
     const planos = [["Verão", planVerao], ["Inverno", planSafrinha]].map(([n, p]) => [n, (p || []).filter(r => r && (r.lote || r.cultura) && num(r.area) > 0)]).filter(([, p]) => p.length);
-    if (planos.length || Object.keys(porPluv).length) {
+    if (planos.some(([, ls]) => ls.some(plantado)) || Object.keys(porPluv).length) {
       secao("Lavoura", "Do Plano de Campo e da Pluviometria.");
+      // Só os lotes já plantados, com o andamento do plantio no título; temporada sem nenhum
+      // lote plantado não entra.
       planos.forEach(([nome, linhas]) => {
-        subtitulo(`Plano ${nome}`);
-        const area = linhas.reduce((s, r) => s + num(r.area), 0);
+        const feitos = linhas.filter(plantado);
+        if (!feitos.length) return;
+        const areaPlan = linhas.reduce((s, r) => s + num(r.area), 0), area = feitos.reduce((s, r) => s + num(r.area), 0);
+        subtitulo(`Plantio ${nome}: ${fmtN(area,1)} de ${fmtN(areaPlan,1)} ha plantados (${pct(area, areaPlan)})`);
         tabela(["Lote","Cultura","Variedade","Área (ha)","Plantio","Previsão de colheita"],
-          linhas.map(r => [r.lote || "", r.cultura || "", r.variedade || "", fmtN(num(r.area),1), r.dataPlantio || "-", r.previsaoColheita || "-"]),
+          feitos.map(r => [r.lote || "", r.cultura || "", r.variedade || "", fmtN(num(r.area),1), r.dataPlantio || "-", r.previsaoColheita || "-"]),
           ["Total", "", "", fmtN(area,1), "", ""], { 3:R, 4:C, 5:C });
       });
       const pluv = Object.entries(porPluv);
@@ -4012,7 +4021,8 @@ function App() {
     compras.forEach(r => { const d = parseDataBR(r.obs); if (!d) return; const k = chaveMes(d); caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].pag += num(r.valorTotal); });
     vendas.forEach(v => { const p = parseDataFlexivel(v.dataPagamento); if (!p) return; const k = `${p.y}-${String(p.m).padStart(2,"0")}`; caixa[k] = caixa[k] || { pag:0, rec:0 }; caixa[k].rec += num(v.qtd) * num(v.preco); });
     const mesesCx = Object.keys(caixa).sort();
-    if (mesesCx.length) {
+    // Sem nenhum recebimento de venda, o caixa só repetiria o calendário de pagamentos de Compras.
+    if (mesesCx.length && mesesCx.some(k => caixa[k].rec > 0)) {
       subCruzada("Calendário de caixa (pagamentos × recebimentos)");
       const MES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
       let acum = 0;
