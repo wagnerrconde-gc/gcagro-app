@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "11/11 · 1";
+const VERSAO_APP = "19/11 · 1";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -8013,11 +8013,12 @@ function App() {
         });
         const mesesList = Object.values(porMes).sort((a,b)=>a.sortKey-b.sortKey);
 
-        // Barras por dia: um lançamento por barra, em ordem cronológica — é o "que dia choveu"
-        // que a tabela (ordem de cadastro) e o resumo mensal (só o total do mês) não mostram.
+        // Em ordem de data (não de lançamento), nas barras E na tabela: uma chuva esquecida e
+        // lançada depois (o dia 17 lançado depois do 18) se encaixa no lugar certo. Data que não
+        // dá pra ler vai pro fim, pra ser vista e corrigida.
         const diasOrdenados = [...recsLote].sort((a,b) => {
           const da = parseDataBR(a.data), db = parseDataBR(b.data);
-          return (da?da.getTime():0) - (db?db.getTime():0);
+          return (da?da.getTime():Infinity) - (db?db.getTime():Infinity);
         });
         const maxMmDia = Math.max(...diasOrdenados.map(r=>r.mm||0), 1);
 
@@ -8093,7 +8094,7 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recsLote.map((r,i)=>(
+                  {diasOrdenados.map((r,i)=>(
                     <tr key={r.id} style={{background:i%2===0?"#fff":"#fafafa"}}>
                       <td style={{padding:"6px 9px",color:"#888",fontSize:11}}><RecEditCell recKey={"chuva|"+r.id} field="data" value={r.data} onCommit={val=>updateRecordField(setChuvaRecords,r.id,"data",val)}/></td>
                       <td style={{padding:"6px 9px",textAlign:"right"}}><RecEditCell recKey={"chuva|"+r.id} field="mm" type="number" align="right" value={fmtN(r.mm,1)} onCommit={val=>updateRecordField(setChuvaRecords,r.id,"mm",val,true)}/></td>
