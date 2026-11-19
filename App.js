@@ -337,7 +337,7 @@ function revendasDoFornecedor(str) {
 // Carimbo da versão publicada. Aparece ao lado do nome do app, pequeno. Serve pra saber, olhando
 // a tela, se o navegador já pegou a versão nova — sem isso qualquer "não mudou nada aqui" vira
 // adivinhação entre bug de verdade e página velha em cache. Atualizar a cada publicação.
-const VERSAO_APP = "19/11 · 1";
+const VERSAO_APP = "19/11 · 2";
 // O acento pode vir de dois jeitos: "é" numa letra só, ou "e" + acento separado (comum em texto
 // colado de PDF ou do celular). Na tela são idênticos, mas sem o normalize("NFD") o segundo
 // jeito não era reconhecido e o mesmo produto aparecia duas vezes ("Sulfato de Magnésio").
@@ -1767,6 +1767,19 @@ function acertarSafraDasCompras(compras, ativa, encerradas) {
     nova.push({ ...r, safra: ativa });
   });
   return { lista: nova, movidas, removidas };
+}
+// Mês de vencimento de uma compra (o vencimento fica no campo obs): "2027-04"; "pago" quando é à
+// vista / já pago; "sem" quando não tem vencimento que dê pra ler.
+function chaveVencimentoCompra(r) {
+  const d = parseDataBR(r && r.obs);
+  if (d) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  return /vista|pago/i.test((r && r.obs) || "") ? "pago" : "sem";
+}
+function rotuloVencimentoCompra(k) {
+  if (k === "pago") return "À vista / já pago";
+  if (k === "sem") return "Sem vencimento";
+  const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  return `${MESES[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
 }
 function comprasSumidas(atuais, fontes) {
   const lista = x => Array.isArray(x) ? x : Object.values(x||{});
@@ -3409,6 +3422,8 @@ function App() {
   const [comprasCatSel, setComprasCatSel]     = useState(null);
   const [comprasModoNav, setComprasModoNav]   = useState("categoria"); // "categoria" | "revenda"
   const [comprasRevendaSel, setComprasRevendaSel] = useState(null);
+  // Modo "por vencimento": mês escolhido ("2027-04"), "pago" (à vista) ou "sem" (sem vencimento).
+  const [comprasVencSel, setComprasVencSel] = useState(null);
   const [novaPastaNome, setNovaPastaNome]     = useState("");
 
   // ── UI ──
@@ -5741,13 +5756,36 @@ function App() {
 
   const comprasRecordsFiltrados = useMemo(() => {
     if (!comprasSafraSel) return [];
+    if (comprasModoNav==="vencimento") {
+      if (!comprasVencSel) return [];
+      return comprasRecords.filter(r=>r.safra===comprasSafraSel && chaveVencimentoCompra(r)===comprasVencSel)
+        .sort((a,b)=>{ const da=parseDataBR(a.obs), db=parseDataBR(b.obs); return (da?da.getTime():0)-(db?db.getTime():0); });
+    }
     if (comprasModoNav==="revenda") {
       if (!comprasRevendaSel) return [];
       return comprasRecords.filter(r=>r.safra===comprasSafraSel && revendasDoFornecedor(r.fornecedor).includes(comprasRevendaSel));
     }
     if (!comprasCatSel) return [];
     return comprasRecords.filter(r=>r.safra===comprasSafraSel && r.categoria===comprasCatSel);
-  }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel]);
+  }, [comprasRecords, comprasSafraSel, comprasCatSel, comprasModoNav, comprasRevendaSel, comprasVencSel]);
+  // Compras da safra agrupadas por mês de vencimento, com o que entra de vendas no mesmo mês —
+  // pra casar os pagamentos com as vendas.
+  const comprasVencimentosList = useMemo(() => {
+    if (!comprasSafraSel) return [];
+    const map = {};
+    comprasRecords.filter(r=>r.safra===comprasSafraSel).forEach(r => {
+      const k = chaveVencimentoCompra(r);
+      map[k] = map[k] || { chave:k, total:0, count:0, receber:0 };
+      map[k].total += r.valorTotal||0; map[k].count++;
+    });
+    vendasRecords.forEach(v => {
+      const p = parseDataFlexivel(v.dataPagamento); if (!p) return;
+      const k = `${p.y}-${String(p.m).padStart(2,"0")}`;
+      if (map[k]) map[k].receber += (v.qtd||0)*(v.preco||0);
+    });
+    const ordem = k => k==="pago" ? "0000" : k==="sem" ? "9999" : k;
+    return Object.values(map).sort((a,b)=>ordem(a.chave).localeCompare(ordem(b.chave)));
+  }, [comprasRecords, comprasSafraSel, vendasRecords]);
 
   // Compras que não têm produto correspondente na Programação — é o que eu preciso cadastrar lá
   // pra essa compra entrar no custo da lavoura. Calculado AO VIVO, não gravado no lançamento: no
@@ -10139,11 +10177,11 @@ function App() {
 
           {/* Breadcrumb */}
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,flexWrap:"wrap"}}>
-            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);setComprasRevendaSel(null);setComprasModoNav("categoria");}}
+            <span onClick={()=>{setComprasSafraSel(null);setComprasCatSel(null);setComprasRevendaSel(null);setComprasVencSel(null);setComprasModoNav("categoria");}}
               style={{cursor:"pointer",fontWeight:comprasSafraSel?600:800,color:"#00695c"}}>🛒 Compras</span>
             {comprasSafraSel && (<>
               <span style={{color:"#bbb"}}>›</span>
-              <span onClick={()=>{setComprasCatSel(null);setComprasRevendaSel(null);}} style={{cursor:"pointer",fontWeight:(comprasCatSel||comprasRevendaSel)?600:800,color:"#00695c"}}>📁 Compras</span>
+              <span onClick={()=>{setComprasCatSel(null);setComprasRevendaSel(null);setComprasVencSel(null);}} style={{cursor:"pointer",fontWeight:(comprasCatSel||comprasRevendaSel||comprasVencSel)?600:800,color:"#00695c"}}>📁 Compras</span>
             </>)}
             {comprasCatSel && (<>
               <span style={{color:"#bbb"}}>›</span>
@@ -10152,6 +10190,10 @@ function App() {
             {comprasRevendaSel && (<>
               <span style={{color:"#bbb"}}>›</span>
               <span style={{fontWeight:800,color:"#00695c"}}>🏪 {comprasRevendaSel}</span>
+            </>)}
+            {comprasVencSel && (<>
+              <span style={{color:"#bbb"}}>›</span>
+              <span style={{fontWeight:800,color:"#00695c"}}>📅 {rotuloVencimentoCompra(comprasVencSel)}</span>
             </>)}
           </div>
 
@@ -10184,7 +10226,7 @@ function App() {
           </>)}
 
           {/* NÍVEL 1: pastas de categoria (ou de revenda) dentro da safra */}
-          {comprasSafraSel && !comprasCatSel && !comprasRevendaSel && (<>
+          {comprasSafraSel && !comprasCatSel && !comprasRevendaSel && !comprasVencSel && (<>
             <div style={{display:"flex",gap:8,marginBottom:14}}>
               <button onClick={()=>setComprasModoNav("categoria")}
                 style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
@@ -10192,9 +10234,36 @@ function App() {
               <button onClick={()=>setComprasModoNav("revenda")}
                 style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
                   background:comprasModoNav==="revenda"?"#00695c":"#e0f2f1",color:comprasModoNav==="revenda"?"#fff":"#00695c"}}>🏪 Por revenda</button>
+              <button data-compras-vencimento="1" onClick={()=>setComprasModoNav("vencimento")}
+                style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+                  background:comprasModoNav==="vencimento"?"#00695c":"#e0f2f1",color:comprasModoNav==="vencimento"?"#fff":"#00695c"}}>📅 Por vencimento</button>
             </div>
 
-            {comprasModoNav==="categoria" ? (<>
+            {comprasModoNav==="vencimento" && (
+              comprasVencimentosList.length===0 ? (
+                <div style={{background:"#fff",borderRadius:10,padding:"24px",textAlign:"center",color:"#999",fontSize:12,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>Nenhuma compra nesta safra ainda.</div>
+              ) : (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
+                  {comprasVencimentosList.map(v=>{
+                    const saldo = v.receber - v.total;
+                    return (
+                    <div key={v.chave} data-venc-mes={v.chave} onClick={()=>setComprasVencSel(v.chave)}
+                      style={{background:"#fff",borderRadius:10,padding:"16px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:"pointer"}}>
+                      <div style={{fontSize:24}}>📅</div>
+                      <div style={{fontWeight:700,fontSize:13,marginTop:6,color:"#1a3a1a"}}>{rotuloVencimentoCompra(v.chave)}</div>
+                      <div style={{fontSize:11,color:"#888",marginTop:4}}>{v.count} lançamento{v.count===1?"":"s"}</div>
+                      <div style={{fontSize:13,fontWeight:800,color:v.chave==="pago"?"#757575":"#c62828",marginTop:2}}>{v.chave==="pago"?"Pago":"A pagar"}: {fmt(v.total)}</div>
+                      {v.receber>0 && (<>
+                        <div style={{fontSize:12,fontWeight:700,color:"#2e7d32",marginTop:2}}>A receber (vendas): {fmt(v.receber)}</div>
+                        <div style={{fontSize:11,fontWeight:700,color:saldo>=0?"#2e7d32":"#c62828",marginTop:2}}>Saldo do mês: {fmt(saldo)}</div>
+                      </>)}
+                    </div>
+                  );})}
+                </div>
+              )
+            )}
+
+            {comprasModoNav==="vencimento" ? null : comprasModoNav==="categoria" ? (<>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12,marginBottom:16}}>
                 {comprasCategoriasList.map(c=>(
                   <div key={c.categoria} onClick={()=>setComprasCatSel(c.categoria)}
@@ -10235,7 +10304,7 @@ function App() {
           </>)}
 
           {/* NÍVEL 2: registros da safra + categoria (ou revenda) selecionadas */}
-          {comprasSafraSel && (comprasCatSel || comprasRevendaSel) && (<>
+          {comprasSafraSel && (comprasCatSel || comprasRevendaSel || comprasVencSel) && (<>
             {comprasCatSel ? (
               <div style={{background:"#fff",borderRadius:10,padding:"14px 18px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -10343,6 +10412,16 @@ function App() {
                 )}
               </div>
             ) : (
+              comprasVencSel ? (()=>{
+                const g = comprasVencimentosList.find(v=>v.chave===comprasVencSel) || { total:0, receber:0 };
+                return (
+                  <div style={{fontSize:12,color:"#555",marginBottom:14,lineHeight:1.6}}>
+                    Compras desta safra com vencimento em <b>{rotuloVencimentoCompra(comprasVencSel)}</b>, de qualquer categoria, por data de vencimento.<br/>
+                    <b style={{color:comprasVencSel==="pago"?"#757575":"#c62828"}}>{comprasVencSel==="pago"?"Pago":"A pagar"}: {fmt(g.total)}</b>
+                    {g.receber>0 && <> · <b style={{color:"#2e7d32"}}>A receber de vendas no mês: {fmt(g.receber)}</b> · <b style={{color:g.receber-g.total>=0?"#2e7d32":"#c62828"}}>Saldo: {fmt(g.receber-g.total)}</b></>}
+                  </div>
+                );
+              })() :
               <div style={{fontSize:11,color:"#999",marginBottom:14}}>Todas as compras dessa revenda nesta safra, de qualquer categoria — útil pra montar o próximo pedido.</div>
             )}
 
@@ -10552,7 +10631,7 @@ function App() {
                   <tr style={{background:"#e0f2f1"}}>
                     {((comprasCatSel||"").startsWith("Sementes")
                       ? ["Data Compra","Produto","Tratamento de Sementes","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
-                      : comprasRevendaSel
+                      : (comprasRevendaSel || comprasVencSel)
                       ? ["Data Compra","Produto","Categoria","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]
                       : ["Data Compra","Produto","Unid.","Qtd.","Preço Unit.","Total","Fornecedor","Vencimento",""]).map(h=>(
                       <th key={h} style={{padding:"7px 9px",textAlign:["Data Compra","Produto","Tratamento de Sementes","Categoria","Fornecedor","Vencimento"].includes(h)?"left":"right",color:"#00695c",fontSize:10,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #80cbc4",whiteSpace:"nowrap"}}>{h}</th>
@@ -10571,7 +10650,7 @@ function App() {
                       {(comprasCatSel||"").startsWith("Sementes") && (
                         <td style={{padding:"6px 9px"}}><RecEditCell recKey={"compra|"+r.id} field="tratamento" value={r.tratamento} onCommit={v=>updateRecordField(setComprasRecords,r.id,"tratamento",v)}/></td>
                       )}
-                      {comprasRevendaSel && (
+                      {(comprasRevendaSel || comprasVencSel) && (
                         <td style={{padding:"6px 9px",color:"#666"}}><RecEditCell recKey={"compra|"+r.id} field="categoria" value={r.categoria} onCommit={v=>updateRecordField(setComprasRecords,r.id,"categoria",v)}/></td>
                       )}
                       <td style={{padding:"6px 9px",textAlign:"right"}}>
@@ -10625,8 +10704,8 @@ function App() {
                     </tr>
                   )}
                   {comprasRecordsFiltrados.length===0 && !addingCompra && (
-                    <tr><td colSpan={9 + ((comprasCatSel||"").startsWith("Sementes")?1:0) + (comprasRevendaSel?1:0)} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>
-                      {comprasRevendaSel ? "Nenhuma compra registrada dessa revenda ainda." : "Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente."}
+                    <tr><td colSpan={9 + ((comprasCatSel||"").startsWith("Sementes")?1:0) + ((comprasRevendaSel||comprasVencSel)?1:0)} style={{padding:"20px",textAlign:"center",color:"#bbb",fontSize:12}}>
+                      {comprasVencSel ? "Nenhuma compra com esse vencimento." : comprasRevendaSel ? "Nenhuma compra registrada dessa revenda ainda." : "Nenhuma compra registrada aqui ainda. Feche uma cotação ou lance manualmente."}
                     </td></tr>
                   )}
                 </tbody>
